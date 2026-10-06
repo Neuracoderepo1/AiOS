@@ -17,6 +17,15 @@ async function sha256(value: unknown): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return "[" + v.map(canonicalJson).join(",") + "]";
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return "{" + Object.keys(o).sort().map((k) => JSON.stringify(k) + ":" + canonicalJson(o[k])).join(",") + "}";
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+
 async function callClaude(apiKey: string, model: string, prompt: string, maxTokens = 1200) {
   const started = Date.now();
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -137,11 +146,14 @@ Deno.serve(async (req: Request) => {
   if (agentError || !agent) return json({ error: "Assigned agent not found" }, 500);
   if (agent.status === "suspended") return json({ error: "Agent is suspended" }, 403);
 
-  const { error: missionStartError } = await admin.from("aios_missions").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.mission_id).in("status", ["queued", "running"]);
+  // Mission: only the caller that moves queued -> running writes started_at; if it is already running, leave it untouched.
+  const { error: missionStartError } = await admin.from("aios_missions").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "queued").select("id");
   if (missionStartError) return json({ error: "Failed to start mission", detail: missionStartError.message }, 500);
 
-  const { error: taskStartError } = await admin.from("aios_tasks").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.id).eq("status", task.status);
+  // Task: atomic compare-and-set (queued/approved -> running). A caller that does not win it stops here, before any model call.
+  const { data: taskClaimed, error: taskStartError } = await admin.from("aios_tasks").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.id).eq("status", task.status).select("id");
   if (taskStartError) return json({ error: "Failed to start task", detail: taskStartError.message }, 500);
+  if (!taskClaimed || taskClaimed.length !== 1) return json({ error: "Task was already claimed by another execution", task_id: task.id }, 409);
 
   const model = "claude-sonnet-4-6";
   const allowedTools = agent.authority?.allowed_tools ?? [];
@@ -175,16 +187,46 @@ Deno.serve(async (req: Request) => {
   const idempotencyKey = requestedIdempotency ?? `${task.id}:${tool.tool_key}:v${tool.version}:${argsHash}`;
   if (tool.idempotency_required && !idempotencyKey) return json({ error: "Tool requires an idempotency key" }, 400);
 
-  const { data: existing } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
-  if (existing) {
-    if (existing.status === "succeeded") return json({ task_id: task.id, status: "completed", invocation_id: existing.id, result: existing.result, idempotent_replay: true });
-    if (existing.status === "requires_approval") return json({ task_id: task.id, status: "blocked_pending_approval", invocation_id: existing.id, approval_id: existing.approval_id, idempotent_replay: true }, 202);
-    if (existing.status === "executing") return json({ task_id: task.id, status: "running", invocation_id: existing.id, idempotent_replay: true }, 202);
-  }
+  const sameBinding = (row: Record<string, any>) =>
+    row.agent_id === agent.id && row.tool_key === tool.tool_key && (row.task_id ?? null) === task.id &&
+    canonicalJson(row.arguments ?? {}) === canonicalJson(proposed.arguments);
+  const failTaskAndMission = async (result: Record<string, unknown>) => {
+    await admin.from("aios_tasks").update({ status: "failed", result, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+    await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+  };
+  // Existing invocation for this key is authoritative: validate it is the same request, then replay its state. Never proceeds to another insert.
+  const replayExisting = async (row: Record<string, any>): Promise<Response> => {
+    if (!sameBinding(row)) {
+      await admin.from("aios_tasks").update({ status: "failed", result: { error: "idempotency_key_conflict", tool_key: tool.tool_key }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+      return json({ error: "Idempotency key is already bound to a different request" }, 409);
+    }
+    switch (row.status) {
+      case "succeeded": return json({ task_id: task.id, status: "completed", invocation_id: row.id, result: row.result, idempotent_replay: true });
+      case "requires_approval": return json({ task_id: task.id, status: "blocked_pending_approval", invocation_id: row.id, approval_id: row.approval_id, idempotent_replay: true }, 202);
+      case "executing": return json({ task_id: task.id, status: "running", invocation_id: row.id, idempotent_replay: true }, 202);
+      case "denied":
+        await failTaskAndMission({ denied: true, reason: row.result?.kernel_reason, idempotent_replay: true });
+        return json({ task_id: task.id, status: "failed", invocation_id: row.id, reason: row.result?.kernel_reason, idempotent_replay: true }, 403);
+      case "failed":
+        await failTaskAndMission({ error: row.error_code ?? "invocation_failed", detail: row.error_message, idempotent_replay: true });
+        return json({ task_id: task.id, status: "failed", invocation_id: row.id, error: row.error_code ?? "invocation_failed", detail: row.error_message, idempotent_replay: true }, row.error_code === "AUTHORIZATION_RECHECK_FAILED" ? 403 : 502);
+      default:
+        return json({ error: `Idempotency key is bound to an invocation in state ${row.status}`, invocation_id: row.id }, 409);
+    }
+  };
+
+  const { data: existing, error: existingError } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
+  if (existingError) return json({ error: "Invocation lookup failed", detail: existingError.message }, 500);
+  if (existing) return await replayExisting(existing);
 
   const { data: invocation, error: invError } = await admin.from("aios_tool_invocations").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, tool_name: tool.tool_key, tool_key: tool.tool_key, arguments: proposed.arguments, risk_level: tool.risk_level, requested_by: userData.user.id, idempotency_key: idempotencyKey, request_id: crypto.randomUUID() }).select("*").single();
   if (invError) {
-    if (invError.code === "23505") return json({ error: "Duplicate invocation prevented by idempotency key" }, 409);
+    if (invError.code === "23505") {
+      const { data: winner, error: winnerError } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
+      if (winnerError) return json({ error: "Duplicate invocation detected but winner lookup failed", detail: winnerError.message }, 500);
+      if (!winner) return json({ error: "Duplicate invocation detected but original invocation was not found" }, 409);
+      return await replayExisting(winner);
+    }
     await admin.from("aios_tasks").update({ status: "failed", result: { error: "invocation_creation_failed", detail: invError.message }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
     return json({ error: "Failed to create invocation", detail: invError.message }, 500);
   }
