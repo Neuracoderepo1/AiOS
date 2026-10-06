@@ -1,0 +1,12 @@
+-- Deferred security item (2026-08-22): Supabase Auth's "Prevent use of leaked
+-- passwords" (HaveIBeenPwned Pwned Passwords API check) is currently disabled
+-- on this project. It cannot be enabled on the current plan tier — Supabase
+-- gates this feature to Pro plan and above. This is a plan/billing constraint,
+-- not a configuration oversight.
+--
+-- Action needed: revisit once the project is upgraded to Pro or higher.
+-- Location: Dashboard -> Authentication -> Attack Protection -> "Prevent use
+-- of leaked passwords" -> Configure in email provider.
+--
+-- Flagged via Supabase security advisor (auth_leaked_password_protection).
+comment on schema public is 'AiOS multi-tenant agent orchestration platform. Known deferred item: leaked-password protection disabled, blocked on Pro plan upgrade (see migration document_leaked_password_protection_deferral).';

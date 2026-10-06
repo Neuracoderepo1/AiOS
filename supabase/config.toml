@@ -1,0 +1,14 @@
+# Minimal baseline. Run `supabase init` / `supabase link` to regenerate the full file locally.
+project_id = "jtkcdwhiduixoiodhbfn"
+
+[functions.execute-task]
+verify_jwt = true
+
+[functions.invoke-tool]
+verify_jwt = true
+
+[functions.launch-mission]
+verify_jwt = true
+
+[functions.review-approval]
+verify_jwt = true

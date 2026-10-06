@@ -1,0 +1,10 @@
+begin;
+alter function public.aios_prevent_self_role_change() set search_path='';
+alter function public.aios_validate_agent_org() set search_path='';
+alter function public.aios_validate_task_org() set search_path='';
+alter function public.aios_validate_mission_org() set search_path='';
+alter function public.aios_validate_task_agent_org() set search_path='';
+revoke execute on function public.aios_platform_metrics() from anon,authenticated;
+revoke execute on function public.aios_kernel_evaluate(uuid,uuid,text,text,numeric,integer,jsonb) from anon,authenticated;
+revoke execute on function public.aios_public_metrics(uuid) from anon,authenticated;
+commit;

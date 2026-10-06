@@ -1,0 +1,11 @@
+begin;
+grant execute on function private.aios_is_org_member(uuid) to authenticated;
+grant execute on function private.aios_is_org_admin(uuid) to authenticated;
+grant execute on function private.aios_current_org_role(uuid) to authenticated;
+grant execute on function private.aios_agent_trust_explain(uuid) to authenticated;
+grant execute on function private.verify_audit_chain(uuid) to authenticated;
+grant execute on function private.aios_create_agent(uuid,text,text,text,text,jsonb,jsonb,uuid) to authenticated;
+grant execute on function private.aios_update_agent_authority(uuid,text,jsonb,jsonb) to authenticated;
+grant execute on function private.aios_suspend_agent(uuid) to authenticated;
+grant execute on function private.aios_reactivate_agent(uuid) to authenticated;
+commit;

@@ -1,0 +1,11 @@
+begin;
+create or replace function private.aios_platform_metrics() returns json language sql stable security definer set search_path='' as $$ select json_build_object('organizations',(select count(*) from public.aios_organizations),'agents_under_contract',(select count(*) from public.aios_agents),'avg_trust_score',(select round(coalesce(avg(trust_score),0),1) from public.aios_agents),'calls_routed_to_approval',(select count(*) from public.aios_tool_invocations where status='requires_approval')); $$;
+create or replace function public.aios_platform_metrics() returns json language sql stable security invoker set search_path='' as $$ select private.aios_platform_metrics(); $$;
+create or replace function private.aios_public_metrics(org_id uuid) returns json language sql stable security definer set search_path='' as $$ select case when not private.aios_is_org_member($1) then json_build_object('error','not a member of this organization') else json_build_object('organization_id',$1,'agents',(select count(*) from public.aios_agents where organization_id=$1),'avg_trust_score',(select round(coalesce(avg(trust_score),0),1) from public.aios_agents where organization_id=$1),'tasks_total',(select count(*) from public.aios_tasks where organization_id=$1),'tool_invocations_total',(select count(*) from public.aios_tool_invocations where organization_id=$1),'tool_invocations_requires_approval',(select count(*) from public.aios_tool_invocations where organization_id=$1 and status='requires_approval'),'approvals_pending',(select count(*) from public.aios_approvals where organization_id=$1 and status='pending')) end; $$;
+create or replace function public.aios_public_metrics(org_id uuid) returns json language sql stable security invoker set search_path='' as $$ select private.aios_public_metrics($1); $$;
+grant execute on function public.aios_platform_metrics() to anon,authenticated;
+grant execute on function public.aios_public_metrics(uuid) to authenticated;
+revoke execute on function private.aios_platform_metrics() from public,anon,authenticated;
+grant execute on function private.aios_platform_metrics() to anon;
+grant execute on function private.aios_public_metrics(uuid) to authenticated;
+commit;

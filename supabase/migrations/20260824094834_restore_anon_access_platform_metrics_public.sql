@@ -1,0 +1,11 @@
+-- Context: aios_platform_metrics() was locked to service_role/postgres
+-- because it had no membership gating and leaked cross-tenant aggregate
+-- data to any *authenticated* user. The landing page's public hero
+-- metric strip has a legitimate, intentional need to call this
+-- anonymously — it returns only non-identifying aggregate counts/averages
+-- (org count, agent count, avg trust score, approval-routed count), no
+-- per-org or per-agent identifying detail. Re-granting to anon serves
+-- that public marketing use case. authenticated is deliberately left
+-- unrestored: a signed-in dashboard user should use the org-scoped
+-- aios_public_metrics(org_id) instead of the platform-wide aggregate.
+GRANT EXECUTE ON FUNCTION public.aios_platform_metrics() TO anon;

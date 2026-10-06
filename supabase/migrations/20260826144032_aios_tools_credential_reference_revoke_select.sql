@@ -1,0 +1,1 @@
+revoke select on public.aios_tools from authenticated; grant select(tool_key,name,description,version,category,risk_level,input_schema,output_schema,handler,status,is_enabled,requires_approval,timeout_ms,rate_limit,idempotency_required,external_service,capabilities,created_at,updated_at) on public.aios_tools to authenticated;

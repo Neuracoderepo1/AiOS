@@ -1,0 +1,17 @@
+begin;
+drop policy if exists aios_missions_update on public.aios_missions;
+create policy aios_missions_update_admin on public.aios_missions for update to authenticated using((select public.aios_is_org_admin(organization_id))) with check((select public.aios_is_org_admin(organization_id)));
+drop policy if exists aios_tasks_update on public.aios_tasks;
+create policy aios_tasks_update_admin on public.aios_tasks for update to authenticated using((select public.aios_is_org_admin(organization_id))) with check((select public.aios_is_org_admin(organization_id)));
+drop policy if exists aios_memory_insert on public.aios_memory;
+drop policy if exists aios_memory_update on public.aios_memory;
+drop policy if exists aios_memory_delete on public.aios_memory;
+revoke insert,update,delete on public.aios_memory from anon,authenticated;
+drop policy if exists aios_model_runs_insert on public.aios_model_runs;
+drop policy if exists aios_model_runs_update on public.aios_model_runs;
+drop policy if exists aios_model_runs_delete on public.aios_model_runs;
+revoke insert,update,delete on public.aios_model_runs from anon,authenticated;
+revoke insert,update,delete on public.aios_tool_invocations from anon,authenticated;
+revoke insert,update,delete on public.aios_approvals from anon,authenticated;
+revoke insert,update,delete on public.aios_demo_support_tickets from anon,authenticated;
+commit;

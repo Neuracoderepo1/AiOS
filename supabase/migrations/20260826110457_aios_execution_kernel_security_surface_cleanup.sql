@@ -1,0 +1,41 @@
+-- Reduce public RPC exposure. Browser callers use authenticated Edge Functions; privileged/private functions remain non-public.
+REVOKE ALL ON FUNCTION public.aios_can_approve(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.aios_current_org_role(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.aios_create_agent(uuid,text,text,text,text,jsonb,jsonb,uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.aios_reactivate_agent(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.aios_suspend_agent(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.aios_update_agent_authority(uuid,text,jsonb,jsonb) FROM anon;
+REVOKE ALL ON FUNCTION public.aios_kernel_authorize_invocation(uuid) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.aios_kernel_authorize_invocation(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.aios_record_evaluation(uuid,uuid,numeric,numeric,numeric,numeric,numeric,text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.aios_record_evaluation(uuid,uuid,numeric,numeric,numeric,numeric,numeric,text) TO service_role;
+REVOKE ALL ON FUNCTION public.verify_audit_chain(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.verify_audit_chain(uuid) TO authenticated, service_role;
+-- Private implementations are never an API surface. Public wrappers, where needed, are the only callable boundary.
+REVOKE ALL ON FUNCTION private.aios_create_agent(uuid,text,text,text,text,jsonb,jsonb,uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.aios_create_agent(uuid,text,text,text,text,jsonb,jsonb,uuid) TO postgres, service_role;
+REVOKE ALL ON FUNCTION private.aios_suspend_agent(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.aios_suspend_agent(uuid) TO postgres, service_role;
+REVOKE ALL ON FUNCTION private.aios_reactivate_agent(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.aios_reactivate_agent(uuid) TO postgres, service_role;
+REVOKE ALL ON FUNCTION private.aios_update_agent_authority(uuid,text,jsonb,jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.aios_update_agent_authority(uuid,text,jsonb,jsonb) TO postgres, service_role;
+REVOKE ALL ON FUNCTION private.aios_kernel_authorize_invocation(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.aios_kernel_authorize_invocation(uuid) TO postgres, service_role;
+REVOKE ALL ON FUNCTION private.aios_record_evaluation(uuid,uuid,numeric,numeric,numeric,numeric,numeric,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.aios_record_evaluation(uuid,uuid,numeric,numeric,numeric,numeric,numeric,text) TO postgres, service_role;
+-- Compatibility wrappers retain authenticated access where they enforce membership/admin checks.
+REVOKE ALL ON FUNCTION public.aios_create_agent(uuid,text,text,text,text,jsonb,jsonb,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aios_create_agent(uuid,text,text,text,text,jsonb,jsonb,uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aios_suspend_agent(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aios_suspend_agent(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aios_reactivate_agent(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aios_reactivate_agent(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aios_update_agent_authority(uuid,text,jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aios_update_agent_authority(uuid,text,jsonb,jsonb) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aios_current_org_role(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aios_current_org_role(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aios_can_approve(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aios_can_approve(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.verify_audit_chain(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.verify_audit_chain(uuid) TO authenticated, service_role;
