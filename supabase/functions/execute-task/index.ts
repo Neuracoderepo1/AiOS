@@ -217,9 +217,15 @@ Deno.serve(async (req: Request) => {
 
   const { data: existing, error: existingError } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
   if (existingError) return json({ error: "Invocation lookup failed", detail: existingError.message }, 500);
+  // Resume: a human approved this exact invocation (same agent, tool, task, arguments). The approval is bound to this row,
+  // so run it as-is: skip the insert and fall through to kernel authorization and execution.
+  let invocation: Record<string, any>;
+  if (existing && existing.status === "approved" && sameBinding(existing)) {
+    invocation = existing;
+  } else {
   if (existing) return await replayExisting(existing);
 
-  const { data: invocation, error: invError } = await admin.from("aios_tool_invocations").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, tool_name: tool.tool_key, tool_key: tool.tool_key, arguments: proposed.arguments, risk_level: tool.risk_level, requested_by: userData.user.id, idempotency_key: idempotencyKey, request_id: crypto.randomUUID() }).select("*").single();
+  const { data: inserted, error: invError } = await admin.from("aios_tool_invocations").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, tool_name: tool.tool_key, tool_key: tool.tool_key, arguments: proposed.arguments, risk_level: tool.risk_level, requested_by: userData.user.id, idempotency_key: idempotencyKey, request_id: crypto.randomUUID() }).select("*").single();
   if (invError) {
     if (invError.code === "23505") {
       const { data: winner, error: winnerError } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
@@ -229,6 +235,8 @@ Deno.serve(async (req: Request) => {
     }
     await admin.from("aios_tasks").update({ status: "failed", result: { error: "invocation_creation_failed", detail: invError.message }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
     return json({ error: "Failed to create invocation", detail: invError.message }, 500);
+  }
+  invocation = inserted;
   }
 
   if (invocation.status === "denied") {
