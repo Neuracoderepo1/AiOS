@@ -1,0 +1,131 @@
+name: AiOS HTTP gate (full)
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_id:
+        description: "Sandbox agent"
+        required: true
+        default: "4cfca3af-aa18-4436-a0b8-e46df33f3133"
+      task_a:
+        description: "Queued search task (sequential)"
+        required: true
+        default: "2dd2d6ef-a6fe-4ce9-9d0d-36243111e72c"
+      task_b:
+        description: "Queued search task (concurrent)"
+        required: true
+        default: "e7b013d9-320e-4757-8349-2c30a2a5a7ff"
+      task_c:
+        description: "Queued gated-export task (approval flow)"
+        required: true
+        default: "c73e9f49-1970-410e-ae5a-629c1ea1d788"
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: https://jtkcdwhiduixoiodhbfn.supabase.co
+      ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0a2Nkd2hpZHVpeG9pb2RoYmZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczNTY2ODksImV4cCI6MjEwMjkzMjY4OX0.v7k47GZGYJklKJjcZrxQiQTdhSC3dw2CI4XSE_4F1J8
+      TEST_EMAIL: ${{ secrets.AIOS_TEST_EMAIL }}
+      TEST_PASSWORD: ${{ secrets.AIOS_TEST_PASSWORD }}
+      AGENT: ${{ inputs.agent_id }}
+      TASK_A: ${{ inputs.task_a }}
+      TASK_B: ${{ inputs.task_b }}
+      TASK_C: ${{ inputs.task_c }}
+    steps:
+      - name: Run gate
+        run: |
+          set -u
+          INV="$SUPABASE_URL/functions/v1/invoke-tool"
+          EXE="$SUPABASE_URL/functions/v1/execute-task"
+          REV="$SUPABASE_URL/functions/v1/review-approval"
+          pass=0; fail=0; REPORT=""
+          clean() { printf '%s' "$1" | tr '\n' ' ' | sed 's/%/%25/g' | cut -c1-260; }
+          ok()  { echo "PASS  $1"; REPORT="${REPORT}PASS $(clean "$1")%0A"; pass=$((pass+1)); }
+          bad() { echo "FAIL  $1"; REPORT="${REPORT}FAIL $(clean "$1")%0A"; fail=$((fail+1)); }
+          expect() { if [[ "$2" =~ $3 ]]; then ok "$1 (got $2)"; else bad "$1 (got $2, wanted $3)"; fi; }
+
+          JWT=$(curl -s "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $ANON" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg e "$TEST_EMAIL" --arg p "$TEST_PASSWORD" '{email:$e,password:$p}')" \
+            | jq -r '.access_token // empty')
+          if [ -z "$JWT" ]; then echo "::error title=AiOS gate::could not sign in the test user"; exit 1; fi
+          echo "::add-mask::$JWT"
+
+          post() { CODE=$(curl -s -o /tmp/body -w "%{http_code}" -X POST "$1" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $JWT" -d "$2"); BODY=$(cat /tmp/body); }
+          ppost() { curl -s -o "$1.body" -w "%{http_code}" -X POST "$2" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $JWT" -d "$3" > "$1.code"; }
+          ibody() { jq -nc --arg a "$AGENT" --arg t "$1" --arg r "$2" --arg k "$3" --argjson args "$4" '{agent_id:$a,tool_name:$t,risk_level:$r,idempotency_key:$k,arguments:$args}'; }
+
+          echo "== invoke-tool: replay and binding =="
+          K1="gate-$(uuidgen)"; A1='{"limit":5,"query":"billing"}'
+          post "$INV" "$(ibody support.search_tickets low "$K1" "$A1")"
+          expect "I1 first call creates invocation" "$CODE" '^201$'; ID1=$(jq -r '.invocation_id // empty' /tmp/body)
+          post "$INV" "$(ibody support.search_tickets low "$K1" "$A1")"
+          expect "I2 same key and payload replays" "$CODE" '^200$'
+          [ "$(jq -r '.idempotent_replay' /tmp/body)" = "true" ] && [ "$(jq -r '.invocation_id' /tmp/body)" = "$ID1" ] && ok "I2b replay flagged and same invocation id" || bad "I2b replay flag or id wrong: $BODY"
+          post "$INV" "$(ibody support.search_tickets low "$K1" '{"query":"billing","limit":5}')"
+          expect "I3 reordered arguments still replay" "$CODE" '^200$'
+          post "$INV" "$(ibody support.search_tickets low "$K1" '{"limit":6,"query":"billing"}')"
+          expect "I4 same key, different arguments conflicts" "$CODE" '^409$'
+          post "$INV" "$(ibody support.search_tickets medium "$K1" "$A1")"
+          expect "I5 same key, different risk level conflicts" "$CODE" '^409$'
+
+          echo "== invoke-tool: concurrency =="
+          K2="gate-$(uuidgen)"; rm -f /tmp/ci_*
+          for i in 1 2 3 4 5 6; do ppost "/tmp/ci_$i" "$INV" "$(ibody support.search_tickets low "$K2" "$A1")" & done; wait
+          c201=$(cat /tmp/ci_*.code | grep -c '^201$'); c200=$(cat /tmp/ci_*.code | grep -c '^200$'); c5=$(cat /tmp/ci_*.code | grep -c '^5')
+          ids=$(jq -r '.invocation_id // empty' /tmp/ci_*.body | sort -u | wc -l)
+          [ "$c201" = "1" ] && [ "$c200" = "5" ] && [ "$c5" = "0" ] && [ "$ids" = "1" ] && ok "IC1 6 identical concurrent calls: 1 created, 5 replays, no 5xx, 1 invocation id" || bad "IC1 created=$c201 replays=$c200 5xx=$c5 distinct_ids=$ids"
+          K3="gate-$(uuidgen)"; rm -f /tmp/cc_*
+          for i in 1 2 3; do ppost "/tmp/cc_x$i" "$INV" "$(ibody support.search_tickets low "$K3" '{"limit":5}')" & done
+          for i in 1 2 3; do ppost "/tmp/cc_y$i" "$INV" "$(ibody support.search_tickets low "$K3" '{"limit":7}')" & done; wait
+          d201=$(cat /tmp/cc_*.code | grep -c '^201$'); d5=$(cat /tmp/cc_*.code | grep -c '^5'); dok=$(cat /tmp/cc_*.code | grep -cE '^(200|409)$')
+          [ "$d201" = "1" ] && [ "$d5" = "0" ] && [ "$dok" = "5" ] && ok "IC2 conflicting concurrent calls: 1 winner, others 200 or 409, no 5xx" || bad "IC2 created=$d201 5xx=$d5 replay_or_conflict=$dok"
+
+          echo "== invoke-tool: gated tool =="
+          K4="gate-$(uuidgen)"; G='{"format":"json","scope":"gate"}'
+          post "$INV" "$(ibody support.export_customer_data medium "$K4" "$G")"
+          expect "IG1 gated tool creates requires_approval invocation" "$CODE" '^201$'
+          [ "$(jq -r '.gated' /tmp/body)" = "true" ] && ok "IG1b gated=true" || bad "IG1b gated flag wrong: $BODY"
+          GINV=$(jq -r '.invocation_id' /tmp/body); GAPP=$(jq -r '.approval_id' /tmp/body)
+          post "$INV" "$(ibody support.export_customer_data medium "$K4" "$G")"
+          expect "IG2 gated replay" "$CODE" '^200$'
+          [ "$(jq -r '.approval_id' /tmp/body)" = "$GAPP" ] && ok "IG2b replay returns same approval id" || bad "IG2b approval id changed: $BODY"
+          post "$REV" "$(jq -nc --arg i "$GINV" '{invocation_id:$i,decision:"rejected",reason:"gate cleanup"}')"
+          expect "IG3 cleanup rejection through review-approval" "$CODE" '^200$'
+
+          echo "== execute-task: guards =="
+          s=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$EXE" -H "Content-Type: application/json" -d '{}'); expect "G1 no auth header rejected" "$s" '^401$'
+          s=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$EXE" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $ANON" -d "{\"task_id\":\"$TASK_A\"}"); expect "G2 anon key rejected" "$s" '^401$'
+          post "$EXE" '{not json'; expect "G3 malformed JSON" "$CODE" '^400$'
+          post "$EXE" '{}'; expect "G4 missing task_id" "$CODE" '^400$'
+          post "$EXE" '{"task_id":"00000000-0000-0000-0000-000000000000"}'; expect "G5 unknown task" "$CODE" '^404$'
+
+          echo "== execute-task: sequential and concurrent =="
+          post "$EXE" "{\"task_id\":\"$TASK_A\"}"; expect "S1 first call executes" "$CODE" '^(200|202)$'
+          post "$EXE" "{\"task_id\":\"$TASK_A\"}"; expect "S2 second call refused" "$CODE" '^409$'
+          rm -f /tmp/cs_*
+          for i in 1 2 3 4 5; do ppost "/tmp/cs_$i" "$EXE" "{\"task_id\":\"$TASK_B\"}" & done; wait
+          w=$(cat /tmp/cs_*.code | grep -cE '^(200|202)$'); c=$(cat /tmp/cs_*.code | grep -c '^409$')
+          [ "$w" = "1" ] && [ "$c" = "4" ] && ok "C1 5 parallel calls: exactly one winner, four 409" || bad "C1 winners=$w conflicts=$c codes=$(cat /tmp/cs_*.code | tr '\n' ' ')"
+
+          echo "== execute-task: approval flow =="
+          post "$EXE" "{\"task_id\":\"$TASK_C\"}"
+          expect "H1 gated task blocks pending approval" "$CODE" '^202$'
+          HINV=$(jq -r '.invocation_id // empty' /tmp/body)
+          post "$EXE" "{\"task_id\":\"$TASK_C\"}"; expect "H2 re-run while blocked is refused" "$CODE" '^409$'
+          post "$REV" "$(jq -nc --arg i "$HINV" '{invocation_id:$i,decision:"approved",reason:"gate"}')"
+          expect "H3 admin approves via review-approval" "$CODE" '^200$'
+          [ "$(jq -r '.invocation_status' /tmp/body)" = "approved" ] && [ "$(jq -r '.task_status' /tmp/body)" = "approved" ] && ok "H3b invocation and task both approved" || bad "H3b states wrong: $BODY"
+          post "$EXE" "{\"task_id\":\"$TASK_C\"}"
+          if [ "$CODE" = "200" ]; then ok "H4 resume executed to completion"
+          elif [ "$CODE" = "502" ] && echo "$BODY" | grep -q "No executor registered"; then ok "H4 resume passed authorization and reached the executor; export executor not implemented in execute-task (expected 502)"
+          else bad "H4 resume failed: $CODE $BODY"; fi
+          post "$EXE" "{\"task_id\":\"$TASK_C\"}"; expect "H5 finished task cannot be re-run" "$CODE" '^409$'
+
+          echo "----"; echo "pass=$pass fail=$fail"
+          echo "::notice title=AiOS gate report (pass=$pass fail=$fail)::${REPORT}"
+          [ "$fail" -eq 0 ]
