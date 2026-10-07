@@ -27,12 +27,12 @@ jobs:
       - name: Run execute-task gate
         run: |
           set -u
-          exec > >(tee /tmp/gate.out) 2>&1
-          trap 'sleep 2; echo "::notice title=gate-results::$(sed -e "s/%/%25/g" -e ":a;N;\$!ba;s/\n/%0A/g" /tmp/gate.out | cut -c1-3500)"' EXIT
+          : > /tmp/gate.out
+          trap 'echo "::notice title=gate-results::$(sed -e "s/%/%25/g" -e ":a;N;\$!ba;s/\n/%0A/g" /tmp/gate.out | cut -c1-3500)"' EXIT
           URL="$SUPABASE_URL/functions/v1/execute-task"
           pass=0; fail=0
-          ok()  { echo "PASS  $1"; pass=$((pass+1)); }
-          bad() { echo "FAIL  $1"; fail=$((fail+1)); }
+          ok()  { echo "PASS  $1" | tee -a /tmp/gate.out; pass=$((pass+1)); }
+          bad() { echo "FAIL  $1" | tee -a /tmp/gate.out; fail=$((fail+1)); }
           expect() { # name, got, regex
             if [[ "$2" =~ $3 ]]; then ok "$1 (got $2)"; else bad "$1 (got $2, wanted $3)"; fi
           }
@@ -46,7 +46,7 @@ jobs:
           echo "::add-mask::$JWT"
 
           call() { # $1 = JSON body; prints HTTP status, body saved to /tmp/body
-            curl -s -o /tmp/body -w "%{http_code}" -X POST "$URL" \
+            curl -s -m 120 -o /tmp/body -w "%{http_code}" -X POST "$URL" \
               -H "Content-Type: application/json" -H "apikey: $ANON" \
               -H "Authorization: Bearer $JWT" -d "$1"
           }
@@ -76,6 +76,7 @@ jobs:
           echo "== Sequential: run once, second call must not re-execute =="
           s1=$(call "{\"task_id\":\"$TASK_A\"}")
           expect "S1 first call executes" "$s1" '^(200|202)$'
+          echo "S1 detail: $(jq -r '.error // .status // empty' /tmp/body 2>/dev/null | head -c 160)" | tee -a /tmp/gate.out
           s2=$(call "{\"task_id\":\"$TASK_A\"}")
           expect "S2 second call refused" "$s2" '^409$'
 
@@ -93,7 +94,7 @@ jobs:
           [ "$conflicts" = "4" ] && ok "C2 four conflicts" || bad "C2 conflicts=$conflicts (wanted 4)"
 
           echo "----"
-          echo "pass=$pass fail=$fail"
+          echo "pass=$pass fail=$fail" | tee -a /tmp/gate.out
           echo "Task A: $TASK_A"
           echo "Task B: $TASK_B"
           echo "Next: run the SQL cross-check for these two task IDs."
