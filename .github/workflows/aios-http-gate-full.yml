@@ -48,11 +48,14 @@ jobs:
           bad() { echo "FAIL  $1"; REPORT="${REPORT}FAIL $(clean "$1")%0A"; fail=$((fail+1)); }
           expect() { if [[ "$2" =~ $3 ]]; then ok "$1 (got $2)"; else bad "$1 (got $2, wanted $3)"; fi; }
 
-          JWT=$(curl -s "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+          LOGIN_CODE=$(curl -s -o /tmp/login -w "%{http_code}" "$SUPABASE_URL/auth/v1/token?grant_type=password" \
             -H "apikey: $ANON" -H "Content-Type: application/json" \
-            -d "$(jq -n --arg e "$TEST_EMAIL" --arg p "$TEST_PASSWORD" '{email:$e,password:$p}')" \
-            | jq -r '.access_token // empty')
-          if [ -z "$JWT" ]; then echo "::error title=AiOS gate::could not sign in the test user"; exit 1; fi
+            -d "$(jq -n --arg e "$TEST_EMAIL" --arg p "$TEST_PASSWORD" '{email:$e,password:$p}')")
+          JWT=$(jq -r '.access_token // empty' /tmp/login)
+          if [ -z "$JWT" ]; then
+            echo "::error title=AiOS gate sign-in::http=$LOGIN_CODE code=$(jq -r '.error_code // .code // .error // empty' /tmp/login) msg=$(jq -r '.msg // .error_description // .message // empty' /tmp/login) email_len=${#TEST_EMAIL} password_len=${#TEST_PASSWORD}"
+            exit 1
+          fi
           echo "::add-mask::$JWT"
 
           post() { CODE=$(curl -s -o /tmp/body -w "%{http_code}" -X POST "$1" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $JWT" -d "$2"); BODY=$(cat /tmp/body); }
