@@ -27,6 +27,8 @@ jobs:
       - name: Run execute-task gate
         run: |
           set -u
+          exec > >(tee /tmp/gate.out) 2>&1
+          trap 'sleep 2; echo "::notice title=gate-results::$(sed -e "s/%/%25/g" -e ":a;N;\$!ba;s/\n/%0A/g" /tmp/gate.out | cut -c1-3500)"' EXIT
           URL="$SUPABASE_URL/functions/v1/execute-task"
           pass=0; fail=0
           ok()  { echo "PASS  $1"; pass=$((pass+1)); }
