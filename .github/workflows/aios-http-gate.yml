@@ -1,0 +1,98 @@
+name: AiOS HTTP gate
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id_a:
+        description: "Queued task ID for the sequential test"
+        required: true
+      task_id_b:
+        description: "A different queued task ID for the concurrent test"
+        required: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: https://jtkcdwhiduixoiodhbfn.supabase.co
+      ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0a2Nkd2hpZHVpeG9pb2RoYmZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczNTY2ODksImV4cCI6MjEwMjkzMjY4OX0.v7k47GZGYJklKJjcZrxQiQTdhSC3dw2CI4XSE_4F1J8  # public anon key (safe to commit)
+      TEST_EMAIL: ${{ secrets.AIOS_TEST_EMAIL }}
+      TEST_PASSWORD: ${{ secrets.AIOS_TEST_PASSWORD }}
+      TASK_A: ${{ inputs.task_id_a }}
+      TASK_B: ${{ inputs.task_id_b }}
+    steps:
+      - name: Run execute-task gate
+        run: |
+          set -u
+          URL="$SUPABASE_URL/functions/v1/execute-task"
+          pass=0; fail=0
+          ok()  { echo "PASS  $1"; pass=$((pass+1)); }
+          bad() { echo "FAIL  $1"; fail=$((fail+1)); }
+          expect() { # name, got, regex
+            if [[ "$2" =~ $3 ]]; then ok "$1 (got $2)"; else bad "$1 (got $2, wanted $3)"; fi
+          }
+
+          # Sign in the test user to get a real session token
+          JWT=$(curl -s "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $ANON" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg e "$TEST_EMAIL" --arg p "$TEST_PASSWORD" '{email:$e,password:$p}')" \
+            | jq -r '.access_token // empty')
+          if [ -z "$JWT" ]; then echo "FAIL  could not sign in the test user"; exit 1; fi
+          echo "::add-mask::$JWT"
+
+          call() { # $1 = JSON body; prints HTTP status, body saved to /tmp/body
+            curl -s -o /tmp/body -w "%{http_code}" -X POST "$URL" \
+              -H "Content-Type: application/json" -H "apikey: $ANON" \
+              -H "Authorization: Bearer $JWT" -d "$1"
+          }
+
+          echo "== Guard checks =="
+          s=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL" -H "Content-Type: application/json" -d '{}')
+          expect "G1 no auth header rejected" "$s" '^401$'
+
+          s=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL" \
+            -H "Content-Type: application/json" -H "apikey: $ANON" \
+            -H "Authorization: Bearer $ANON" -d "{\"task_id\":\"$TASK_A\"}")
+          expect "G2 anon key (not a user session) rejected" "$s" '^401$'
+
+          s=$(call '{not json')
+          expect "G3 malformed JSON" "$s" '^400$'
+
+          s=$(call '{}')
+          expect "G4 missing task_id" "$s" '^400$'
+
+          s=$(call '{"task_id":"00000000-0000-0000-0000-000000000000"}')
+          expect "G5 unknown task" "$s" '^404$'
+
+          s=$(call '{"task_id":"not-a-uuid"}')
+          if [[ "$s" =~ ^4 ]]; then ok "G6 invalid task_id format is 4xx (got $s)"
+          else echo "WARN  G6 invalid task_id format returned $s, should be 4xx (advisory, not blocking)"; fi
+
+          echo "== Sequential: run once, second call must not re-execute =="
+          s1=$(call "{\"task_id\":\"$TASK_A\"}")
+          expect "S1 first call executes" "$s1" '^(200|202)$'
+          s2=$(call "{\"task_id\":\"$TASK_A\"}")
+          expect "S2 second call refused" "$s2" '^409$'
+
+          echo "== Concurrent: 5 parallel calls on one task, exactly one winner =="
+          rm -f /tmp/cs_*
+          for i in 1 2 3 4 5; do
+            ( curl -s -o /dev/null -w "%{http_code}\n" -X POST "$URL" \
+                -H "Content-Type: application/json" -H "apikey: $ANON" \
+                -H "Authorization: Bearer $JWT" -d "{\"task_id\":\"$TASK_B\"}" > /tmp/cs_$i ) &
+          done
+          wait
+          winners=$(cat /tmp/cs_* | grep -cE '^(200|202)$')
+          conflicts=$(cat /tmp/cs_* | grep -c '^409$')
+          [ "$winners" = "1" ] && ok "C1 exactly one winner" || bad "C1 winners=$winners (wanted 1)"
+          [ "$conflicts" = "4" ] && ok "C2 four conflicts" || bad "C2 conflicts=$conflicts (wanted 4)"
+
+          echo "----"
+          echo "pass=$pass fail=$fail"
+          echo "Task A: $TASK_A"
+          echo "Task B: $TASK_B"
+          echo "Next: run the SQL cross-check for these two task IDs."
+          [ "$fail" -eq 0 ]
