@@ -57,9 +57,12 @@ begin
     (i_task, orgA, agA, tk,   'conv', 'requires_approval', ap_task),
     (i_fly,  orgA, agA, null, 'conv', 'running',           ap_fly);
 
+  -- flush deferred FK checks (otherwise ALTER TABLE fails with "pending trigger events"), then restore the production setting
+  execute 'set constraints all immediate';
   foreach t in array array['aios_organizations','aios_agents','aios_tasks','aios_missions','aios_tool_invocations','aios_approvals'] loop
     execute format('alter table public.%I enable trigger user', t);
   end loop;
+  execute 'set constraints all deferred';
 
   -- 0. the pre-check classifies the fixtures
   if private.aios_approval_binding_defect(ap_bad) is distinct from 'agent_organization_mismatch' then raise exception 'defect(ap_bad)=%', private.aios_approval_binding_defect(ap_bad); end if;
