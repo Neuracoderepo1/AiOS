@@ -11,6 +11,40 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS_HEADERS } });
 }
 
+// The service-role client is created without generated Database types, so its type is exactly what createClient infers for
+// this call. Do NOT annotate it as ReturnType<typeof createClient>: createClient is generic, and TypeScript resolves that to
+// SupabaseClient<unknown, ..., never, never>, which turns every query result into `never` and rejects the real client.
+function createAdminClient(url: string, serviceKey: string) {
+  return createClient(url, serviceKey);
+}
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+// Columns selected from public.aios_demo_support_tickets (all NOT NULL in the schema).
+interface SupportTicketRow {
+  id: string;
+  category: string;
+  issue_summary: string;
+  created_at: string;
+}
+
+function isSupportTicketRow(value: unknown): value is SupportTicketRow {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === "string" && typeof row.category === "string" &&
+    typeof row.issue_summary === "string" && typeof row.created_at === "string";
+}
+
+function parseSupportTicketRows(data: unknown): SupportTicketRow[] {
+  if (data === null || data === undefined) return [];
+  if (!Array.isArray(data)) throw new Error("support.search_tickets returned a non-array result");
+  const rows: SupportTicketRow[] = [];
+  for (const item of data) {
+    if (!isSupportTicketRow(item)) throw new Error("support.search_tickets returned a row with an unexpected shape");
+    rows.push(item);
+  }
+  return rows;
+}
+
 async function sha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -95,7 +129,7 @@ function validateAgainstSchema(value: unknown, schema: any, path = "arguments"):
   }
 }
 
-async function executeRegisteredHandler(handler: string, args: Record<string, unknown>, organizationId: string, admin: ReturnType<typeof createClient>): Promise<Record<string, unknown>> {
+async function executeRegisteredHandler(handler: string, args: Record<string, unknown>, organizationId: string, admin: AdminClient): Promise<Record<string, unknown>> {
   switch (handler) {
     case "support.search_tickets": {
       const limit = Number(args.limit);
@@ -110,7 +144,7 @@ async function executeRegisteredHandler(handler: string, args: Record<string, un
       if (typeof filters.created_before === "string") q = q.lte("created_at", filters.created_before);
       const { data: tickets, error } = await q.order("created_at", { ascending: false });
       if (error) throw new Error(`support.search_tickets failed: ${error.message}`);
-      const rows = tickets ?? [];
+      const rows = parseSupportTicketRows(tickets);
       const counts: Record<string, number> = {};
       for (const row of rows) counts[row.category] = (counts[row.category] ?? 0) + 1;
       const summary = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([category, count]) => ({ category, count }));
@@ -142,7 +176,7 @@ Deno.serve(async (req: Request) => {
   const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
   const { data: userData, error: userError } = await userClient.auth.getUser();
   if (userError || !userData?.user) return json({ error: "Invalid or expired session" }, 401);
-  const admin = createClient(supabaseUrl, serviceKey);
+  const admin = createAdminClient(supabaseUrl, serviceKey);
 
   const { data: task, error: taskError } = await admin.from("aios_tasks").select("id,organization_id,mission_id,assigned_agent_id,title,instructions,status,risk_level,result").eq("id", task_id).maybeSingle();
   if (taskError) return json({ error: "Task lookup failed", detail: taskError.message }, 500);
