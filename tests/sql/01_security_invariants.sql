@@ -32,14 +32,10 @@ begin
   if v is not null then raise exception 'duplicate indexes: %', v; end if;
 
   -- 6. Disposition table is append-only
-  begin
-    update public.aios_backlog_dispositions set rationale = rationale where false;
-  exception when others then null;
-  end;
   if not exists (select 1 from pg_trigger where tgname='trg_aios_backlog_dispositions_immutable') then raise exception 'disposition immutability trigger missing'; end if;
 
   -- 7. Convergence function runs and returns its report shape on an empty or populated database
-  if (private.aios_expire_stale_approvals()) ? 'skipped_in_flight' is not true then raise exception 'expiry function report shape wrong'; end if;
+  if not ((private.aios_expire_stale_approvals()) ? 'skipped_in_flight') then raise exception 'expiry function report shape wrong'; end if;
   -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) with a non-in-flight invocation may remain
   if exists (select 1 from public.aios_approvals ap where ap.status='pending' and ap.expires_at is null and ap.created_at < now()-interval '24 hours'
              and not exists (select 1 from public.aios_tool_invocations i where i.approval_id=ap.id and i.status<>'requires_approval')) then
