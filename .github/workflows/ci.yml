@@ -19,7 +19,7 @@ jobs:
         run: |
           set +e
           : > /tmp/out.txt
-          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; deno check "$f" >> /tmp/out.txt 2>&1 || echo "FAILED $f" >> /tmp/out.txt; done
+          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] || echo "FAILED $f" >> /tmp/out.txt; done
           if grep -q '^FAILED' /tmp/out.txt; then
             echo "::error title=typecheck::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
