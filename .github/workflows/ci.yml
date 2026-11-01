@@ -16,7 +16,14 @@ jobs:
       - uses: denoland/setup-deno@v2
         with: { deno-version: v2.x }
       - name: Type-check Edge Functions
-        run: for f in supabase/functions/*/index.ts; do deno check "$f"; done
+        run: |
+          set +e
+          : > /tmp/out.txt
+          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; deno check "$f" >> /tmp/out.txt 2>&1 || echo "FAILED $f" >> /tmp/out.txt; done
+          if grep -q '^FAILED' /tmp/out.txt; then
+            echo "::error title=typecheck::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
 
   migrations-and-sql-tests:
     runs-on: ubuntu-latest
@@ -30,8 +37,14 @@ jobs:
           test ! -s /tmp/dups
       - name: Start local stack and apply ALL migrations from scratch
         run: |
-          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector
-          supabase db reset
+          set +e
+          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector > /tmp/start.txt 2>&1
+          rc=$?
+          if [ $rc -eq 0 ]; then supabase db reset > /tmp/reset.txt 2>&1; rc=$?; cat /tmp/reset.txt >> /tmp/start.txt; fi
+          if [ $rc -ne 0 ]; then
+            echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
       - name: Run SQL regression and invariant tests
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
