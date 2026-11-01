@@ -36,10 +36,27 @@ begin
 
   -- 7. Convergence function runs and returns its report shape on an empty or populated database
   if not ((private.aios_expire_stale_approvals()) ? 'skipped_in_flight') then raise exception 'expiry function report shape wrong'; end if;
-  -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) with a non-in-flight invocation may remain
+  -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) may remain, except records whose binding is
+  --    defective (the trigger refuses every update to them): those must instead be protected by a manual_review disposition.
   if exists (select 1 from public.aios_approvals ap where ap.status='pending' and ap.expires_at is null and ap.created_at < now()-interval '24 hours'
+             and private.aios_approval_binding_defect(ap.id) is null
              and not exists (select 1 from public.aios_tool_invocations i where i.approval_id=ap.id and i.status<>'requires_approval')) then
     raise exception 'legacy pending approvals remain after convergence';
   end if;
+  -- 9. Every pending approval with a defective binding has a manual_review disposition (nothing is silently stranded)
+  select string_agg(ap.id::text, ', ') into v from public.aios_approvals ap
+   where ap.status='pending' and private.aios_approval_binding_defect(ap.id) is not null
+     and not exists (select 1 from public.aios_backlog_dispositions d where d.entity_type='approval' and d.entity_id=ap.id and d.disposition='manual_review');
+  if v is not null then raise exception 'defective pending approvals without manual_review disposition: %', v; end if;
+  -- 10. Server-only access model for tables in schema private: no table-, column- or PUBLIC privileges for client roles
+  select string_agg(c.relname, ', ') into v from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='private' and c.relkind in ('r','p','v','m','f')
+     and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger')
+       or has_table_privilege('authenticated', c.oid, 'select,insert,update,delete,truncate,references,trigger')
+       or exists (select 1 from aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a where a.grantee = 0)
+       or exists (select 1 from pg_attribute at where at.attrelid=c.oid and at.attnum>0 and not at.attisdropped
+                   and (has_column_privilege('anon', c.oid, at.attnum, 'select,insert,update,references')
+                     or has_column_privilege('authenticated', c.oid, at.attnum, 'select,insert,update,references'))));
+  if v is not null then raise exception 'client roles hold privileges on private tables: %', v; end if;
 end $$;
 select 'ok: security invariants' as result;
