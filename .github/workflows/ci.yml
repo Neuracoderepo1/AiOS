@@ -19,7 +19,7 @@ jobs:
         run: |
           set +e
           : > /tmp/out.txt
-          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] || echo "FAILED $f" >> /tmp/out.txt; done
+          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; NO_COLOR=1 deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] || echo "FAILED $f" >> /tmp/out.txt; done
           if grep -q '^FAILED' /tmp/out.txt; then
             echo "::error title=typecheck::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
@@ -40,8 +40,7 @@ jobs:
           set +e
           supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector > /tmp/start.txt 2>&1
           rc=$?
-          if [ $rc -eq 0 ]; then supabase db reset > /tmp/reset.txt 2>&1; rc=$?; cat /tmp/reset.txt >> /tmp/start.txt; fi
-          if [ $rc -ne 0 ]; then
+                    if [ $rc -ne 0 ]; then
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
