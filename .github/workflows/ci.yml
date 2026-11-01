@@ -1,0 +1,41 @@
+name: AiOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  functions-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - name: Type-check Edge Functions
+        run: for f in supabase/functions/*/index.ts; do deno check "$f"; done
+
+  migrations-and-sql-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Migration version uniqueness and ordering
+        run: |
+          ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
+          test ! -s /tmp/dups
+      - name: Start local stack and apply ALL migrations from scratch
+        run: |
+          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector
+          supabase db reset
+      - name: Run SQL regression and invariant tests
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          for t in tests/sql/*.sql; do echo "== $t"; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t"; done
+      - name: Stop
+        if: always()
+        run: supabase stop --no-backup
