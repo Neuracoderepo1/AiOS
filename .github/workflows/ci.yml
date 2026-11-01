@@ -1,0 +1,59 @@
+name: AiOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  functions-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - name: Type-check Edge Functions
+        run: |
+          set +e
+          : > /tmp/out.txt
+          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; NO_COLOR=1 deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] || echo "FAILED $f" >> /tmp/out.txt; done
+          if grep -q '^FAILED' /tmp/out.txt; then
+            echo "::error title=typecheck::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
+
+  migrations-and-sql-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Migration version uniqueness and ordering
+        run: |
+          ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
+          test ! -s /tmp/dups
+      - name: Start local stack and apply ALL migrations from scratch
+        run: |
+          set +e
+          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector > /tmp/start.txt 2>&1
+          rc=$?
+                    if [ $rc -ne 0 ]; then
+            echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
+      - name: Run SQL regression and invariant tests
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          : > /tmp/sql.txt
+          for t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 || { echo "FAILED $t" >> /tmp/sql.txt; }; done
+          if grep -q '^FAILED' /tmp/sql.txt; then
+            echo "::error title=sql-tests::$(head -c 3000 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
+      - name: Stop
+        if: always()
+        run: supabase stop --no-backup

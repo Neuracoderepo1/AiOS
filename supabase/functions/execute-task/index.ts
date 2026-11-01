@@ -11,6 +11,40 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS_HEADERS } });
 }
 
+// The service-role client is created without generated Database types, so its type is exactly what createClient infers for
+// this call. Do NOT annotate it as ReturnType<typeof createClient>: createClient is generic, and TypeScript resolves that to
+// SupabaseClient<unknown, ..., never, never>, which turns every query result into `never` and rejects the real client.
+function createAdminClient(url: string, serviceKey: string) {
+  return createClient(url, serviceKey);
+}
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+// Columns selected from public.aios_demo_support_tickets (all NOT NULL in the schema).
+interface SupportTicketRow {
+  id: string;
+  category: string;
+  issue_summary: string;
+  created_at: string;
+}
+
+function isSupportTicketRow(value: unknown): value is SupportTicketRow {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === "string" && typeof row.category === "string" &&
+    typeof row.issue_summary === "string" && typeof row.created_at === "string";
+}
+
+function parseSupportTicketRows(data: unknown): SupportTicketRow[] {
+  if (data === null || data === undefined) return [];
+  if (!Array.isArray(data)) throw new Error("support.search_tickets returned a non-array result");
+  const rows: SupportTicketRow[] = [];
+  for (const item of data) {
+    if (!isSupportTicketRow(item)) throw new Error("support.search_tickets returned a row with an unexpected shape");
+    rows.push(item);
+  }
+  return rows;
+}
+
 async function sha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -39,6 +73,16 @@ async function callClaude(apiKey: string, model: string, prompt: string, maxToke
   const text = data.content?.find((b: { type: string }) => b.type === "text")?.text;
   if (!text) throw new Error("Model returned no text content");
   return { text, input_tokens: data.usage?.input_tokens ?? 0, output_tokens: data.usage?.output_tokens ?? 0, latency_ms };
+}
+
+// Best-effort writes (observability/memory): never block the critical path, but never fail silently either.
+async function bestEffort(label: string, op: PromiseLike<{ error: { message: string } | null }>) {
+  try {
+    const { error } = await op;
+    if (error) console.error(`[execute-task] best-effort write failed: ${label}: ${error.message}`);
+  } catch (e) {
+    console.error(`[execute-task] best-effort write threw: ${label}: ${String(e)}`);
+  }
 }
 
 function parseJsonObject(text: string) {
@@ -85,7 +129,7 @@ function validateAgainstSchema(value: unknown, schema: any, path = "arguments"):
   }
 }
 
-async function executeRegisteredHandler(handler: string, args: Record<string, unknown>, organizationId: string, admin: ReturnType<typeof createClient>): Promise<Record<string, unknown>> {
+async function executeRegisteredHandler(handler: string, args: Record<string, unknown>, organizationId: string, admin: AdminClient): Promise<Record<string, unknown>> {
   switch (handler) {
     case "support.search_tickets": {
       const limit = Number(args.limit);
@@ -100,7 +144,7 @@ async function executeRegisteredHandler(handler: string, args: Record<string, un
       if (typeof filters.created_before === "string") q = q.lte("created_at", filters.created_before);
       const { data: tickets, error } = await q.order("created_at", { ascending: false });
       if (error) throw new Error(`support.search_tickets failed: ${error.message}`);
-      const rows = tickets ?? [];
+      const rows = parseSupportTicketRows(tickets);
       const counts: Record<string, number> = {};
       for (const row of rows) counts[row.category] = (counts[row.category] ?? 0) + 1;
       const summary = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([category, count]) => ({ category, count }));
@@ -132,7 +176,7 @@ Deno.serve(async (req: Request) => {
   const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
   const { data: userData, error: userError } = await userClient.auth.getUser();
   if (userError || !userData?.user) return json({ error: "Invalid or expired session" }, 401);
-  const admin = createClient(supabaseUrl, serviceKey);
+  const admin = createAdminClient(supabaseUrl, serviceKey);
 
   const { data: task, error: taskError } = await admin.from("aios_tasks").select("id,organization_id,mission_id,assigned_agent_id,title,instructions,status,risk_level,result").eq("id", task_id).maybeSingle();
   if (taskError) return json({ error: "Task lookup failed", detail: taskError.message }, 500);
@@ -140,7 +184,20 @@ Deno.serve(async (req: Request) => {
   const { data: member } = await userClient.rpc("aios_is_org_member", { org_id: task.organization_id });
   if (!member) return json({ error: "You are not a member of this organization" }, 403);
   if (!task.assigned_agent_id) return json({ error: "Task has no assigned agent" }, 422);
-  if (!["queued", "approved"].includes(task.status)) return json({ error: `Task is not executable (current status: ${task.status})` }, 409);
+  if (!["queued", "approved"].includes(task.status)) {
+    // Retry contract: a client that supplied an idempotency key and retries after the task has moved on gets the recorded
+    // state of its own invocation back. This path is read-only: it never claims the task, calls a model, or runs a tool.
+    if (requestedIdempotency) {
+      const { data: prior, error: priorError } = await admin.from("aios_tool_invocations").select("id,task_id,status,approval_id,result,error_code,error_message").eq("organization_id", task.organization_id).eq("idempotency_key", requestedIdempotency).maybeSingle();
+      if (!priorError && prior && prior.task_id === task.id) {
+        if (prior.status === "succeeded") return json({ task_id: task.id, status: task.status, invocation_id: prior.id, result: task.result ?? prior.result, idempotent_replay: true });
+        if (prior.status === "requires_approval") return json({ task_id: task.id, status: task.status, invocation_id: prior.id, approval_id: prior.approval_id, idempotent_replay: true }, 202);
+        if (prior.status === "executing") return json({ task_id: task.id, status: task.status, invocation_id: prior.id, idempotent_replay: true }, 202);
+        return json({ error: `Task is not executable (current status: ${task.status})`, task_status: task.status, invocation_id: prior.id, invocation_status: prior.status, error_code: prior.error_code ?? null, idempotent_replay: true }, 409);
+      }
+    }
+    return json({ error: `Task is not executable (current status: ${task.status})` }, 409);
+  }
 
   const { data: agent, error: agentError } = await admin.from("aios_agents").select("id,name,role,primary_model,status,authority").eq("id", task.assigned_agent_id).maybeSingle();
   if (agentError || !agent) return json({ error: "Assigned agent not found" }, 500);
@@ -155,31 +212,60 @@ Deno.serve(async (req: Request) => {
   if (taskStartError) return json({ error: "Failed to start task", detail: taskStartError.message }, 500);
   if (!taskClaimed || taskClaimed.length !== 1) return json({ error: "Task was already claimed by another execution", task_id: task.id }, 409);
 
+  // From here the task is ours and 'running'. Every exit that is not success or an intentional block must leave a terminal,
+  // diagnosable state (stage + error) on BOTH the task and its mission. Anything that still slips through is converged by
+  // private.aios_reap_stale_tasks() (pg_cron).
+  // failTaskAndMission writes an exact result body (callers keep their documented error codes); stage is optional diagnostics.
+  const failTaskAndMission = async (result: Record<string, unknown>, stage?: string) => {
+    const patch: Record<string, unknown> = { status: "failed", result, completed_at: new Date().toISOString() };
+    if (stage) {
+      patch.failed_stage = stage;
+      patch.last_error = String(result.detail ?? result.error ?? stage).slice(0, 1000);
+    }
+    const { error: taskErr } = await admin.from("aios_tasks").update(patch).eq("id", task.id).eq("status", "running");
+    if (taskErr) console.error(`[execute-task] failed to record task failure (${stage ?? "unstaged"}) for ${task.id}: ${taskErr.message}`);
+    const { error: missionErr } = await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+    if (missionErr) console.error(`[execute-task] failed to record mission failure for ${task.mission_id}: ${missionErr.message}`);
+  };
+  const failClaimed = async (stage: string, err: unknown, extra: Record<string, unknown> = {}) => {
+    const message = String(err).slice(0, 1000);
+    await failTaskAndMission({ error: `${stage}_failed`, detail: message, ...extra }, stage);
+  };
+
   const model = "claude-sonnet-4-6";
   const allowedTools = agent.authority?.allowed_tools ?? [];
   const proposalPrompt = `You are the execution planner for AiOS agent ${agent.name}. The database kernel controls authorization. Propose exactly one tool call for this task. Return ONLY JSON: {"tool_key":string,"arguments":object}. Choose only from these contract tools: ${JSON.stringify(allowedTools)}. Never invent a tool. Task: ${task.title}. Instructions: ${task.instructions}`;
-  const proposal = await callClaude(anthropicKey, model, proposalPrompt, 600);
-  await admin.from("aios_model_runs").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, provider: "anthropic", model, input_hash: await sha256(proposalPrompt), output_hash: await sha256(proposal.text), prompt_reference: "kernel.tool_selection.v2.registry", input_tokens: proposal.input_tokens, output_tokens: proposal.output_tokens, latency_ms: proposal.latency_ms, status: "succeeded", outcome: "tool_proposal" });
+  let proposal: Awaited<ReturnType<typeof callClaude>>;
+  try {
+    proposal = await callClaude(anthropicKey, model, proposalPrompt, 600);
+  } catch (e) {
+    await failClaimed("model_proposal", e, { tool_executed: false });
+    return json({ error: "Model request failed before any tool was proposed", detail: String(e), tool_executed: false }, 502);
+  }
+  await bestEffort("model_runs:tool_proposal", admin.from("aios_model_runs").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, provider: "anthropic", model, input_hash: await sha256(proposalPrompt), output_hash: await sha256(proposal.text), prompt_reference: "kernel.tool_selection.v2.registry", input_tokens: proposal.input_tokens, output_tokens: proposal.output_tokens, latency_ms: proposal.latency_ms, status: "succeeded", outcome: "tool_proposal" }));
 
   let proposed: { tool_key: string; arguments: Record<string, unknown> };
   try {
     proposed = parseJsonObject(proposal.text);
     if (typeof proposed.tool_key !== "string" || !proposed.arguments || typeof proposed.arguments !== "object" || Array.isArray(proposed.arguments)) throw new Error("invalid tool proposal shape");
   } catch (e) {
-    await admin.from("aios_tasks").update({ status: "failed", result: { error: "invalid_model_tool_proposal", detail: String(e) }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+    await failTaskAndMission({ error: "invalid_model_tool_proposal", detail: String(e) }, "proposal_validation");
     return json({ error: "Model produced an invalid tool proposal", detail: String(e) }, 422);
   }
 
   const { data: tool, error: toolError } = await admin.from("aios_tools").select("id,tool_key,name,version,risk_level,input_schema,output_schema,handler,status,is_enabled,requires_approval,idempotency_required,timeout_ms").eq("tool_key", proposed.tool_key).maybeSingle();
-  if (toolError) return json({ error: "Tool registry lookup failed", detail: toolError.message }, 500);
+  if (toolError) {
+    await failClaimed("tool_registry_lookup", toolError.message, { tool_executed: false });
+    return json({ error: "Tool registry lookup failed", detail: toolError.message }, 500);
+  }
   if (!tool || !tool.is_enabled || tool.status !== "active") {
-    await admin.from("aios_tasks").update({ status: "failed", result: { error: "tool_unavailable", tool_key: proposed.tool_key }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+    await failTaskAndMission({ error: "tool_unavailable", tool_key: proposed.tool_key }, "tool_unavailable");
     return json({ error: "Tool is unavailable in the registry" }, 422);
   }
 
   try { validateAgainstSchema(proposed.arguments, tool.input_schema); }
   catch (e) {
-    await admin.from("aios_tasks").update({ status: "failed", result: { error: "invalid_tool_arguments", detail: String(e), tool_key: tool.tool_key, registry_version: tool.version }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+    await failTaskAndMission({ error: "invalid_tool_arguments", detail: String(e), tool_key: tool.tool_key, registry_version: tool.version }, "argument_validation");
     return json({ error: "Tool arguments rejected by registry schema", detail: String(e), tool_key: tool.tool_key, registry_version: tool.version }, 422);
   }
 
@@ -190,14 +276,10 @@ Deno.serve(async (req: Request) => {
   const sameBinding = (row: Record<string, any>) =>
     row.agent_id === agent.id && row.tool_key === tool.tool_key && (row.task_id ?? null) === task.id &&
     canonicalJson(row.arguments ?? {}) === canonicalJson(proposed.arguments);
-  const failTaskAndMission = async (result: Record<string, unknown>) => {
-    await admin.from("aios_tasks").update({ status: "failed", result, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
-    await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
-  };
   // Existing invocation for this key is authoritative: validate it is the same request, then replay its state. Never proceeds to another insert.
   const replayExisting = async (row: Record<string, any>): Promise<Response> => {
     if (!sameBinding(row)) {
-      await admin.from("aios_tasks").update({ status: "failed", result: { error: "idempotency_key_conflict", tool_key: tool.tool_key }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+      await failTaskAndMission({ error: "idempotency_key_conflict", tool_key: tool.tool_key }, "idempotency_conflict");
       return json({ error: "Idempotency key is already bound to a different request" }, 409);
     }
     switch (row.status) {
@@ -216,7 +298,10 @@ Deno.serve(async (req: Request) => {
   };
 
   const { data: existing, error: existingError } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
-  if (existingError) return json({ error: "Invocation lookup failed", detail: existingError.message }, 500);
+  if (existingError) {
+    await failClaimed("invocation_lookup", existingError.message, { tool_executed: false });
+    return json({ error: "Invocation lookup failed", detail: existingError.message }, 500);
+  }
   // Resume: a human approved this exact invocation (same agent, tool, task, arguments). The approval is bound to this row,
   // so run it as-is: skip the insert and fall through to kernel authorization and execution.
   let invocation: Record<string, any>;
@@ -229,19 +314,24 @@ Deno.serve(async (req: Request) => {
   if (invError) {
     if (invError.code === "23505") {
       const { data: winner, error: winnerError } = await admin.from("aios_tool_invocations").select("*").eq("organization_id", task.organization_id).eq("idempotency_key", idempotencyKey).maybeSingle();
-      if (winnerError) return json({ error: "Duplicate invocation detected but winner lookup failed", detail: winnerError.message }, 500);
-      if (!winner) return json({ error: "Duplicate invocation detected but original invocation was not found" }, 409);
+      if (winnerError) {
+        await failClaimed("idempotency_winner_lookup", winnerError.message, { tool_executed: false });
+        return json({ error: "Duplicate invocation detected but winner lookup failed", detail: winnerError.message }, 500);
+      }
+      if (!winner) {
+        await failClaimed("idempotency_winner_lookup", "original invocation not found after duplicate-key conflict", { tool_executed: false });
+        return json({ error: "Duplicate invocation detected but original invocation was not found" }, 409);
+      }
       return await replayExisting(winner);
     }
-    await admin.from("aios_tasks").update({ status: "failed", result: { error: "invocation_creation_failed", detail: invError.message }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+    await failTaskAndMission({ error: "invocation_creation_failed", detail: invError.message }, "invocation_creation");
     return json({ error: "Failed to create invocation", detail: invError.message }, 500);
   }
   invocation = inserted;
   }
 
   if (invocation.status === "denied") {
-    await admin.from("aios_tasks").update({ status: "failed", result: { denied: true, reason: invocation.result?.kernel_reason }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
-    await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+    await failTaskAndMission({ denied: true, reason: invocation.result?.kernel_reason });
     return json({ task_id: task.id, status: "failed", invocation_id: invocation.id, reason: invocation.result?.kernel_reason }, 403);
   }
 
@@ -254,7 +344,7 @@ Deno.serve(async (req: Request) => {
   const { data: authorized, error: authError } = await admin.rpc("aios_kernel_authorize_invocation", { p_invocation_id: invocation.id });
   if (authError || !authorized) {
     await admin.from("aios_tool_invocations").update({ status: "failed", error_code: "AUTHORIZATION_RECHECK_FAILED", error_message: authError?.message ?? "kernel authorization failed", completed_at: new Date().toISOString() }).eq("id", invocation.id).eq("status", "approved");
-    await admin.from("aios_tasks").update({ status: "failed", result: { error: "kernel_authorization_failed", detail: authError?.message }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+    await failTaskAndMission({ error: "kernel_authorization_failed", detail: authError?.message }, "kernel_authorization");
     return json({ error: "Kernel authorization failed", detail: authError?.message }, 403);
   }
 
@@ -266,19 +356,28 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     const message = String(e);
     await admin.from("aios_tool_invocations").update({ status: "failed", error_code: "TOOL_EXECUTION_FAILED", error_message: message, retry_count: 0, completed_at: new Date().toISOString() }).eq("id", invocation.id).eq("status", "executing");
-    await admin.from("aios_tasks").update({ status: "failed", result: { error: "tool_execution_failed", detail: message }, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
-    await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+    await failTaskAndMission({ error: "tool_execution_failed", detail: message }, "tool_execution");
     return json({ error: "Registered tool execution failed", detail: message }, 502);
   }
   const toolLatency = Date.now() - toolStarted;
   const resultHash = await sha256(toolResult);
 
   const { error: invSuccessError } = await admin.from("aios_tool_invocations").update({ status: "succeeded", result: toolResult, result_hash: resultHash, completed_at: new Date().toISOString() }).eq("id", invocation.id).eq("status", "executing");
-  if (invSuccessError) return json({ error: "Failed to seal invocation result", detail: invSuccessError.message }, 500);
+  if (invSuccessError) {
+    await failClaimed("seal_invocation", invSuccessError.message, { invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false });
+    return json({ error: "Failed to seal invocation result", detail: invSuccessError.message, invocation_id: invocation.id }, 500);
+  }
 
   const finalPrompt = `You are ${agent.name}, an AiOS ${agent.role}. Analyze ONLY the verified tool result below. Task: ${task.title}. Return ONLY JSON with keys summary (string) and findings (array of exactly five objects with category, count, problem). Do not invent categories or counts. Tool result: ${JSON.stringify(toolResult)}`;
-  const final = await callClaude(anthropicKey, model, finalPrompt, 1200);
-  await admin.from("aios_model_runs").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, provider: "anthropic", model, input_hash: await sha256(finalPrompt), output_hash: await sha256(final.text), prompt_reference: "kernel.task_analysis.v2.registry", input_tokens: final.input_tokens, output_tokens: final.output_tokens, latency_ms: final.latency_ms, status: "succeeded", outcome: "task_analysis" });
+  let final: Awaited<ReturnType<typeof callClaude>>;
+  try {
+    final = await callClaude(anthropicKey, model, finalPrompt, 1200);
+  } catch (e) {
+    // The tool already succeeded and its result is sealed on the invocation. Record the stage and never re-run the tool.
+    await failClaimed("final_analysis", e, { invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false, tool_result_preserved: true });
+    return json({ error: "Final analysis failed after the tool succeeded; the tool result is preserved and the tool was not re-executed", detail: String(e), invocation_id: invocation.id }, 502);
+  }
+  await bestEffort("model_runs:task_analysis", admin.from("aios_model_runs").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, provider: "anthropic", model, input_hash: await sha256(finalPrompt), output_hash: await sha256(final.text), prompt_reference: "kernel.task_analysis.v2.registry", input_tokens: final.input_tokens, output_tokens: final.output_tokens, latency_ms: final.latency_ms, status: "succeeded", outcome: "task_analysis" }));
 
   let finalOutput: any;
   try { finalOutput = parseJsonObject(final.text); } catch { finalOutput = { summary: final.text, findings: [] }; }
@@ -294,16 +393,27 @@ Deno.serve(async (req: Request) => {
 
   const taskResult = { objective: task.instructions, tool: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_result: { count: toolResult.count, summary: toolResult.summary }, output: finalOutput, evaluation: { overall_score: score, correctness, completeness, policy_compliance: policy, tool_efficiency: efficiency, execution_success: executionSuccess }, model_run: { provider: "anthropic", model } };
   const { error: taskCompleteError } = await admin.from("aios_tasks").update({ status: "completed", result: taskResult, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
-  if (taskCompleteError) return json({ error: "Failed to complete task", detail: taskCompleteError.message }, 500);
+  if (taskCompleteError) {
+    await failClaimed("task_completion", taskCompleteError.message, { invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false });
+    return json({ error: "Failed to complete task", detail: taskCompleteError.message, invocation_id: invocation.id }, 500);
+  }
 
-  const { data: evaluation, error: evaluationError } = await admin.rpc("aios_record_evaluation", { p_task_id: task.id, p_invocation_id: invocation.id, p_correctness: correctness, p_completeness: completeness, p_policy: policy, p_efficiency: efficiency, p_execution: executionSuccess, p_summary: `Kernel evaluation: ${Math.round(score * 100)}%` });
-  if (evaluationError) return json({ error: "Evaluation failed", detail: evaluationError.message }, 500);
-
-  await admin.from("aios_memory").insert({ organization_id: task.organization_id, agent_id: agent.id, scope: "episodic", content: JSON.stringify({ task_objective: task.instructions, tool_used: tool.tool_key, registry_version: tool.version, important_findings: expected, result_summary: finalOutput.summary ?? null, success: true, evaluation_score: score, timestamp: new Date().toISOString() }), metadata: { task_id: task.id, mission_id: task.mission_id, invocation_id: invocation.id, memory_type: "task_execution" } });
-
+  // The task is now durably completed. Settle the mission and episodic memory BEFORE the evaluation record, so a failed
+  // evaluation write can never leave the mission stuck 'running' or drop memory of a completed task.
   const { data: remaining } = await admin.from("aios_tasks").select("status").eq("mission_id", task.mission_id);
   const missionDone = (remaining ?? []).length > 0 && (remaining ?? []).every((x) => x.status === "completed");
-  if (missionDone) await admin.from("aios_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+  if (missionDone) {
+    const { error: missionDoneError } = await admin.from("aios_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+    if (missionDoneError) console.error(`[execute-task] failed to complete mission ${task.mission_id}: ${missionDoneError.message}`);
+  }
+
+  await bestEffort("memory:episodic", admin.from("aios_memory").insert({ organization_id: task.organization_id, agent_id: agent.id, scope: "episodic", content: JSON.stringify({ task_objective: task.instructions, tool_used: tool.tool_key, registry_version: tool.version, important_findings: expected, result_summary: finalOutput.summary ?? null, success: true, evaluation_score: score, timestamp: new Date().toISOString() }), metadata: { task_id: task.id, mission_id: task.mission_id, invocation_id: invocation.id, memory_type: "task_execution" } }));
+
+  const { data: evaluation, error: evaluationError } = await admin.rpc("aios_record_evaluation", { p_task_id: task.id, p_invocation_id: invocation.id, p_correctness: correctness, p_completeness: completeness, p_policy: policy, p_efficiency: efficiency, p_execution: executionSuccess, p_summary: `Kernel evaluation: ${Math.round(score * 100)}%` });
+  if (evaluationError) {
+    console.error(`[execute-task] evaluation record failed for task ${task.id}: ${evaluationError.message}`);
+    return json({ error: "Evaluation failed", detail: evaluationError.message, task_id: task.id, task_completed: true, mission_status: missionDone ? "completed" : "running" }, 500);
+  }
 
   return json({ task_id: task.id, invocation_id: invocation.id, status: "completed", tool_key: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_latency_ms: toolLatency, result: taskResult, evaluation, mission_status: missionDone ? "completed" : "running" }, 200);
 });

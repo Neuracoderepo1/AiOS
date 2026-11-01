@@ -40,8 +40,51 @@ type InvocationRequest = {
   arguments: unknown;
 };
 
+// The service-role client is created without generated Database types, so its type is exactly what createClient infers for
+// this call. Do NOT annotate it as ReturnType<typeof createClient>: createClient is generic, and TypeScript resolves that to
+// SupabaseClient<unknown, ..., never, never>, which turns every query result into `never` and rejects the real client.
+function createAdminClient(url: string, serviceKey: string) {
+  return createClient(url, serviceKey);
+}
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+// Columns selected from public.aios_tool_invocations by findExisting (see EXISTING_COLUMNS).
+interface ExistingInvocation {
+  id: string;
+  status: string;
+  approval_id: string | null;
+  agent_id: string;
+  task_id: string | null;
+  tool_key: string | null;
+  risk_level: string | null;
+  arguments: unknown;
+}
+
+function toExistingInvocation(value: unknown): ExistingInvocation | null {
+  if (typeof value !== "object" || value === null) return null;
+  const row = value as Record<string, unknown>;
+  const nullableString = (v: unknown) => v === null || v === undefined || typeof v === "string";
+  if (
+    typeof row.id !== "string" || typeof row.status !== "string" || typeof row.agent_id !== "string" ||
+    !nullableString(row.approval_id) || !nullableString(row.task_id) ||
+    !nullableString(row.tool_key) || !nullableString(row.risk_level)
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    status: row.status,
+    approval_id: (row.approval_id as string | null | undefined) ?? null,
+    agent_id: row.agent_id,
+    task_id: (row.task_id as string | null | undefined) ?? null,
+    tool_key: (row.tool_key as string | null | undefined) ?? null,
+    risk_level: (row.risk_level as string | null | undefined) ?? null,
+    arguments: row.arguments,
+  };
+}
+
 function sameRequest(
-  row: Record<string, unknown>,
+  row: ExistingInvocation,
   request: InvocationRequest,
 ): boolean {
   return (
@@ -56,17 +99,29 @@ function sameRequest(
 const EXISTING_COLUMNS =
   "id,status,approval_id,agent_id,task_id,tool_key,risk_level,arguments";
 
+type FindExistingResult =
+  | { ok: true; invocation: ExistingInvocation | null }
+  | { ok: false };
+
+// Fails closed: a query error OR a row that does not have the expected shape is reported as a failed lookup, never trusted.
 async function findExisting(
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   organizationId: string,
   idempotencyKey: string,
-) {
-  return await admin
+): Promise<FindExistingResult> {
+  const { data, error } = await admin
     .from("aios_tool_invocations")
     .select(EXISTING_COLUMNS)
     .eq("organization_id", organizationId)
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
+
+  if (error) return { ok: false };
+  if (data === null || data === undefined) return { ok: true, invocation: null };
+
+  const invocation = toExistingInvocation(data);
+  if (!invocation) return { ok: false };
+  return { ok: true, invocation };
 }
 
 Deno.serve(async (req: Request) => {
@@ -126,7 +181,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid or expired session" }, 401);
   }
 
-  const admin = createClient(url, secret);
+  const admin = createAdminClient(url, secret);
 
   const {
     data: agent,
@@ -172,18 +227,17 @@ Deno.serve(async (req: Request) => {
     arguments: args,
   };
 
-  const {
-    data: existing,
-    error: existingError,
-  } = await findExisting(
+  const existingLookup = await findExisting(
     admin,
     agent.organization_id,
     idempotency_key,
   );
 
-  if (existingError) {
+  if (!existingLookup.ok) {
     return json({ error: "Invocation lookup failed" }, 500);
   }
+
+  const existing = existingLookup.invocation;
 
   if (existing) {
     if (!sameRequest(existing, request)) {
@@ -222,20 +276,19 @@ Deno.serve(async (req: Request) => {
 
   if (ie) {
     if (ie.code === "23505") {
-      const {
-        data: winner,
-        error: winnerError,
-      } = await findExisting(
+      const winnerLookup = await findExisting(
         admin,
         agent.organization_id,
         idempotency_key,
       );
 
-      if (winnerError) {
+      if (!winnerLookup.ok) {
         return json({
           error: "Duplicate invocation detected but winner lookup failed",
         }, 500);
       }
+
+      const winner = winnerLookup.invocation;
 
       if (!winner) {
         return json({
