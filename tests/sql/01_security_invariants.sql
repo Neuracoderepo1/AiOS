@@ -35,10 +35,14 @@ begin
   if not exists (select 1 from pg_trigger where tgname='trg_aios_backlog_dispositions_immutable') then raise exception 'disposition immutability trigger missing'; end if;
 
   -- 7. Convergence function runs and returns its report shape on an empty or populated database
-  if not ((private.aios_expire_stale_approvals()) ? 'skipped_in_flight') then raise exception 'expiry function report shape wrong'; end if;
-  -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) with a non-in-flight invocation may remain
+  if not ((private.aios_expire_stale_approvals()) ?& array['skipped_in_flight','skipped_invalid_binding','skipped_failed','skipped_records']) then raise exception 'expiry function report shape wrong'; end if;
+  -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) may remain unless it is in flight (linked invocation not
+  --    requires_approval) or has an invalid organization binding that carries a manual_review disposition (owner decision pending).
   if exists (select 1 from public.aios_approvals ap where ap.status='pending' and ap.expires_at is null and ap.created_at < now()-interval '24 hours'
-             and not exists (select 1 from public.aios_tool_invocations i where i.approval_id=ap.id and i.status<>'requires_approval')) then
+             and not exists (select 1 from public.aios_tool_invocations i where i.approval_id=ap.id and i.status<>'requires_approval')
+             and not (private.aios_approval_binding_defect(ap.id) is not null
+                      and exists (select 1 from public.aios_backlog_dispositions d
+                                  where d.entity_type='approval' and d.entity_id=ap.id and d.disposition='manual_review'))) then
     raise exception 'legacy pending approvals remain after convergence';
   end if;
 end $$;
