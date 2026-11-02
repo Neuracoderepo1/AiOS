@@ -9,3 +9,4 @@ order by entity_type, entity_id, created_at desc, (disposition = 'manual_review'
 
 revoke all on public.aios_backlog_effective_dispositions from public, anon, authenticated;
 grant select on public.aios_backlog_effective_dispositions to authenticated, service_role;
+revoke insert, update, delete, truncate, references, trigger on public.aios_backlog_effective_dispositions from service_role;
