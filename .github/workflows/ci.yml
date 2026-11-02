@@ -51,7 +51,18 @@ jobs:
           : > /tmp/sql.txt
           for t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 || { echo "FAILED $t" >> /tmp/sql.txt; }; done
           if grep -q '^FAILED' /tmp/sql.txt; then
-            echo "::error title=sql-tests::$(head -c 3000 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
+      - name: Eight-way concurrency (matrix case G4)
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '\"')
+          set +e
+          bash tests/concurrency/run.sh "$DB_URL" > /tmp/cx.txt 2>&1
+          rc=$?
+          cat /tmp/cx.txt
+          if [ $rc -ne 0 ]; then
+            echo "::error title=concurrency-g4::$(tail -c 3000 /tmp/cx.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
       - name: Stop
