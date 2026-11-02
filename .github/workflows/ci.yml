@@ -4,9 +4,17 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# Tool versions are pinned so a run is reproducible. Bump deliberately, in a PR that shows this workflow green.
+#   Deno 2.9.8 is the version `v2.x` resolved to in the last green run before pinning (run 41403693969).
+#   Supabase CLI 2.122.0 is the npm `latest` stable at that time (the previous `latest` pin did not record the version).
+env:
+  DENO_VERSION: "2.9.8"
+  SUPABASE_CLI_VERSION: "2.122.0"
 
 jobs:
   functions-typecheck:
@@ -14,12 +22,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
-        with: { deno-version: v2.x }
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
       - name: Type-check Edge Functions
         run: |
           set +e
+          deno --version
           : > /tmp/out.txt
-          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; NO_COLOR=1 deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] || echo "FAILED $f" >> /tmp/out.txt; done
+          for f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; NO_COLOR=1 deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] && echo "PASS $f" >> /tmp/out.txt || echo "FAILED $f" >> /tmp/out.txt; done
+          cat /tmp/out.txt
           if grep -q '^FAILED' /tmp/out.txt; then
             echo "::error title=typecheck::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
@@ -30,17 +41,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
-        with: { version: latest }
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
       - name: Migration version uniqueness and ordering
         run: |
           ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
           test ! -s /tmp/dups
       - name: Start local stack and apply ALL migrations from scratch
+        id: start
         run: |
           set +e
+          supabase --version
           supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector > /tmp/start.txt 2>&1
           rc=$?
-                    if [ $rc -ne 0 ]; then
+          if [ $rc -ne 0 ]; then
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
@@ -49,22 +63,49 @@ jobs:
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           set +e
           : > /tmp/sql.txt
-          for t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 || { echo "FAILED $t" >> /tmp/sql.txt; }; done
+          for t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 && echo "PASS $t" >> /tmp/sql.txt || { echo "FAILED $t" >> /tmp/sql.txt; }; done
+          cat /tmp/sql.txt
           if grep -q '^FAILED' /tmp/sql.txt; then
             echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
-      - name: Eight-way concurrency (matrix case G4)
+      # Canonical matrix: 45 SQL cases (tests/sql/05) + G4 eight-way concurrency, verified against tests/matrix/manifest.json.
+      # Runs even if the generic SQL step failed so one failure never hides the other; G4 commits fixtures, so this is its only run.
+      - name: Canonical test matrix (46 cases)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
-          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '\"')
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           set +e
-          bash tests/concurrency/run.sh "$DB_URL" > /tmp/cx.txt 2>&1
-          rc=$?
-          cat /tmp/cx.txt
+          bash tests/matrix/run.sh "$DB_URL" /tmp/matrix-out 2>&1 | tee /tmp/matrix-run.txt
+          rc=${PIPESTATUS[0]}
+          if [ -f /tmp/matrix-out/report.json ]; then
+            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("/tmp/matrix-out/report.json"))
+          print("### AiOS canonical test matrix: %s/%s %s\n" % (r["passed"], r["manifest_total"], "PASS" if r["ok"] else "FAIL"))
+          print("| Domain | Passed | Expected |\n|---|---|---|")
+          for d, v in r["per_domain"].items():
+              print("| %s | %s | %s |" % (d, v["passed"], v["expected"]))
+          for e in r["errors"]:
+              print("\n- " + e)
+          PY
+          fi
           if [ $rc -ne 0 ]; then
-            echo "::error title=concurrency-g4::$(tail -c 3000 /tmp/cx.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            echo "::error title=canonical-matrix::$(tail -c 3000 /tmp/matrix-run.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Upload test evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: aios-ci-evidence
+          path: |
+            /tmp/matrix-out
+            /tmp/matrix-run.txt
+            /tmp/sql.txt
+            /tmp/start.txt
+          if-no-files-found: warn
+          retention-days: 90
       - name: Stop
         if: always()
         run: supabase stop --no-backup

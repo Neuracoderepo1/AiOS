@@ -1,0 +1,527 @@
+{
+  "schema": 1,
+  "name": "AiOS canonical test matrix",
+  "total_cases": 46,
+  "sql_cases": 45,
+  "concurrency_cases": 1,
+  "introduced_in": "a5b6df6",
+  "domain_counts": {
+    "Authentication and identity": 5,
+    "Organization isolation": 6,
+    "Agent registry and trust": 5,
+    "Tool registry and contracts": 5,
+    "Risk and budget controls": 5,
+    "Approval lifecycle": 7,
+    "Execution and idempotency": 5,
+    "Audit and persistence": 4,
+    "Security and permissions": 4
+  },
+  "domains": [
+    "Authentication and identity",
+    "Organization isolation",
+    "Agent registry and trust",
+    "Tool registry and contracts",
+    "Risk and budget controls",
+    "Approval lifecycle",
+    "Execution and idempotency",
+    "Audit and persistence",
+    "Security and permissions"
+  ],
+  "cases": [
+    {
+      "id": "A1",
+      "domain": "Authentication and identity",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Valid identity resolves its org role",
+      "assertion": "As an authenticated user with a valid JWT (org admin), public.aios_current_org_role(orgA) returns 'admin'.",
+      "source_detail": "valid identity resolves its org role"
+    },
+    {
+      "id": "A2",
+      "domain": "Authentication and identity",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Missing identity has no role",
+      "assertion": "As role authenticated with no JWT subject, aios_current_org_role(orgA) returns NULL.",
+      "source_detail": "missing identity has no role"
+    },
+    {
+      "id": "A3",
+      "domain": "Authentication and identity",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Unknown identity has no role",
+      "assertion": "As authenticated with a random, non-member user id, aios_current_org_role(orgA) returns NULL.",
+      "source_detail": "unknown identity has no role"
+    },
+    {
+      "id": "A4",
+      "domain": "Authentication and identity",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Session boundary: member vs outsider",
+      "assertion": "Switching identity within one session: an org member sees >0 tasks of org A, an outsider sees 0.",
+      "source_detail": "member sees N, outsider sees 0 within one session"
+    },
+    {
+      "id": "A5",
+      "domain": "Authentication and identity",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Service identity requires a service JWT",
+      "assertion": "With the service_role DB role but a non-service JWT, aios_kernel_authorize_invocation fails 42501; with a service JWT it succeeds.",
+      "source_detail": "service db role without service JWT: ...; with service JWT: ..."
+    },
+    {
+      "id": "B1",
+      "domain": "Organization isolation",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Cross-tenant reads are blocked",
+      "assertion": "Org B has rows (non-vacuous); an org A admin sees none of org B's tasks, invocations, approvals, agents or audit events.",
+      "source_detail": "org A admin cannot see org B rows"
+    },
+    {
+      "id": "B2",
+      "domain": "Organization isolation",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Cross-tenant insert is refused",
+      "assertion": "An org A member inserting a task into org B fails with 42501.",
+      "source_detail": "cross-tenant insert: ..."
+    },
+    {
+      "id": "B3",
+      "domain": "Organization isolation",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Mismatched agent ownership is refused",
+      "assertion": "Creating an org A invocation with an org B agent raises an error.",
+      "source_detail": "org A invocation with org B agent refused: ..."
+    },
+    {
+      "id": "B4",
+      "domain": "Organization isolation",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Approval cannot bind another org's task",
+      "assertion": "Inserting an org A approval for an org B task fails with 23514.",
+      "source_detail": "approval bound to another org's task: ..."
+    },
+    {
+      "id": "B5",
+      "domain": "Organization isolation",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Foreign org admin cannot resolve approval",
+      "assertion": "An org B admin resolving an org A approval fails 42501 and the invocation stays requires_approval.",
+      "source_detail": "org B admin resolving org A approval: ..."
+    },
+    {
+      "id": "B6",
+      "domain": "Organization isolation",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Foreign membership rows are invisible",
+      "assertion": "Org B membership rows exist, yet an org A admin sees none of them.",
+      "source_detail": "membership rows of another org are invisible"
+    },
+    {
+      "id": "C1",
+      "domain": "Agent registry and trust",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Registered agent, in-contract tool is approved",
+      "assertion": "A registered idle agent requesting an in-contract low-risk tool yields status 'approved'.",
+      "source_detail": "registered agent, in-contract tool: ..."
+    },
+    {
+      "id": "C2",
+      "domain": "Agent registry and trust",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Unknown agent is refused",
+      "assertion": "An invocation for a non-existent agent id raises an error.",
+      "source_detail": "unknown agent refused: ..."
+    },
+    {
+      "id": "C3",
+      "domain": "Agent registry and trust",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Suspended agent is denied",
+      "assertion": "A suspended agent's invocation is 'denied' and authorization fails.",
+      "source_detail": "suspended agent: ..."
+    },
+    {
+      "id": "C4",
+      "domain": "Agent registry and trust",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Trust report is membership-gated",
+      "assertion": "aios_agent_trust_explain returns a report to an org member (no 'error' key) and an error to an outsider.",
+      "source_detail": "trust report: member=... (error key), outsider=..."
+    },
+    {
+      "id": "C5",
+      "domain": "Agent registry and trust",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Tool outside contract is refused even if approved",
+      "assertion": "An admin-approved invocation of a tool outside the agent's contract fails authorization with 42501.",
+      "source_detail": "tool outside contract, even if approved: ..."
+    },
+    {
+      "id": "D1",
+      "domain": "Tool registry and contracts",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Unknown tool is refused or denied",
+      "assertion": "An unregistered tool key is refused at insert, or recorded 'denied' with authorization failing.",
+      "source_detail": "unknown tool recorded as denied / unknown tool refused at insert: ..."
+    },
+    {
+      "id": "D2",
+      "domain": "Tool registry and contracts",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Agent without active contract is denied",
+      "assertion": "An agent with no active contract gets a 'denied' invocation and authorization fails.",
+      "source_detail": "agent without an active contract: ..."
+    },
+    {
+      "id": "D3",
+      "domain": "Tool registry and contracts",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Schema violation is refused",
+      "assertion": "Arguments violating the registry input schema ({\"limit\":\"abc\"}) are refused at insert or at authorization.",
+      "source_detail": "schema violation refused at authorization / at insert: ..."
+    },
+    {
+      "id": "D4",
+      "domain": "Tool registry and contracts",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Contract version mismatch is refused",
+      "assertion": "Requested under contract v1, then v2 becomes active: authorization fails with SQLSTATE 40901.",
+      "source_detail": "request under v1, contract now v2: ..."
+    },
+    {
+      "id": "D5",
+      "domain": "Tool registry and contracts",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Tool disabled after request is refused",
+      "assertion": "A tool disabled after the request fails authorization with 42501.",
+      "source_detail": "tool disabled after request: ..."
+    },
+    {
+      "id": "E1",
+      "domain": "Risk and budget controls",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Risk ceiling is enforced even if approved",
+      "assertion": "A medium-risk tool above a low contract ceiling fails authorization (42501) even after approval.",
+      "source_detail": "medium-risk tool above a low contract ceiling, even if approved: ..."
+    },
+    {
+      "id": "E2",
+      "domain": "Risk and budget controls",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "USD above hard limit is denied",
+      "assertion": "usd_amount 500 against max_usd 100 yields 'denied' and authorization fails.",
+      "source_detail": "USD above hard limit: ..."
+    },
+    {
+      "id": "E3",
+      "domain": "Risk and budget controls",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Approval threshold boundary",
+      "assertion": "usd_amount 50 (at requires_approval_above_usd) executes; 51 requires approval and authorization fails 42501.",
+      "source_detail": "at threshold: ...; one above: ..."
+    },
+    {
+      "id": "E4",
+      "domain": "Risk and budget controls",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Concurrency limit boundary",
+      "assertion": "concurrent_count 3 (= max_concurrent) is denied; 2 is authorized.",
+      "source_detail": "concurrency at limit denied, below limit allowed"
+    },
+    {
+      "id": "E5",
+      "domain": "Risk and budget controls",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Missing amount fails closed",
+      "assertion": "An invocation without usd_amount requires approval and authorization fails 42501.",
+      "source_detail": "missing usd_amount fails closed: ..."
+    },
+    {
+      "id": "F1",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Approval required before execution",
+      "assertion": "An approval-gated invocation has a pending approval with an expiry and cannot be authorized (42501).",
+      "source_detail": "approval required before execution: ..."
+    },
+    {
+      "id": "F2",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Authorized reviewer can approve",
+      "assertion": "A non-requester admin resolves the approval OK; authorization succeeds and status becomes 'executing'.",
+      "source_detail": "authorized reviewer: resolve=..., execute=..."
+    },
+    {
+      "id": "F3",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Self-approval is rejected",
+      "assertion": "A requester approving their own request cannot reach 'executing'; authorization fails 42501.",
+      "source_detail": "self-approval cannot execute (resolve=...): ..."
+    },
+    {
+      "id": "F4",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Expired approval",
+      "assertion": "A lapsed approval cannot be resolved (40001); the expiry job moves approval and invocation to 'expired' and authorization fails.",
+      "source_detail": "lapsed approval: resolve=..., approval=..., invocation=..."
+    },
+    {
+      "id": "F5",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Rejection denies the invocation",
+      "assertion": "Rejecting an approval sets the invocation to 'denied'; authorization fails.",
+      "source_detail": "rejection denies the invocation: ..."
+    },
+    {
+      "id": "F6",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Replayed decision and execution are refused",
+      "assertion": "The first approval and first execution succeed; replaying either fails 40001.",
+      "source_detail": "replayed decision and replayed execution both refused"
+    },
+    {
+      "id": "F7",
+      "domain": "Approval lifecycle",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Invalid approval binding is quarantined",
+      "assertion": "A legacy-shaped approval with a cross-org agent is detected (agent_organization_mismatch), left pending, recorded as manual_review, and the integrity trigger stays enabled.",
+      "source_detail": "invalid binding detected (...), left pending, manual_review recorded, guard enabled"
+    },
+    {
+      "id": "G1",
+      "domain": "Execution and idempotency",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Duplicate idempotency key is rejected",
+      "assertion": "A second invocation with the same (org, idempotency key) fails 23505.",
+      "source_detail": "duplicate idempotency key: ..."
+    },
+    {
+      "id": "G2",
+      "domain": "Execution and idempotency",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Retry of a claimed invocation is refused",
+      "assertion": "The first authorization claims the invocation; the retry fails 40001.",
+      "source_detail": "retry of a claimed invocation refused: ..."
+    },
+    {
+      "id": "G3",
+      "domain": "Execution and idempotency",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Execution failure is recorded",
+      "assertion": "A failed execution persists status 'failed' with its error_code.",
+      "source_detail": "execution failure recorded"
+    },
+    {
+      "id": "G5",
+      "domain": "Execution and idempotency",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Authorization cannot be skipped by writing status",
+      "assertion": "A direct UPDATE of status to 'executing' is refused and the invocation stays requires_approval.",
+      "source_detail": "cannot skip authorization by writing status: ..."
+    },
+    {
+      "id": "H1",
+      "domain": "Audit and persistence",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Audit ledger is append-only",
+      "assertion": "UPDATE and DELETE on aios_audit_events both fail 42501.",
+      "source_detail": "audit ledger update=..., delete=..."
+    },
+    {
+      "id": "H2",
+      "domain": "Audit and persistence",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Request and state changes are audited",
+      "assertion": "An invocation has a tool_invocation_requested audit event and at least three audit events in total.",
+      "source_detail": "request and state changes are audited"
+    },
+    {
+      "id": "H3",
+      "domain": "Audit and persistence",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Failure and denial are recorded",
+      "assertion": "Audit events exist for a failed invocation and for a denied invocation.",
+      "source_detail": "failure and denial are recorded"
+    },
+    {
+      "id": "H4",
+      "domain": "Audit and persistence",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Audit chains valid and state consistent",
+      "assertion": "verify_audit_chain is valid for both orgs and no approved approval maps to a requires_approval/denied/expired invocation.",
+      "source_detail": "audit chains valid (A=..., B=...) and approved approvals match invocation state"
+    },
+    {
+      "id": "I1",
+      "domain": "Security and permissions",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "RLS blocks outsider reads and direct approval insert",
+      "assertion": "An outsider reads nothing from aios_approvals and a direct approval insert errors.",
+      "source_detail": "RLS: outsider reads nothing, direct approval insert=..."
+    },
+    {
+      "id": "I2",
+      "domain": "Security and permissions",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Private functions refused to authenticated",
+      "assertion": "authenticated calling private.aios_expire_stale_approvals and private.aios_resolve_approval fails 42501.",
+      "source_detail": "private functions refused to authenticated: ... / ..."
+    },
+    {
+      "id": "I3",
+      "domain": "Security and permissions",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Anonymous access is refused",
+      "assertion": "anon reads 0 rows (or 42501) and the approval RPC fails 42501.",
+      "source_detail": "anonymous: read=..., approval RPC=..."
+    },
+    {
+      "id": "I4",
+      "domain": "Security and permissions",
+      "kind": "sql",
+      "file": "tests/sql/05_certification_matrix.sql",
+      "title": "Privilege self-escalation is blocked",
+      "assertion": "A member's attempt to set their own role to owner leaves the role 'member'.",
+      "source_detail": "self-escalation attempt (...) left role unchanged"
+    }
+  ],
+  "g4": {
+    "id": "G4",
+    "domain": "Execution and idempotency",
+    "kind": "concurrency",
+    "file": "tests/concurrency/run.sh",
+    "fixtures": "tests/concurrency/setup.sql",
+    "title": "Eight-way concurrency",
+    "workers": 8,
+    "assertion": "Eight real parallel database sessions, released together at a shared barrier timestamp, race on four critical paths; invariants are asserted from committed state.",
+    "scenarios": [
+      {
+        "id": "S1",
+        "title": "8 concurrent approvals of one approval"
+      },
+      {
+        "id": "S2",
+        "title": "8 concurrent execution claims of one approved invocation"
+      },
+      {
+        "id": "S3",
+        "title": "8 concurrent requests with one idempotency key"
+      },
+      {
+        "id": "S4",
+        "title": "8 concurrent runs of the expiry job over 24 lapsed approvals"
+      }
+    ],
+    "checks": [
+      {
+        "scenario": "S1",
+        "match": "exactly one approval wins",
+        "assertion": "Exactly one of 8 concurrent aios_resolve_approval calls succeeds; the other 7 fail 40001."
+      },
+      {
+        "scenario": "S1",
+        "match": "approval resolved once",
+        "assertion": "Committed state: approval 'approved' and invocation 'approved'."
+      },
+      {
+        "scenario": "S2",
+        "match": "S2 precondition",
+        "assertion": "Precondition: the low-risk in-contract invocation is auto-approved."
+      },
+      {
+        "scenario": "S2",
+        "match": "exactly one claim wins",
+        "assertion": "Exactly one of 8 concurrent aios_kernel_authorize_invocation calls succeeds; 7 fail 40001."
+      },
+      {
+        "scenario": "S2",
+        "match": "invocation executing exactly once",
+        "assertion": "Invocation is 'executing' with exactly one 'executing' audit event."
+      },
+      {
+        "scenario": "S3",
+        "match": "exactly one row created",
+        "assertion": "Exactly one of 8 concurrent inserts with one idempotency key succeeds; 7 fail 23505."
+      },
+      {
+        "scenario": "S3",
+        "match": "one invocation row for the key",
+        "assertion": "Exactly one invocation row exists for the key."
+      },
+      {
+        "scenario": "S4",
+        "match": "no worker errored",
+        "assertion": "None of 8 concurrent aios_expire_stale_approvals runs raises an error."
+      },
+      {
+        "scenario": "S4",
+        "match": "each lapsed approval converged exactly once",
+        "assertion": "24 lapsed approvals existed before; the workers' approvals_expired counts sum to exactly 24."
+      },
+      {
+        "scenario": "S4",
+        "match": "all 24 approvals and invocations expired",
+        "assertion": "All 24 approvals and their invocations are 'expired'; none remain pending past expiry."
+      },
+      {
+        "scenario": "S4",
+        "match": "each invocation expired exactly once in the audit trail",
+        "assertion": "Per invocation exactly one approval_changed and one tool_invocation_status_changed 'expired' audit event (24 of each; no duplicates, none missing)."
+      },
+      {
+        "scenario": "S4",
+        "match": "audit chain still valid",
+        "assertion": "verify_audit_chain is valid for the org after the races."
+      }
+    ]
+  }
+}

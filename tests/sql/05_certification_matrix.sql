@@ -424,6 +424,8 @@ begin
 end $$;
 
 -- ------------------------------------------------------------------ summary
+-- Machine-readable per-case results; tests/matrix/verify.py compares these against tests/matrix/manifest.json.
+select 'MX_RESULT|' || id || '|' || domain || '|' || case when ok then 'PASS' else 'FAIL' end || '|' || replace(coalesce(detail, ''), E'\n', ' ') from mx.results order by seq;
 select domain, count(*) as cases, count(*) filter (where ok) as passed from mx.results group by domain order by min(seq);
 do $$
 declare n int; bad text;
