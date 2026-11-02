@@ -70,14 +70,10 @@ declare
   a record;
   v_inv uuid; v_inv_status text;
   v_task uuid; v_mission uuid;
-  v_defect text; v_outcome text; v_task_flag boolean;
-  v_state text; v_msg text;
   v_expired int := 0; v_tasks_expired int := 0; v_orphans int := 0; v_skipped int := 0;
-  v_invalid int := 0; v_failed int := 0;
-  v_records jsonb := '[]'::jsonb;
 begin
   for a in
-    select ap.id, ap.organization_id, ap.invocation_id
+    select ap.id, ap.invocation_id
     from public.aios_approvals ap
     where ap.status = 'pending'
       and ((ap.expires_at is not null and ap.expires_at <= now())
@@ -85,105 +81,59 @@ begin
     order by ap.created_at
     for update of ap skip locked
   loop
-    -- (a) Detect invalid organization bindings BEFORE attempting any transition. Nothing is modified for such a record.
-    v_defect := private.aios_approval_binding_defect(a.id);
-    if v_defect is not null then
-      v_invalid := v_invalid + 1;
-      if jsonb_array_length(v_records) < 50 then
-        v_records := v_records || jsonb_build_array(jsonb_build_object('approval_id', a.id, 'organization_id', a.organization_id, 'reason', v_defect));
-      end if;
-      insert into public.aios_backlog_dispositions (organization_id, entity_type, entity_id, classification, disposition, rationale, decided_by)
-      values (a.organization_id, 'approval', a.id, 'needs_owner_review', 'manual_review',
-              'Invalid organization binding (' || v_defect || '). Skipped by the canonical expiry job with no state changed; owner must review.',
-              'job:aios_expire_stale_approvals')
-      on conflict do nothing;
-      raise warning 'aios_expire_stale_approvals: skipped approval % (%), manual review required', a.id, v_defect;
+    v_inv := a.invocation_id; v_inv_status := null;
+    if v_inv is null then
+      select i.id into v_inv from public.aios_tool_invocations i where i.approval_id = a.id order by i.created_at desc limit 1;
+    end if;
+    if v_inv is not null then
+      select i.status into v_inv_status from public.aios_tool_invocations i where i.id = v_inv for update;
+    end if;
+
+    -- A linked invocation in any state other than requires_approval may be in flight: never expire its approval here.
+    if v_inv is not null and v_inv_status is distinct from 'requires_approval' then
+      v_skipped := v_skipped + 1;
       continue;
     end if;
 
-    -- (b) Transition inside its own subtransaction so one unforeseen failure cannot abort the batch.
-    v_outcome := null; v_task_flag := false;
-    begin
-      v_inv := a.invocation_id; v_inv_status := null;
-      if v_inv is null then
-        select i.id into v_inv from public.aios_tool_invocations i where i.approval_id = a.id order by i.created_at desc limit 1;
-      end if;
-      if v_inv is not null then
-        select i.status into v_inv_status from public.aios_tool_invocations i where i.id = v_inv for update;
-      end if;
+    update public.aios_approvals
+      set status = 'expired', reviewed_at = now(),
+          approval_reason = coalesce(approval_reason, 'approval expired before a decision was made')
+      where id = a.id and status = 'pending';
 
-      -- A linked invocation in any state other than requires_approval may be in flight: never expire its approval here.
-      if v_inv is not null and v_inv_status is distinct from 'requires_approval' then
-        v_outcome := 'in_flight';
-      else
-        update public.aios_approvals
-          set status = 'expired', reviewed_at = now(),
-              approval_reason = coalesce(approval_reason, 'approval expired before a decision was made')
-          where id = a.id and status = 'pending';
-
-        if v_inv is null then
-          v_outcome := 'orphan';
-        else
-          v_task := null;
-          update public.aios_tool_invocations
-            set status = 'expired', completed_at = now(), error_code = 'APPROVAL_EXPIRED',
-                error_message = 'approval expired before a decision was made'
-            where id = v_inv and status = 'requires_approval'
-            returning task_id into v_task;
-          v_outcome := 'expired';
-
-          if v_task is not null then
-            v_mission := null;
-            update public.aios_tasks
-              set status = 'expired', failed_stage = 'approval_expired',
-                  last_error = 'approval expired before a decision was made',
-                  result = coalesce(result, '{}'::jsonb) || jsonb_build_object('error', 'approval_expired', 'invocation_id', v_inv)
-              where id = v_task and status in ('blocked_pending_approval', 'running')
-              returning mission_id into v_mission;
-            if v_mission is not null then
-              v_task_flag := true;
-              update public.aios_missions m set status = 'failed', completed_at = now()
-                where m.id = v_mission and m.status in ('running', 'blocked_pending_approval')
-                  and not exists (
-                    select 1 from public.aios_tasks s
-                    where s.mission_id = m.id
-                      and s.status in ('queued','assigned','ready','running','approved','blocked_pending_approval'));
-            end if;
-          end if;
-        end if;
-      end if;
-    exception when others then
-      -- Everything this iteration wrote is rolled back by the subtransaction. Record it and move on.
-      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
-      v_outcome := 'failed';
-    end;
-
-    -- Counters are updated outside the subtransaction so a rolled-back iteration never inflates them.
-    if v_outcome = 'in_flight' then
-      v_skipped := v_skipped + 1;
-    elsif v_outcome = 'orphan' then
+    if v_inv is null then
       v_orphans := v_orphans + 1;
-    elsif v_outcome = 'expired' then
-      v_expired := v_expired + 1;
-      if v_task_flag then v_tasks_expired := v_tasks_expired + 1; end if;
-    elsif v_outcome = 'failed' then
-      v_failed := v_failed + 1;
-      if jsonb_array_length(v_records) < 50 then
-        v_records := v_records || jsonb_build_array(jsonb_build_object('approval_id', a.id, 'organization_id', a.organization_id, 'reason', 'transition_failed', 'sqlstate', v_state));
+      continue;
+    end if;
+
+    v_task := null;
+    update public.aios_tool_invocations
+      set status = 'expired', completed_at = now(), error_code = 'APPROVAL_EXPIRED',
+          error_message = 'approval expired before a decision was made'
+      where id = v_inv and status = 'requires_approval'
+      returning task_id into v_task;
+    v_expired := v_expired + 1;
+
+    if v_task is not null then
+      v_mission := null;
+      update public.aios_tasks
+        set status = 'expired', failed_stage = 'approval_expired',
+            last_error = 'approval expired before a decision was made',
+            result = coalesce(result, '{}'::jsonb) || jsonb_build_object('error', 'approval_expired', 'invocation_id', v_inv)
+        where id = v_task and status in ('blocked_pending_approval', 'running')
+        returning mission_id into v_mission;
+      if v_mission is not null then
+        v_tasks_expired := v_tasks_expired + 1;
+        update public.aios_missions m set status = 'failed', completed_at = now()
+          where m.id = v_mission and m.status in ('running', 'blocked_pending_approval')
+            and not exists (
+              select 1 from public.aios_tasks s
+              where s.mission_id = m.id
+                and s.status in ('queued','assigned','ready','running','approved','blocked_pending_approval'));
       end if;
-      insert into public.aios_backlog_dispositions (organization_id, entity_type, entity_id, classification, disposition, rationale, decided_by)
-      values (a.organization_id, 'approval', a.id, 'needs_owner_review', 'manual_review',
-              'Expiry transition failed (sqlstate ' || v_state || '). Rolled back and skipped by the canonical expiry job; owner must review.',
-              'job:aios_expire_stale_approvals')
-      on conflict do nothing;
-      raise warning 'aios_expire_stale_approvals: transition failed for approval % (sqlstate %): %', a.id, v_state, v_msg;
     end if;
   end loop;
-
   return jsonb_build_object('approvals_expired', v_expired, 'orphan_approvals_expired', v_orphans,
-                            'tasks_expired', v_tasks_expired, 'skipped_in_flight', v_skipped,
-                            'skipped_invalid_binding', v_invalid, 'skipped_failed', v_failed,
-                            'skipped_records', v_records);
+                            'tasks_expired', v_tasks_expired, 'skipped_in_flight', v_skipped);
 end; $$;
 
 revoke all on function private.aios_expire_stale_approvals() from public, anon, authenticated;
