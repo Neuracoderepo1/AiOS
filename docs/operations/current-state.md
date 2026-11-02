@@ -29,3 +29,10 @@ All four have `verify_jwt = true`.
 - Early migrations (001-010) use unqualified table names and later ones move logic into a `private` schema; replay order matters.
 - `aios_platform_metrics()` grants flipped several times (anon restored 20260824094834, revoked again 20260831171518). Current intent for anonymous landing-page use should be confirmed before certification.
 - Secrets are not stored in the repository. `ANTHROPIC_API_KEY` is read from Edge Function secrets at runtime.
+
+## Approval convergence (2026-11-02)
+
+- `private.aios_expire_stale_approvals()` validates organization bindings first (`private.aios_approval_binding_defect`), skips and reports invalid records untouched, isolates each transition in a subtransaction, and appends a `manual_review` disposition (append-only). Live as migration `20261101232313` (captured in this repo).
+- `public.aios_backlog_effective_dispositions` resolves the latest disposition per entity. Private-schema tables have deny-by-default RLS (invariant 9).
+- Production applied 2026-11-02 via the Supabase connector, so production versions for the view/RLS migrations carry connector timestamps, not the repo filenames.
+- Open: one pending approval with a cross-organization agent binding (quarantined, owner review); two queued manual-review items (owner decision); 46-case matrix, concurrency test and audit-chain verification not yet run. AiOS remains open for production certification.

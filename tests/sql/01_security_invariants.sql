@@ -35,11 +35,29 @@ begin
   if not exists (select 1 from pg_trigger where tgname='trg_aios_backlog_dispositions_immutable') then raise exception 'disposition immutability trigger missing'; end if;
 
   -- 7. Convergence function runs and returns its report shape on an empty or populated database
-  if not ((private.aios_expire_stale_approvals()) ? 'skipped_in_flight') then raise exception 'expiry function report shape wrong'; end if;
-  -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) with a non-in-flight invocation may remain
+  if not ((private.aios_expire_stale_approvals()) ?& array['skipped_in_flight','invalid_bindings_skipped','transition_errors_skipped','skipped_records']) then raise exception 'expiry function report shape wrong'; end if;
+  -- 8. After convergence no legacy pending approval (NULL expires_at, >24h) may remain unless it is in flight (linked invocation not
+  --    requires_approval) or has an invalid organization binding that carries a manual_review disposition (owner decision pending).
   if exists (select 1 from public.aios_approvals ap where ap.status='pending' and ap.expires_at is null and ap.created_at < now()-interval '24 hours'
-             and not exists (select 1 from public.aios_tool_invocations i where i.approval_id=ap.id and i.status<>'requires_approval')) then
+             and not exists (select 1 from public.aios_tool_invocations i where i.approval_id=ap.id and i.status<>'requires_approval')
+             and not (private.aios_approval_binding_defect(ap.id) is not null
+                      and exists (select 1 from public.aios_backlog_dispositions d
+                                  where d.entity_type='approval' and d.entity_id=ap.id and d.disposition='manual_review'))) then
     raise exception 'legacy pending approvals remain after convergence';
+  end if;
+
+  -- 9. Private-schema tables are server-only: RLS enabled (deny-by-default) and no privileges for PUBLIC/anon/authenticated
+  select string_agg(c.relname, ', ') into v from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='private' and c.relkind in ('r','p') and not c.relrowsecurity;
+  if v is not null then raise exception 'RLS disabled on private tables: %', v; end if;
+  select string_agg(c.relname||':'||r.rolname, ', ') into v from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    cross join (select rolname from pg_roles where rolname in ('anon','authenticated')) r
+   where n.nspname='private' and c.relkind in ('r','p')
+     and (has_table_privilege(r.rolname, c.oid, 'select,insert,update,delete,truncate,references,trigger'));
+  if v is not null then raise exception 'client roles hold privileges on private tables: %', v; end if;
+  if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+              where n.nspname='private' and c.relkind in ('r','p') and a.grantee=0) then
+    raise exception 'PUBLIC holds privileges on a private table';
   end if;
 end $$;
 select 'ok: security invariants' as result;
