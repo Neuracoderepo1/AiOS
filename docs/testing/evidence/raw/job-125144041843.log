@@ -1,0 +1,183 @@
+﻿2026-11-02T07:11:53.9902955Z Current runner version: '2.338.2'
+2026-11-02T07:11:53.9922538Z ##[group]Runner Image Provisioner
+2026-11-02T07:11:53.9923174Z Hosted Compute Agent
+2026-11-02T07:11:53.9923582Z Version: 20261021.618
+2026-11-02T07:11:53.9923963Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T07:11:53.9924454Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T07:11:53.9924876Z Worker ID: {586e7bd4-cf74-4200-8536-4040baeb6efe}
+2026-11-02T07:11:53.9925330Z Region: centralus
+2026-11-02T07:11:53.9925725Z Cloud: Azure
+2026-11-02T07:11:53.9926088Z ##[endgroup]
+2026-11-02T07:11:53.9926930Z ##[group]Operating System
+2026-11-02T07:11:53.9927308Z Ubuntu
+2026-11-02T07:11:53.9927666Z 24.04.5
+2026-11-02T07:11:53.9928035Z LTS
+2026-11-02T07:11:53.9928371Z ##[endgroup]
+2026-11-02T07:11:53.9928747Z ##[group]Runner Image
+2026-11-02T07:11:53.9929121Z Image: ubuntu-24.04
+2026-11-02T07:11:53.9929470Z Version: 20261025.353.1
+2026-11-02T07:11:53.9930514Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T07:11:53.9931445Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T07:11:53.9932023Z ##[endgroup]
+2026-11-02T07:11:53.9932756Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T07:11:53.9933980Z Contents: read
+2026-11-02T07:11:53.9934407Z Metadata: read
+2026-11-02T07:11:53.9934772Z ##[endgroup]
+2026-11-02T07:11:53.9936157Z Secret source: Actions
+2026-11-02T07:11:53.9936798Z Cache mode: write
+2026-11-02T07:11:53.9937247Z Prepare workflow directory
+2026-11-02T07:11:54.0186100Z Prepare all required actions
+2026-11-02T07:11:54.0217746Z Getting action download info
+2026-11-02T07:11:54.2308062Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-02T07:11:54.3563459Z Download action repository 'denoland/setup-deno@v2' (SHA:22d081ff2d3a40755e97629de92e3bcbfa7cf2ed)
+2026-11-02T07:11:54.7043592Z Complete job name: functions-typecheck
+2026-11-02T07:11:54.7570160Z ##[group]Run actions/checkout@v4
+2026-11-02T07:11:54.7570619Z with:
+2026-11-02T07:11:54.7570912Z   repository: Neuracoderepo1/AiOS
+2026-11-02T07:11:54.7572935Z   token: ***
+2026-11-02T07:11:54.7573176Z   ssh-strict: true
+2026-11-02T07:11:54.7573424Z   ssh-user: git
+2026-11-02T07:11:54.7573674Z   persist-credentials: true
+2026-11-02T07:11:54.7573949Z   clean: true
+2026-11-02T07:11:54.7574205Z   sparse-checkout-cone-mode: true
+2026-11-02T07:11:54.7574493Z   fetch-depth: 1
+2026-11-02T07:11:54.7574734Z   fetch-tags: false
+2026-11-02T07:11:54.7574982Z   show-progress: true
+2026-11-02T07:11:54.7575232Z   lfs: false
+2026-11-02T07:11:54.7575466Z   submodules: false
+2026-11-02T07:11:54.7575721Z   set-safe-directory: true
+2026-11-02T07:11:54.7576007Z   allow-unsafe-pr-checkout: false
+2026-11-02T07:11:54.7576354Z env:
+2026-11-02T07:11:54.7576581Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:54.7576839Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:54.7577112Z ##[endgroup]
+2026-11-02T07:11:54.9868562Z Syncing repository: Neuracoderepo1/AiOS
+2026-11-02T07:11:54.9869711Z ##[group]Getting Git version info
+2026-11-02T07:11:54.9870317Z Working directory is '/home/runner/work/AiOS/AiOS'
+2026-11-02T07:11:54.9870853Z [command]/usr/bin/git version
+2026-11-02T07:11:54.9963388Z git version 2.56.0
+2026-11-02T07:11:54.9977129Z ##[endgroup]
+2026-11-02T07:11:54.9989452Z Temporarily overriding HOME='/home/runner/work/_temp/ce2d8109-cfad-4ce3-9795-c74becbdb44c' before making global git config changes
+2026-11-02T07:11:54.9990881Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T07:11:54.9993683Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/AiOS/AiOS
+2026-11-02T07:11:55.0054807Z Deleting the contents of '/home/runner/work/AiOS/AiOS'
+2026-11-02T07:11:55.0057819Z ##[group]Initializing the repository
+2026-11-02T07:11:55.0061665Z [command]/usr/bin/git init /home/runner/work/AiOS/AiOS
+2026-11-02T07:11:55.0173911Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T07:11:55.0175300Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T07:11:55.0176250Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T07:11:55.0177031Z hint: call:
+2026-11-02T07:11:55.0177461Z hint:
+2026-11-02T07:11:55.0178022Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T07:11:55.0178651Z hint:
+2026-11-02T07:11:55.0179238Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T07:11:55.0180286Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T07:11:55.0181084Z hint:
+2026-11-02T07:11:55.0181528Z hint: 	git branch -m <name>
+2026-11-02T07:11:55.0182031Z hint:
+2026-11-02T07:11:55.0182672Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T07:11:55.0185561Z Initialized empty Git repository in /home/runner/work/AiOS/AiOS/.git/
+2026-11-02T07:11:55.0196566Z [command]/usr/bin/git remote add origin https://github.com/Neuracoderepo1/AiOS
+2026-11-02T07:11:55.0254414Z ##[endgroup]
+2026-11-02T07:11:55.0255524Z ##[group]Disabling automatic garbage collection
+2026-11-02T07:11:55.0258424Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T07:11:55.0296152Z ##[endgroup]
+2026-11-02T07:11:55.0296882Z ##[group]Setting up auth
+2026-11-02T07:11:55.0303239Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T07:11:55.0345410Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T07:11:55.0747064Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T07:11:55.0788913Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T07:11:55.0996951Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T07:11:55.1036595Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T07:11:55.1231785Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T07:11:55.1277558Z ##[endgroup]
+2026-11-02T07:11:55.1278243Z ##[group]Fetching the repository
+2026-11-02T07:11:55.1286750Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a2de802277fdbf155e1c58c851b24d2ff6247efa:refs/remotes/pull/3/merge
+2026-11-02T07:11:55.5080945Z From https://github.com/Neuracoderepo1/AiOS
+2026-11-02T07:11:55.5082047Z  * [new ref]         a2de802277fdbf155e1c58c851b24d2ff6247efa -> pull/3/merge
+2026-11-02T07:11:55.5084642Z ##[endgroup]
+2026-11-02T07:11:55.5085470Z ##[group]Determining the checkout info
+2026-11-02T07:11:55.5086547Z ##[endgroup]
+2026-11-02T07:11:55.5091882Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T07:11:55.5158797Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T07:11:55.5199352Z ##[group]Checking out the ref
+2026-11-02T07:11:55.5202063Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/3/merge
+2026-11-02T07:11:55.5313703Z Note: switching to 'refs/remotes/pull/3/merge'.
+2026-11-02T07:11:55.5314546Z 
+2026-11-02T07:11:55.5315136Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-02T07:11:55.5316576Z changes and commit them, and you can discard any commits you make in this
+2026-11-02T07:11:55.5317999Z state without impacting any branches by switching back to a branch.
+2026-11-02T07:11:55.5318856Z 
+2026-11-02T07:11:55.5319464Z If you want to create a new branch to retain commits you create, you may
+2026-11-02T07:11:55.5320815Z do so (now or later) by using -c with the switch command. Example:
+2026-11-02T07:11:55.5321651Z 
+2026-11-02T07:11:55.5321880Z   git switch -c <new-branch-name>
+2026-11-02T07:11:55.5322323Z 
+2026-11-02T07:11:55.5322621Z Or undo this operation with:
+2026-11-02T07:11:55.5323107Z 
+2026-11-02T07:11:55.5323369Z   git switch -
+2026-11-02T07:11:55.5323748Z 
+2026-11-02T07:11:55.5324294Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-02T07:11:55.5325102Z 
+2026-11-02T07:11:55.5325934Z HEAD is now at a2de802 Merge 292d398d552625a32f784e68f3f00b48a8efb0a0 into 87a94a9cc00e6628140d82135922b78743f5e5cf
+2026-11-02T07:11:55.5328684Z ##[endgroup]
+2026-11-02T07:11:55.5370613Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T07:11:55.5401002Z a2de802277fdbf155e1c58c851b24d2ff6247efa
+2026-11-02T07:11:55.5642318Z ##[group]Run denoland/setup-deno@v2
+2026-11-02T07:11:55.5643034Z with:
+2026-11-02T07:11:55.5643551Z   deno-version: 2.9.8
+2026-11-02T07:11:55.5644141Z   deno-binary-name: deno
+2026-11-02T07:11:55.5644739Z   cache: false
+2026-11-02T07:11:55.5645264Z env:
+2026-11-02T07:11:55.5645770Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:55.5646375Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:55.5647009Z ##[endgroup]
+2026-11-02T07:11:55.9239723Z Going to install stable version 2.9.8.
+2026-11-02T07:11:55.9248160Z Downloading Deno from https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-unknown-linux-gnu.zip.
+2026-11-02T07:11:56.2673121Z [command]/usr/bin/unzip -o -q /home/runner/work/_temp/eca4e04b-9b03-49b4-8276-16eac0080bfe
+2026-11-02T07:11:57.2534521Z Cached Deno to /opt/hostedtoolcache/deno/2.9.8/x64.
+2026-11-02T07:11:57.2558052Z Installation complete.
+2026-11-02T07:11:57.2841278Z ##[group]Run set +e
+2026-11-02T07:11:57.2841565Z [36;1mset +e[0m
+2026-11-02T07:11:57.2841747Z [36;1mdeno --version[0m
+2026-11-02T07:11:57.2841915Z [36;1m: > /tmp/out.txt[0m
+2026-11-02T07:11:57.2842449Z [36;1mfor f in supabase/functions/*/index.ts; do echo "== $f" >> /tmp/out.txt; NO_COLOR=1 deno check "$f" 2>&1 | grep -vE "^(Download|Check) " >> /tmp/out.txt; [ "${PIPESTATUS[0]}" -eq 0 ] && echo "PASS $f" >> /tmp/out.txt || echo "FAILED $f" >> /tmp/out.txt; done[0m
+2026-11-02T07:11:57.2842988Z [36;1mcat /tmp/out.txt[0m
+2026-11-02T07:11:57.2843175Z [36;1mif grep -q '^FAILED' /tmp/out.txt; then[0m
+2026-11-02T07:11:57.2843533Z [36;1m  echo "::error title=typecheck::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"[0m
+2026-11-02T07:11:57.2843864Z [36;1m  exit 1[0m
+2026-11-02T07:11:57.2844040Z [36;1mfi[0m
+2026-11-02T07:11:57.2865133Z shell: /usr/bin/bash -e {0}
+2026-11-02T07:11:57.2865318Z env:
+2026-11-02T07:11:57.2865507Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:57.2865668Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:57.2865847Z ##[endgroup]
+2026-11-02T07:11:57.2947322Z deno 2.9.8 (stable, release, x86_64-unknown-linux-gnu)
+2026-11-02T07:11:57.2947696Z v8 15.0.245.2-rusty
+2026-11-02T07:11:57.2947882Z typescript 6.0.3
+2026-11-02T07:12:01.1991621Z == supabase/functions/execute-task/index.ts
+2026-11-02T07:12:01.1992134Z PASS supabase/functions/execute-task/index.ts
+2026-11-02T07:12:01.1992582Z == supabase/functions/invoke-tool/index.ts
+2026-11-02T07:12:01.1992885Z PASS supabase/functions/invoke-tool/index.ts
+2026-11-02T07:12:01.1993166Z == supabase/functions/launch-mission/index.ts
+2026-11-02T07:12:01.1993471Z PASS supabase/functions/launch-mission/index.ts
+2026-11-02T07:12:01.1993818Z == supabase/functions/review-approval/index.ts
+2026-11-02T07:12:01.1994126Z PASS supabase/functions/review-approval/index.ts
+2026-11-02T07:12:01.2075251Z Post job cleanup.
+2026-11-02T07:12:01.2931029Z Caching is not enabled. Caching is skipped.
+2026-11-02T07:12:01.3121258Z Post job cleanup.
+2026-11-02T07:12:01.3776502Z [command]/usr/bin/git version
+2026-11-02T07:12:01.3812815Z git version 2.56.0
+2026-11-02T07:12:01.3839438Z Temporarily overriding HOME='/home/runner/work/_temp/ca1f10b5-ea17-4b8a-810c-be5ffb7f52a5' before making global git config changes
+2026-11-02T07:12:01.3840277Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T07:12:01.3843414Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/AiOS/AiOS
+2026-11-02T07:12:01.3882303Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T07:12:01.3913758Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T07:12:01.4134709Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T07:12:01.4229216Z http.https://github.com/.extraheader
+2026-11-02T07:12:01.4239229Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T07:12:01.4283138Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T07:12:01.4499304Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T07:12:01.4536870Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T07:12:01.4854673Z Cleaning up orphan processes
+2026-11-02T07:12:01.5112961Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
