@@ -45,5 +45,19 @@ begin
                                   where d.entity_type='approval' and d.entity_id=ap.id and d.disposition='manual_review'))) then
     raise exception 'legacy pending approvals remain after convergence';
   end if;
+
+  -- 9. Private-schema tables are server-only: RLS enabled (deny-by-default) and no privileges for PUBLIC/anon/authenticated
+  select string_agg(c.relname, ', ') into v from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='private' and c.relkind in ('r','p') and not c.relrowsecurity;
+  if v is not null then raise exception 'RLS disabled on private tables: %', v; end if;
+  select string_agg(c.relname||':'||r.rolname, ', ') into v from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    cross join (select rolname from pg_roles where rolname in ('anon','authenticated')) r
+   where n.nspname='private' and c.relkind in ('r','p')
+     and (has_table_privilege(r.rolname, c.oid, 'select,insert,update,delete,truncate,references,trigger'));
+  if v is not null then raise exception 'client roles hold privileges on private tables: %', v; end if;
+  if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+              where n.nspname='private' and c.relkind in ('r','p') and a.grantee=0) then
+    raise exception 'PUBLIC holds privileges on a private table';
+  end if;
 end $$;
 select 'ok: security invariants' as result;
