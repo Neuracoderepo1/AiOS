@@ -91,20 +91,20 @@ begin
   if st <> 'blocked_pending_approval' then raise exception 'cross-tenant task was modified (%)', st; end if;
 
   -- 5. Report: counts and per-record reasons.
-  if (r1->>'skipped_invalid_binding')::int <> 3 then raise exception 'expected 3 invalid bindings reported, got %', r1; end if;
-  if (r1->>'skipped_failed')::int <> 0 then raise exception 'unexpected transition failures: %', r1; end if;
+  if (r1->>'invalid_bindings_skipped')::int <> 3 then raise exception 'expected 3 invalid bindings reported, got %', r1; end if;
+  if (r1->>'transition_errors_skipped')::int <> 0 then raise exception 'unexpected transition failures: %', r1; end if;
   if (r1->>'approvals_expired')::int <> 2 or (r1->>'orphan_approvals_expired')::int <> 1 then raise exception 'wrong expiry counts: %', r1; end if;
   if (r1->>'skipped_in_flight')::int <> 1 then raise exception 'in-flight skip not reported: %', r1; end if;
   if jsonb_array_length(r1->'skipped_records') <> 3 then raise exception 'skipped_records wrong: %', r1; end if;
-  if not exists (select 1 from jsonb_array_elements(r1->'skipped_records') e where e->>'reason' = 'agent_org_mismatch')
-     or not exists (select 1 from jsonb_array_elements(r1->'skipped_records') e where e->>'reason' = 'linked_invocation_org_mismatch')
-     or not exists (select 1 from jsonb_array_elements(r1->'skipped_records') e where e->>'reason' = 'invocation_org_mismatch') then
+  if not exists (select 1 from jsonb_array_elements(r1->'skipped_records') e where e->>'defect' = 'agent_organization_mismatch')
+     or not exists (select 1 from jsonb_array_elements(r1->'skipped_records') e where e->>'defect' = 'linked_invocation_organization_mismatch')
+     or not exists (select 1 from jsonb_array_elements(r1->'skipped_records') e where e->>'defect' = 'invocation_organization_mismatch') then
     raise exception 'defect reasons not reported as expected: %', r1->'skipped_records';
   end if;
 
   -- 6. Idempotent: second run converges nothing new and appends no duplicate dispositions.
   if (r2->>'approvals_expired')::int <> 0 or (r2->>'orphan_approvals_expired')::int <> 0 then raise exception 'second run was not a no-op: %', r2; end if;
-  if (r2->>'skipped_invalid_binding')::int <> 3 then raise exception 'invalid records not re-reported on second run: %', r2; end if;
+  if (r2->>'invalid_bindings_skipped')::int <> 3 then raise exception 'invalid records not re-reported on second run: %', r2; end if;
   select count(*) into n from public.aios_backlog_dispositions where entity_type = 'approval' and entity_id = any(invalid) and disposition = 'manual_review';
   if n <> 3 then raise exception 'expected exactly 3 manual_review dispositions after two runs, got %', n; end if;
 
