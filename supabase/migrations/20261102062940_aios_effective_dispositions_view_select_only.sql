@@ -1,0 +1,1 @@
+revoke insert, update, delete, truncate, references, trigger on public.aios_backlog_effective_dispositions from service_role;

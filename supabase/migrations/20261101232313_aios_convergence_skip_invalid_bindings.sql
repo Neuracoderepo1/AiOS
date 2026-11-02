@@ -1,22 +1,3 @@
--- Convergence hardening: one malformed approval must never abort the batch.
---
--- ROOT CAUSE (production, cron job aios-expire-stale-approvals, failing every run since 20261101210000 went live):
---   ERROR: approval agent organization mismatch  (private.aios_validate_approval_integrity, BEFORE UPDATE trigger)
---   One legacy pending approval (created before cross-tenant triggers existed) names an agent that belongs to a DIFFERENT
---   organization than the approval itself. The trigger, correctly, refuses ANY update to it. Because the whole job is one
---   function call = one transaction, that single refusal rolled back every other approval's expiry as well.
---
--- FIX (the integrity trigger is untouched and stays enabled; no production row is edited by hand):
---   1. private.aios_approval_binding_defect(uuid): a read-only pre-check that mirrors every binding rule the integrity
---      trigger enforces on UPDATE (agent org, task org, invocation org/agent/task/tool/args/version, and cross-tenant
---      invocation links made only via aios_tool_invocations.approval_id).
---   2. aios_expire_stale_approvals(): checks the binding BEFORE attempting the transition. A defective record is skipped,
---      left exactly as it is, reported in the return value, and appended to aios_backlog_dispositions as manual_review.
---   3. Backstop: each record's transition runs in its own sub-transaction. An unforeseen per-record error rolls back only
---      that record (all of its partial writes), is counted and reported, and the batch continues.
---   4. Append-only disposition for every currently-defective pending approval. Earlier rows are preserved; for such an
---      approval this row supersedes the earlier expire_via_canonical_job row (latest row per entity wins).
-
 create or replace function private.aios_approval_binding_defect(p_approval_id uuid)
 returns text language plpgsql stable security definer set search_path = '' as $$
 declare
