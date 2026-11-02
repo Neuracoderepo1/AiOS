@@ -126,7 +126,10 @@ insert into public.aios_tools (tool_key, name, description, version, category, r
 values ('mx.payment', 'MX Payment', 'matrix payment tool', 1, 'matrix', 'medium',
         '{"type":"object","properties":{"usd_amount":{"type":"number"},"concurrent_count":{"type":"integer"}},"additionalProperties":false}',
         '{"type":"object"}', 'mx.payment', 'active', true, false);
-insert into private.aios_trusted_executors (tool_key, executor_key, is_enabled) values ('mx.payment', 'mx.payment.v1', true);
+-- The kernel hard-allowlists executor keys in private.aios_validate_executor_registry (deliberate production policy; this test must
+-- not widen it). The fixture tool therefore reuses an already-allowlisted key so that cases E3/E4 exercise the budget limits,
+-- not the executor allowlist. Allowlist enforcement itself is asserted in tests/sql/06_executor_allowlist.sql.
+insert into private.aios_trusted_executors (tool_key, executor_key, is_enabled) values ('mx.payment', 'support.search_tickets.v1', true);
 
 select mx.put('a1',       mx.agent(mx.u('orgA'), 'mx-a1',     'idle',      'medium', '["support.search_tickets","support.export_customer_data"]', '{}', true)::text),
        mx.put('a_sus',    mx.agent(mx.u('orgA'), 'mx-sus',    'suspended', 'medium', '["support.search_tickets","support.export_customer_data"]', '{}', true)::text),
