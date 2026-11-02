@@ -1,0 +1,21 @@
+== G4 S1: 8 concurrent approvals of one approval
+  results: 7 40001;1 OK;
+  PASS exactly one approval wins, the rest get 40001 (won=1 lost=7)
+  PASS approval resolved once, invocation approved
+== G4 S2: 8 concurrent execution claims of one approved invocation
+  PASS S2 precondition: invocation is approved
+  results: 7 40001;1 OK;
+  PASS exactly one claim wins, the rest get 40001 (won=1 lost=7)
+  PASS invocation executing exactly once
+== G4 S3: 8 concurrent requests with one idempotency key
+  results: 7 23505;1 OK;
+  PASS exactly one row created, the rest get 23505 (created=1 dup=7)
+  PASS one invocation row for the key
+== G4 S4: 8 concurrent runs of the expiry job over 24 lapsed approvals
+  results: 5 N:0;2 N:10;1 N:4;
+  PASS no worker errored (errors=0)
+  PASS each lapsed approval converged exactly once (pre=24, summed=24)
+  PASS all 24 approvals and invocations expired, none pending
+  PASS each invocation expired exactly once in the audit trail (one approval_changed + one tool_invocation_status_changed each; no duplicates, none missing)
+  PASS audit chain still valid after the races
+ok: G4 eight-way concurrency

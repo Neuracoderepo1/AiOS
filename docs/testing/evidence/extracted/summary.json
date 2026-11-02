@@ -1,0 +1,53 @@
+{
+  "raw_log": "job-125144042093.log",
+  "raw_bytes": 41923,
+  "raw_sha256": "fc666afc4c4f3084c0cf7cc6d035a9371f2c314125832c013ed457f4f6682b79",
+  "mx_result_records": 45,
+  "unique_case_ids": 45,
+  "has_G4_checks": 12,
+  "manifest_total": 46,
+  "passed": 46,
+  "per_domain": {
+    "Authentication and identity": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Organization isolation": {
+      "expected": 6,
+      "passed": 6
+    },
+    "Agent registry and trust": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Tool registry and contracts": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Risk and budget controls": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Approval lifecycle": {
+      "expected": 7,
+      "passed": 7
+    },
+    "Execution and idempotency": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Audit and persistence": {
+      "expected": 4,
+      "passed": 4
+    },
+    "Security and permissions": {
+      "expected": 4,
+      "passed": 4
+    }
+  },
+  "mx_records_at_240_char_cut": 0,
+  "verifier_exit_code": 0,
+  "reproduced_equals_ci_verifier_output": true,
+  "errors": [],
+  "ok": true
+}

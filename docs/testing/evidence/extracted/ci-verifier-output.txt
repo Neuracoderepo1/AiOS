@@ -1,0 +1,12 @@
+AiOS canonical matrix
+  Authentication and identity    5/5
+  Organization isolation         6/6
+  Agent registry and trust       5/5
+  Tool registry and contracts    5/5
+  Risk and budget controls       5/5
+  Approval lifecycle             7/7
+  Execution and idempotency      5/5
+  Audit and persistence          4/4
+  Security and permissions       4/4
+  TOTAL                          46/46   (G4 checks: 12/12)
+ok: canonical matrix verified (46/46)
