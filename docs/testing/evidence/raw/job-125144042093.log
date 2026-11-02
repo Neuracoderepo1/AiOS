@@ -1,0 +1,527 @@
+﻿2026-11-02T07:11:53.9507133Z Current runner version: '2.338.2'
+2026-11-02T07:11:53.9525433Z ##[group]Runner Image Provisioner
+2026-11-02T07:11:53.9526270Z Hosted Compute Agent
+2026-11-02T07:11:53.9526675Z Version: 20261021.618
+2026-11-02T07:11:53.9527102Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T07:11:53.9527588Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T07:11:53.9528019Z Worker ID: {40b6895d-31ea-447a-8aa6-80407b1c0433}
+2026-11-02T07:11:53.9528443Z Region: westus3
+2026-11-02T07:11:53.9528841Z Cloud: Azure
+2026-11-02T07:11:53.9529256Z ##[endgroup]
+2026-11-02T07:11:53.9530134Z ##[group]Operating System
+2026-11-02T07:11:53.9530521Z Ubuntu
+2026-11-02T07:11:53.9530843Z 24.04.5
+2026-11-02T07:11:53.9531221Z LTS
+2026-11-02T07:11:53.9531585Z ##[endgroup]
+2026-11-02T07:11:53.9531953Z ##[group]Runner Image
+2026-11-02T07:11:53.9532355Z Image: ubuntu-24.04
+2026-11-02T07:11:53.9532718Z Version: 20261025.353.1
+2026-11-02T07:11:53.9533541Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T07:11:53.9534506Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T07:11:53.9535105Z ##[endgroup]
+2026-11-02T07:11:53.9535918Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T07:11:53.9537342Z Contents: read
+2026-11-02T07:11:53.9537722Z Metadata: read
+2026-11-02T07:11:53.9538139Z ##[endgroup]
+2026-11-02T07:11:53.9539498Z Secret source: Actions
+2026-11-02T07:11:53.9540103Z Cache mode: write
+2026-11-02T07:11:53.9540798Z Prepare workflow directory
+2026-11-02T07:11:53.9784035Z Prepare all required actions
+2026-11-02T07:11:53.9816024Z Getting action download info
+2026-11-02T07:11:54.2601199Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-02T07:11:54.3649600Z Download action repository 'supabase/setup-cli@v1' (SHA:1dedf2c611547ede7232d26866dd3c56ab903bbb)
+2026-11-02T07:11:54.9387706Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-02T07:11:55.1581280Z Complete job name: migrations-and-sql-tests
+2026-11-02T07:11:55.2129993Z ##[group]Run actions/checkout@v4
+2026-11-02T07:11:55.2130453Z with:
+2026-11-02T07:11:55.2130729Z   repository: Neuracoderepo1/AiOS
+2026-11-02T07:11:55.2132869Z   token: ***
+2026-11-02T07:11:55.2133129Z   ssh-strict: true
+2026-11-02T07:11:55.2133400Z   ssh-user: git
+2026-11-02T07:11:55.2133675Z   persist-credentials: true
+2026-11-02T07:11:55.2133970Z   clean: true
+2026-11-02T07:11:55.2134245Z   sparse-checkout-cone-mode: true
+2026-11-02T07:11:55.2134560Z   fetch-depth: 1
+2026-11-02T07:11:55.2134824Z   fetch-tags: false
+2026-11-02T07:11:55.2135098Z   show-progress: true
+2026-11-02T07:11:55.2135387Z   lfs: false
+2026-11-02T07:11:55.2135654Z   submodules: false
+2026-11-02T07:11:55.2136064Z   set-safe-directory: true
+2026-11-02T07:11:55.2136381Z   allow-unsafe-pr-checkout: false
+2026-11-02T07:11:55.2136772Z env:
+2026-11-02T07:11:55.2137018Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:55.2137307Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:55.2137631Z ##[endgroup]
+2026-11-02T07:11:55.4028996Z Syncing repository: Neuracoderepo1/AiOS
+2026-11-02T07:11:55.4030500Z ##[group]Getting Git version info
+2026-11-02T07:11:55.4031074Z Working directory is '/home/runner/work/AiOS/AiOS'
+2026-11-02T07:11:55.4031978Z [command]/usr/bin/git version
+2026-11-02T07:11:55.4083678Z git version 2.56.0
+2026-11-02T07:11:55.4097462Z ##[endgroup]
+2026-11-02T07:11:55.4108294Z Temporarily overriding HOME='/home/runner/work/_temp/75966b07-0de7-49b7-9448-a51a7164fdb7' before making global git config changes
+2026-11-02T07:11:55.4109725Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T07:11:55.4112282Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/AiOS/AiOS
+2026-11-02T07:11:55.4157077Z Deleting the contents of '/home/runner/work/AiOS/AiOS'
+2026-11-02T07:11:55.4160874Z ##[group]Initializing the repository
+2026-11-02T07:11:55.4163881Z [command]/usr/bin/git init /home/runner/work/AiOS/AiOS
+2026-11-02T07:11:55.4250395Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T07:11:55.4251856Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T07:11:55.4253004Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T07:11:55.4254003Z hint: call:
+2026-11-02T07:11:55.4254855Z hint:
+2026-11-02T07:11:55.4255296Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T07:11:55.4255908Z hint:
+2026-11-02T07:11:55.4256488Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T07:11:55.4257397Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T07:11:55.4258128Z hint:
+2026-11-02T07:11:55.4258528Z hint: 	git branch -m <name>
+2026-11-02T07:11:55.4258984Z hint:
+2026-11-02T07:11:55.4259580Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T07:11:55.4260299Z Initialized empty Git repository in /home/runner/work/AiOS/AiOS/.git/
+2026-11-02T07:11:55.4270831Z [command]/usr/bin/git remote add origin https://github.com/Neuracoderepo1/AiOS
+2026-11-02T07:11:55.4334261Z ##[endgroup]
+2026-11-02T07:11:55.4335146Z ##[group]Disabling automatic garbage collection
+2026-11-02T07:11:55.4337315Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T07:11:55.4368371Z ##[endgroup]
+2026-11-02T07:11:55.4369185Z ##[group]Setting up auth
+2026-11-02T07:11:55.4373719Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T07:11:55.4418267Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T07:11:55.4732771Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T07:11:55.4770859Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T07:11:55.4968017Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T07:11:55.5006390Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T07:11:55.5200040Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T07:11:55.5241913Z ##[endgroup]
+2026-11-02T07:11:55.5242497Z ##[group]Fetching the repository
+2026-11-02T07:11:55.5250931Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a2de802277fdbf155e1c58c851b24d2ff6247efa:refs/remotes/pull/3/merge
+2026-11-02T07:11:56.0654535Z From https://github.com/Neuracoderepo1/AiOS
+2026-11-02T07:11:56.0655645Z  * [new ref]         a2de802277fdbf155e1c58c851b24d2ff6247efa -> pull/3/merge
+2026-11-02T07:11:56.0659061Z ##[endgroup]
+2026-11-02T07:11:56.0659942Z ##[group]Determining the checkout info
+2026-11-02T07:11:56.0661079Z ##[endgroup]
+2026-11-02T07:11:56.0665270Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T07:11:56.0716840Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T07:11:56.0756942Z ##[group]Checking out the ref
+2026-11-02T07:11:56.0759139Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/3/merge
+2026-11-02T07:11:56.0852303Z Note: switching to 'refs/remotes/pull/3/merge'.
+2026-11-02T07:11:56.0852928Z 
+2026-11-02T07:11:56.0853451Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-02T07:11:56.0854656Z changes and commit them, and you can discard any commits you make in this
+2026-11-02T07:11:56.0856154Z state without impacting any branches by switching back to a branch.
+2026-11-02T07:11:56.0856860Z 
+2026-11-02T07:11:56.0857312Z If you want to create a new branch to retain commits you create, you may
+2026-11-02T07:11:56.0858843Z do so (now or later) by using -c with the switch command. Example:
+2026-11-02T07:11:56.0859554Z 
+2026-11-02T07:11:56.0859972Z   git switch -c <new-branch-name>
+2026-11-02T07:11:56.0860463Z 
+2026-11-02T07:11:56.0860748Z Or undo this operation with:
+2026-11-02T07:11:56.0861197Z 
+2026-11-02T07:11:56.0861472Z   git switch -
+2026-11-02T07:11:56.0862611Z 
+2026-11-02T07:11:56.0863378Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-02T07:11:56.0864331Z 
+2026-11-02T07:11:56.0865361Z HEAD is now at a2de802 Merge 292d398d552625a32f784e68f3f00b48a8efb0a0 into 87a94a9cc00e6628140d82135922b78743f5e5cf
+2026-11-02T07:11:56.0868462Z ##[endgroup]
+2026-11-02T07:11:56.0903658Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T07:11:56.0934241Z a2de802277fdbf155e1c58c851b24d2ff6247efa
+2026-11-02T07:11:56.1217711Z ##[group]Run supabase/setup-cli@v1
+2026-11-02T07:11:56.1218406Z with:
+2026-11-02T07:11:56.1218919Z   version: 2.122.0
+2026-11-02T07:11:56.1219459Z env:
+2026-11-02T07:11:56.1219932Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:56.1220496Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:56.1221103Z ##[endgroup]
+2026-11-02T07:11:56.6886962Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/19c3d884-30c8-4339-b005-9bda38b7fd90 -f /home/runner/work/_temp/7e0475eb-a371-4de4-99b7-761caaeb87cd
+2026-11-02T07:11:58.0074607Z ##[group]Run ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
+2026-11-02T07:11:58.0075064Z [36;1mls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups[0m
+2026-11-02T07:11:58.0075328Z [36;1mtest ! -s /tmp/dups[0m
+2026-11-02T07:11:58.0096197Z shell: /usr/bin/bash -e {0}
+2026-11-02T07:11:58.0096382Z env:
+2026-11-02T07:11:58.0096526Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:58.0096689Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:58.0096860Z ##[endgroup]
+2026-11-02T07:11:58.0232138Z ##[group]Run set +e
+2026-11-02T07:11:58.0232330Z [36;1mset +e[0m
+2026-11-02T07:11:58.0232528Z [36;1msupabase --version[0m
+2026-11-02T07:11:58.0232841Z [36;1msupabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector > /tmp/start.txt 2>&1[0m
+2026-11-02T07:11:58.0233144Z [36;1mrc=$?[0m
+2026-11-02T07:11:58.0233293Z [36;1mif [ $rc -ne 0 ]; then[0m
+2026-11-02T07:11:58.0233675Z [36;1m  echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"[0m
+2026-11-02T07:11:58.0234040Z [36;1m  exit 1[0m
+2026-11-02T07:11:58.0234197Z [36;1mfi[0m
+2026-11-02T07:11:58.0249414Z shell: /usr/bin/bash -e {0}
+2026-11-02T07:11:58.0249582Z env:
+2026-11-02T07:11:58.0249724Z   DENO_VERSION: 2.9.8
+2026-11-02T07:11:58.0249887Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:11:58.0250056Z ##[endgroup]
+2026-11-02T07:11:58.2751931Z 2.122.0
+2026-11-02T07:13:09.3889214Z ##[group]Run DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+2026-11-02T07:13:09.3889609Z [36;1mDB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')[0m
+2026-11-02T07:13:09.3889854Z [36;1mset +e[0m
+2026-11-02T07:13:09.3889978Z [36;1m: > /tmp/sql.txt[0m
+2026-11-02T07:13:09.3890372Z [36;1mfor t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 && echo "PASS $t" >> /tmp/sql.txt || { echo "FAILED $t" >> /tmp/sql.txt; }; done[0m
+2026-11-02T07:13:09.3890762Z [36;1mcat /tmp/sql.txt[0m
+2026-11-02T07:13:09.3890948Z [36;1mif grep -q '^FAILED' /tmp/sql.txt; then[0m
+2026-11-02T07:13:09.3891280Z [36;1m  echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"[0m
+2026-11-02T07:13:09.3891552Z [36;1m  exit 1[0m
+2026-11-02T07:13:09.3891674Z [36;1mfi[0m
+2026-11-02T07:13:09.3907934Z shell: /usr/bin/bash -e {0}
+2026-11-02T07:13:09.3908096Z env:
+2026-11-02T07:13:09.3908214Z   DENO_VERSION: 2.9.8
+2026-11-02T07:13:09.3908346Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:13:09.3908621Z ##[endgroup]
+2026-11-02T07:13:09.7107704Z Stopped services: [supabase_imgproxy_jtkcdwhiduixoiodhbfn supabase_studio_jtkcdwhiduixoiodhbfn supabase_edge_runtime_jtkcdwhiduixoiodhbfn supabase_analytics_jtkcdwhiduixoiodhbfn supabase_vector_jtkcdwhiduixoiodhbfn supabase_pooler_jtkcdwhiduixoiodhbfn]
+2026-11-02T07:13:09.7109950Z WARN: INBUCKET_URL is deprecated and will be removed in v3, use MAILPIT_URL instead.
+2026-11-02T07:13:10.5338240Z == tests/sql/01_security_invariants.sql
+2026-11-02T07:13:10.5338770Z DO
+2026-11-02T07:13:10.5338946Z          result          
+2026-11-02T07:13:10.5339189Z -------------------------
+2026-11-02T07:13:10.5339444Z  ok: security invariants
+2026-11-02T07:13:10.5339657Z (1 row)
+2026-11-02T07:13:10.5339755Z 
+2026-11-02T07:13:10.5339893Z PASS tests/sql/01_security_invariants.sql
+2026-11-02T07:13:10.5340267Z == tests/sql/02_function_privilege_boundary.sql
+2026-11-02T07:13:10.5340604Z DO
+2026-11-02T07:13:10.5340782Z              result              
+2026-11-02T07:13:10.5341930Z ---------------------------------
+2026-11-02T07:13:10.5342164Z  ok: function privilege boundary
+2026-11-02T07:13:10.5342425Z (1 row)
+2026-11-02T07:13:10.5342504Z 
+2026-11-02T07:13:10.5342594Z PASS tests/sql/02_function_privilege_boundary.sql
+2026-11-02T07:13:10.5342802Z == tests/sql/03_approval_convergence_regression.sql
+2026-11-02T07:13:10.5342968Z BEGIN
+2026-11-02T07:13:10.5343070Z SET
+2026-11-02T07:13:10.5343174Z INSERT 0 2
+2026-11-02T07:13:10.5343283Z INSERT 0 1
+2026-11-02T07:13:10.5343388Z INSERT 0 3
+2026-11-02T07:13:10.5343498Z INSERT 0 7
+2026-11-02T07:13:10.5343599Z INSERT 0 5
+2026-11-02T07:13:10.5343706Z INSERT 0 1
+2026-11-02T07:13:10.5344319Z SET
+2026-11-02T07:13:10.5344442Z CREATE TABLE
+2026-11-02T07:13:10.5344554Z INSERT 0 1
+2026-11-02T07:13:10.5344658Z INSERT 0 1
+2026-11-02T07:13:10.5344757Z DO
+2026-11-02T07:13:10.5344856Z ROLLBACK
+2026-11-02T07:13:10.5344984Z                result                
+2026-11-02T07:13:10.5345140Z -------------------------------------
+2026-11-02T07:13:10.5345304Z  ok: approval convergence regression
+2026-11-02T07:13:10.5345449Z (1 row)
+2026-11-02T07:13:10.5345513Z 
+2026-11-02T07:13:10.5345608Z PASS tests/sql/03_approval_convergence_regression.sql
+2026-11-02T07:13:10.5345969Z == tests/sql/04_owner_decision_dispositions.sql
+2026-11-02T07:13:10.5346126Z BEGIN
+2026-11-02T07:13:10.5346229Z INSERT 0 1
+2026-11-02T07:13:10.5346334Z INSERT 0 3
+2026-11-02T07:13:10.5346435Z DO
+2026-11-02T07:13:10.5346537Z ROLLBACK
+2026-11-02T07:13:10.5346651Z              result              
+2026-11-02T07:13:10.5346797Z ---------------------------------
+2026-11-02T07:13:10.5346948Z  ok: owner decision dispositions
+2026-11-02T07:13:10.5347083Z (1 row)
+2026-11-02T07:13:10.5347143Z 
+2026-11-02T07:13:10.5347228Z PASS tests/sql/04_owner_decision_dispositions.sql
+2026-11-02T07:13:10.5347414Z == tests/sql/05_certification_matrix.sql
+2026-11-02T07:13:10.5347865Z BEGIN
+2026-11-02T07:13:10.5347971Z CREATE SCHEMA
+2026-11-02T07:13:10.5348079Z GRANT
+2026-11-02T07:13:10.5348188Z CREATE TABLE
+2026-11-02T07:13:10.5348305Z CREATE TABLE
+2026-11-02T07:13:10.5348409Z GRANT
+2026-11-02T07:13:10.5348510Z GRANT
+2026-11-02T07:13:10.5348613Z CREATE FUNCTION
+2026-11-02T07:13:10.5348729Z CREATE FUNCTION
+2026-11-02T07:13:10.5348843Z CREATE FUNCTION
+2026-11-02T07:13:10.5348959Z CREATE FUNCTION
+2026-11-02T07:13:10.5349069Z CREATE FUNCTION
+2026-11-02T07:13:10.5349180Z CREATE FUNCTION
+2026-11-02T07:13:10.5349289Z CREATE FUNCTION
+2026-11-02T07:13:10.5349400Z CREATE FUNCTION
+2026-11-02T07:13:10.5349510Z CREATE FUNCTION
+2026-11-02T07:13:10.5349620Z CREATE FUNCTION
+2026-11-02T07:13:10.5349729Z CREATE FUNCTION
+2026-11-02T07:13:10.5349838Z CREATE FUNCTION
+2026-11-02T07:13:10.5350022Z CREATE FUNCTION
+2026-11-02T07:13:10.5350163Z CREATE FUNCTION
+2026-11-02T07:13:10.5350275Z CREATE FUNCTION
+2026-11-02T07:13:10.5350385Z CREATE FUNCTION
+2026-11-02T07:13:10.5350492Z INSERT 0 5
+2026-11-02T07:13:10.5350631Z  put | put | put | put | put | put | put 
+2026-11-02T07:13:10.5350806Z -----+-----+-----+-----+-----+-----+-----
+2026-11-02T07:13:10.5351078Z      |     |     |     |     |     | 
+2026-11-02T07:13:10.5351212Z (1 row)
+2026-11-02T07:13:10.5351273Z 
+2026-11-02T07:13:10.5351318Z INSERT 0 2
+2026-11-02T07:13:10.5351424Z INSERT 0 4
+2026-11-02T07:13:10.5351533Z INSERT 0 1
+2026-11-02T07:13:10.5351638Z INSERT 0 1
+2026-11-02T07:13:10.5351774Z  put | put | put | put | put | put | put | put 
+2026-11-02T07:13:10.5351958Z -----+-----+-----+-----+-----+-----+-----+-----
+2026-11-02T07:13:10.5352132Z      |     |     |     |     |     |     | 
+2026-11-02T07:13:10.5352274Z (1 row)
+2026-11-02T07:13:10.5352334Z 
+2026-11-02T07:13:10.5352379Z INSERT 0 2
+2026-11-02T07:13:10.5352486Z  put | put 
+2026-11-02T07:13:10.5352595Z -----+-----
+2026-11-02T07:13:10.5352698Z      | 
+2026-11-02T07:13:10.5352798Z (1 row)
+2026-11-02T07:13:10.5352856Z 
+2026-11-02T07:13:10.5352920Z                  inv                  
+2026-11-02T07:13:10.5353081Z --------------------------------------
+2026-11-02T07:13:10.5353241Z  46cedb7d-25bf-44ba-82c0-e868051c1e9e
+2026-11-02T07:13:10.5353386Z (1 row)
+2026-11-02T07:13:10.5353442Z 
+2026-11-02T07:13:10.5353520Z DO
+2026-11-02T07:13:10.5353888Z                                                                                        ?column?                                                                                       
+2026-11-02T07:13:10.5354577Z --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-11-02T07:13:10.5355232Z  MX_RESULT|A1|Authentication and identity|PASS|valid identity resolves its org role
+2026-11-02T07:13:10.5355862Z  MX_RESULT|A2|Authentication and identity|PASS|missing identity has no role
+2026-11-02T07:13:10.5356306Z  MX_RESULT|A3|Authentication and identity|PASS|unknown identity has no role
+2026-11-02T07:13:10.5356821Z  MX_RESULT|A4|Authentication and identity|PASS|member sees 1, outsider sees 0 within one session
+2026-11-02T07:13:10.5357551Z  MX_RESULT|A5|Authentication and identity|PASS|service db role without service JWT: ERR:42501; with service JWT: OK
+2026-11-02T07:13:10.5358005Z  MX_RESULT|B1|Organization isolation|PASS|org A admin cannot see org B rows
+2026-11-02T07:13:10.5358286Z  MX_RESULT|B2|Organization isolation|PASS|cross-tenant insert: ERR:42501
+2026-11-02T07:13:10.5358599Z  MX_RESULT|B3|Organization isolation|PASS|org A invocation with org B agent refused: P0001
+2026-11-02T07:13:10.5358928Z  MX_RESULT|B4|Organization isolation|PASS|approval bound to another org's task: 23514
+2026-11-02T07:13:10.5359337Z  MX_RESULT|B5|Organization isolation|PASS|org B admin resolving org A approval: 42501|reviewer is not an organization owner/admin
+2026-11-02T07:13:10.5359729Z  MX_RESULT|B6|Organization isolation|PASS|membership rows of another org are invisible
+2026-11-02T07:13:10.5360176Z  MX_RESULT|C1|Agent registry and trust|PASS|registered agent, in-contract tool: approved
+2026-11-02T07:13:10.5360476Z  MX_RESULT|C2|Agent registry and trust|PASS|unknown agent refused: P0001
+2026-11-02T07:13:10.5360744Z  MX_RESULT|C3|Agent registry and trust|PASS|suspended agent: denied
+2026-11-02T07:13:10.5361051Z  MX_RESULT|C4|Agent registry and trust|PASS|trust report: member=false (error key), outsider=true
+2026-11-02T07:13:10.5361479Z  MX_RESULT|C5|Agent registry and trust|PASS|tool outside contract, even if approved: 42501|tool is not authorized by active contract
+2026-11-02T07:13:10.5361880Z  MX_RESULT|D1|Tool registry and contracts|PASS|unknown tool refused at insert: 22023
+2026-11-02T07:13:10.5362200Z  MX_RESULT|D2|Tool registry and contracts|PASS|agent without an active contract: denied
+2026-11-02T07:13:10.5362527Z  MX_RESULT|D3|Tool registry and contracts|PASS|schema violation refused at insert: 22023
+2026-11-02T07:13:10.5362934Z  MX_RESULT|D4|Tool registry and contracts|PASS|request under v1, contract now v2: 40901|authorization version is stale
+2026-11-02T07:13:10.5363313Z  MX_RESULT|D5|Tool registry and contracts|PASS|tool disabled after request: 42501|tool unavailable
+2026-11-02T07:13:10.5363796Z  MX_RESULT|E1|Risk and budget controls|PASS|medium-risk tool above a low contract ceiling, even if approved: 42501|tool registry risk (medium) exceeds current contract ceiling (low)
+2026-11-02T07:13:10.5364475Z  MX_RESULT|E2|Risk and budget controls|PASS|USD above hard limit: denied
+2026-11-02T07:13:10.5364781Z  MX_RESULT|E3|Risk and budget controls|PASS|at threshold: OK; one above: 42501|valid approval required
+2026-11-02T07:13:10.5365112Z  MX_RESULT|E4|Risk and budget controls|PASS|concurrency at limit denied, below limit allowed
+2026-11-02T07:13:10.5365456Z  MX_RESULT|E5|Risk and budget controls|PASS|missing usd_amount fails closed: 42501|valid approval required
+2026-11-02T07:13:10.5366010Z  MX_RESULT|F1|Approval lifecycle|PASS|approval required before execution: 42501|valid approval required
+2026-11-02T07:13:10.5366342Z  MX_RESULT|F2|Approval lifecycle|PASS|authorized reviewer: resolve=OK, execute=OK
+2026-11-02T07:13:10.5367011Z  MX_RESULT|F3|Approval lifecycle|PASS|self-approval cannot execute (resolve=42501|self-approval is not permitted: requester and reviewer must differ): 42501|valid approval required
+2026-11-02T07:13:10.5367840Z  MX_RESULT|F4|Approval lifecycle|PASS|lapsed approval: resolve=40001|approval expired, approval=expired, invocation=expired
+2026-11-02T07:13:10.5368202Z  MX_RESULT|F5|Approval lifecycle|PASS|rejection denies the invocation: denied
+2026-11-02T07:13:10.5368503Z  MX_RESULT|F6|Approval lifecycle|PASS|replayed decision and replayed execution both refused
+2026-11-02T07:13:10.5368927Z  MX_RESULT|F7|Approval lifecycle|PASS|invalid binding detected (agent_organization_mismatch), left pending, manual_review recorded, guard enabled
+2026-11-02T07:13:10.5369319Z  MX_RESULT|G1|Execution and idempotency|PASS|duplicate idempotency key: 23505
+2026-11-02T07:13:10.5369687Z  MX_RESULT|G2|Execution and idempotency|PASS|retry of a claimed invocation refused: 40001|invocation already claimed for execution
+2026-11-02T07:13:10.5370041Z  MX_RESULT|G3|Execution and idempotency|PASS|execution failure recorded
+2026-11-02T07:13:10.5370346Z  MX_RESULT|G5|Execution and idempotency|PASS|cannot skip authorization by writing status: P0001
+2026-11-02T07:13:10.5370651Z  MX_RESULT|H1|Audit and persistence|PASS|audit ledger update=42501, delete=42501
+2026-11-02T07:13:10.5370924Z  MX_RESULT|H2|Audit and persistence|PASS|request and state changes are audited
+2026-11-02T07:13:10.5371186Z  MX_RESULT|H3|Audit and persistence|PASS|failure and denial are recorded
+2026-11-02T07:13:10.5371525Z  MX_RESULT|H4|Audit and persistence|PASS|audit chains valid (A=true, B=true) and approved approvals match invocation state
+2026-11-02T07:13:10.5371919Z  MX_RESULT|I1|Security and permissions|PASS|RLS: outsider reads nothing, direct approval insert=ERR:42501
+2026-11-02T07:13:10.5372292Z  MX_RESULT|I2|Security and permissions|PASS|private functions refused to authenticated: ERR:42501 / ERR:42501
+2026-11-02T07:13:10.5372753Z  MX_RESULT|I3|Security and permissions|PASS|anonymous: read=ERR:42501, approval RPC=ERR:42501
+2026-11-02T07:13:10.5373079Z  MX_RESULT|I4|Security and permissions|PASS|self-escalation attempt (OK) left role unchanged
+2026-11-02T07:13:10.5373314Z (45 rows)
+2026-11-02T07:13:10.5373376Z 
+2026-11-02T07:13:10.5373445Z            domain            | cases | passed 
+2026-11-02T07:13:10.5373613Z -----------------------------+-------+--------
+2026-11-02T07:13:10.5373783Z  Authentication and identity |     5 |      5
+2026-11-02T07:13:10.5373952Z  Organization isolation      |     6 |      6
+2026-11-02T07:13:10.5374115Z  Agent registry and trust    |     5 |      5
+2026-11-02T07:13:10.5374280Z  Tool registry and contracts |     5 |      5
+2026-11-02T07:13:10.5374447Z  Risk and budget controls    |     5 |      5
+2026-11-02T07:13:10.5374609Z  Approval lifecycle          |     7 |      7
+2026-11-02T07:13:10.5374774Z  Execution and idempotency   |     4 |      4
+2026-11-02T07:13:10.5374939Z  Audit and persistence       |     4 |      4
+2026-11-02T07:13:10.5375103Z  Security and permissions    |     4 |      4
+2026-11-02T07:13:10.5375250Z (9 rows)
+2026-11-02T07:13:10.5375390Z 
+2026-11-02T07:13:10.5375436Z DO
+2026-11-02T07:13:10.5375535Z ROLLBACK
+2026-11-02T07:13:10.5375660Z                              result                             
+2026-11-02T07:13:10.5375991Z ----------------------------------------------------------------
+2026-11-02T07:13:10.5376215Z  ok: certification matrix (45 SQL cases; G4 in concurrency job)
+2026-11-02T07:13:10.5376419Z (1 row)
+2026-11-02T07:13:10.5376509Z 
+2026-11-02T07:13:10.5376581Z PASS tests/sql/05_certification_matrix.sql
+2026-11-02T07:13:10.5376746Z == tests/sql/06_executor_allowlist.sql
+2026-11-02T07:13:10.5376887Z BEGIN
+2026-11-02T07:13:10.5376987Z DO
+2026-11-02T07:13:10.5377084Z ROLLBACK
+2026-11-02T07:13:10.5377192Z          result         
+2026-11-02T07:13:10.5377320Z ------------------------
+2026-11-02T07:13:10.5377447Z  ok: executor allowlist
+2026-11-02T07:13:10.5377570Z (1 row)
+2026-11-02T07:13:10.5377632Z 
+2026-11-02T07:13:10.5377694Z PASS tests/sql/06_executor_allowlist.sql
+2026-11-02T07:13:10.5416881Z ##[group]Run DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+2026-11-02T07:13:10.5417253Z [36;1mDB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')[0m
+2026-11-02T07:13:10.5417478Z [36;1mset +e[0m
+2026-11-02T07:13:10.5417683Z [36;1mbash tests/matrix/run.sh "$DB_URL" /tmp/matrix-out 2>&1 | tee /tmp/matrix-run.txt[0m
+2026-11-02T07:13:10.5417921Z [36;1mrc=${PIPESTATUS[0]}[0m
+2026-11-02T07:13:10.5418085Z [36;1mif [ -f /tmp/matrix-out/report.json ]; then[0m
+2026-11-02T07:13:10.5418279Z [36;1m  python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"[0m
+2026-11-02T07:13:10.5418446Z [36;1mimport json[0m
+2026-11-02T07:13:10.5418606Z [36;1mr = json.load(open("/tmp/matrix-out/report.json"))[0m
+2026-11-02T07:13:10.5418925Z [36;1mprint("### AiOS canonical test matrix: %s/%s %s\n" % (r["passed"], r["manifest_total"], "PASS" if r["ok"] else "FAIL"))[0m
+2026-11-02T07:13:10.5419268Z [36;1mprint("| Domain | Passed | Expected |\n|---|---|---|")[0m
+2026-11-02T07:13:10.5419474Z [36;1mfor d, v in r["per_domain"].items():[0m
+2026-11-02T07:13:10.5419677Z [36;1m    print("| %s | %s | %s |" % (d, v["passed"], v["expected"]))[0m
+2026-11-02T07:13:10.5419871Z [36;1mfor e in r["errors"]:[0m
+2026-11-02T07:13:10.5420013Z [36;1m    print("\n- " + e)[0m
+2026-11-02T07:13:10.5420172Z [36;1mPY[0m
+2026-11-02T07:13:10.5420281Z [36;1mfi[0m
+2026-11-02T07:13:10.5420396Z [36;1mif [ $rc -ne 0 ]; then[0m
+2026-11-02T07:13:10.5420690Z [36;1m  echo "::error title=canonical-matrix::$(tail -c 3000 /tmp/matrix-run.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"[0m
+2026-11-02T07:13:10.5420983Z [36;1m  exit 1[0m
+2026-11-02T07:13:10.5421093Z [36;1mfi[0m
+2026-11-02T07:13:10.5437360Z shell: /usr/bin/bash -e {0}
+2026-11-02T07:13:10.5437495Z env:
+2026-11-02T07:13:10.5437608Z   DENO_VERSION: 2.9.8
+2026-11-02T07:13:10.5437740Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:13:10.5437912Z ##[endgroup]
+2026-11-02T07:13:10.8627845Z Stopped services: [supabase_imgproxy_jtkcdwhiduixoiodhbfn supabase_studio_jtkcdwhiduixoiodhbfn supabase_edge_runtime_jtkcdwhiduixoiodhbfn supabase_analytics_jtkcdwhiduixoiodhbfn supabase_vector_jtkcdwhiduixoiodhbfn supabase_pooler_jtkcdwhiduixoiodhbfn]
+2026-11-02T07:13:10.8629811Z WARN: INBUCKET_URL is deprecated and will be removed in v3, use MAILPIT_URL instead.
+2026-11-02T07:13:11.3280018Z git_sha=a2de802277fdbf155e1c58c851b24d2ff6247efa
+2026-11-02T07:13:11.3289556Z started_utc=2026-11-02T07:13:11Z
+2026-11-02T07:13:11.3489050Z psql_client=psql (PostgreSQL) 16.15 (Ubuntu 16.15-1.pgdg24.04+2)
+2026-11-02T07:13:11.3757390Z server=PostgreSQL 17.11 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit
+2026-11-02T07:13:11.3856533Z migrations=110
+2026-11-02T07:13:11.3866344Z == 05_certification_matrix (45 SQL cases)
+2026-11-02T07:13:11.4927041Z MX_RESULT|A1|Authentication and identity|PASS|valid identity resolves its org role
+2026-11-02T07:13:11.4928094Z MX_RESULT|A2|Authentication and identity|PASS|missing identity has no role
+2026-11-02T07:13:11.4928741Z MX_RESULT|A3|Authentication and identity|PASS|unknown identity has no role
+2026-11-02T07:13:11.4929650Z MX_RESULT|A4|Authentication and identity|PASS|member sees 1, outsider sees 0 within one session
+2026-11-02T07:13:11.4930204Z MX_RESULT|A5|Authentication and identity|PASS|service db role without service JWT: ERR:42501; with service JWT: OK
+2026-11-02T07:13:11.4930655Z MX_RESULT|B1|Organization isolation|PASS|org A admin cannot see org B rows
+2026-11-02T07:13:11.4931019Z MX_RESULT|B2|Organization isolation|PASS|cross-tenant insert: ERR:42501
+2026-11-02T07:13:11.4931405Z MX_RESULT|B3|Organization isolation|PASS|org A invocation with org B agent refused: P0001
+2026-11-02T07:13:11.4931809Z MX_RESULT|B4|Organization isolation|PASS|approval bound to another org's task: 23514
+2026-11-02T07:13:11.4932326Z MX_RESULT|B5|Organization isolation|PASS|org B admin resolving org A approval: 42501|reviewer is not an organization owner/admin
+2026-11-02T07:13:11.4932998Z MX_RESULT|B6|Organization isolation|PASS|membership rows of another org are invisible
+2026-11-02T07:13:11.4933407Z MX_RESULT|C1|Agent registry and trust|PASS|registered agent, in-contract tool: approved
+2026-11-02T07:13:11.4933800Z MX_RESULT|C2|Agent registry and trust|PASS|unknown agent refused: P0001
+2026-11-02T07:13:11.4934147Z MX_RESULT|C3|Agent registry and trust|PASS|suspended agent: denied
+2026-11-02T07:13:11.4934581Z MX_RESULT|C4|Agent registry and trust|PASS|trust report: member=false (error key), outsider=true
+2026-11-02T07:13:11.4935074Z MX_RESULT|C5|Agent registry and trust|PASS|tool outside contract, even if approved: 42501|tool is not authorized by active contract
+2026-11-02T07:13:11.4935549Z MX_RESULT|D1|Tool registry and contracts|PASS|unknown tool refused at insert: 22023
+2026-11-02T07:13:11.4936199Z MX_RESULT|D2|Tool registry and contracts|PASS|agent without an active contract: denied
+2026-11-02T07:13:11.4936773Z MX_RESULT|D3|Tool registry and contracts|PASS|schema violation refused at insert: 22023
+2026-11-02T07:13:11.4937448Z MX_RESULT|D4|Tool registry and contracts|PASS|request under v1, contract now v2: 40901|authorization version is stale
+2026-11-02T07:13:11.4938070Z MX_RESULT|D5|Tool registry and contracts|PASS|tool disabled after request: 42501|tool unavailable
+2026-11-02T07:13:11.4938645Z MX_RESULT|E1|Risk and budget controls|PASS|medium-risk tool above a low contract ceiling, even if approved: 42501|tool registry risk (medium) exceeds current contract ceiling (low)
+2026-11-02T07:13:11.4939178Z MX_RESULT|E2|Risk and budget controls|PASS|USD above hard limit: denied
+2026-11-02T07:13:11.4939575Z MX_RESULT|E3|Risk and budget controls|PASS|at threshold: OK; one above: 42501|valid approval required
+2026-11-02T07:13:11.4940002Z MX_RESULT|E4|Risk and budget controls|PASS|concurrency at limit denied, below limit allowed
+2026-11-02T07:13:11.4940442Z MX_RESULT|E5|Risk and budget controls|PASS|missing usd_amount fails closed: 42501|valid approval required
+2026-11-02T07:13:11.4941128Z MX_RESULT|F1|Approval lifecycle|PASS|approval required before execution: 42501|valid approval required
+2026-11-02T07:13:11.4942243Z MX_RESULT|F2|Approval lifecycle|PASS|authorized reviewer: resolve=OK, execute=OK
+2026-11-02T07:13:11.4942806Z MX_RESULT|F3|Approval lifecycle|PASS|self-approval cannot execute (resolve=42501|self-approval is not permitted: requester and reviewer must differ): 42501|valid approval required
+2026-11-02T07:13:11.4943434Z MX_RESULT|F4|Approval lifecycle|PASS|lapsed approval: resolve=40001|approval expired, approval=expired, invocation=expired
+2026-11-02T07:13:11.4943886Z MX_RESULT|F5|Approval lifecycle|PASS|rejection denies the invocation: denied
+2026-11-02T07:13:11.4944278Z MX_RESULT|F6|Approval lifecycle|PASS|replayed decision and replayed execution both refused
+2026-11-02T07:13:11.4944788Z MX_RESULT|F7|Approval lifecycle|PASS|invalid binding detected (agent_organization_mismatch), left pending, manual_review recorded, guard enabled
+2026-11-02T07:13:11.4945344Z MX_RESULT|G1|Execution and idempotency|PASS|duplicate idempotency key: 23505
+2026-11-02T07:13:11.4946246Z MX_RESULT|G2|Execution and idempotency|PASS|retry of a claimed invocation refused: 40001|invocation already claimed for execution
+2026-11-02T07:13:11.4946696Z MX_RESULT|G3|Execution and idempotency|PASS|execution failure recorded
+2026-11-02T07:13:11.4947083Z MX_RESULT|G5|Execution and idempotency|PASS|cannot skip authorization by writing status: P0001
+2026-11-02T07:13:11.4947484Z MX_RESULT|H1|Audit and persistence|PASS|audit ledger update=42501, delete=42501
+2026-11-02T07:13:11.4947854Z MX_RESULT|H2|Audit and persistence|PASS|request and state changes are audited
+2026-11-02T07:13:11.4948213Z MX_RESULT|H3|Audit and persistence|PASS|failure and denial are recorded
+2026-11-02T07:13:11.4948640Z MX_RESULT|H4|Audit and persistence|PASS|audit chains valid (A=true, B=true) and approved approvals match invocation state
+2026-11-02T07:13:11.4949126Z MX_RESULT|I1|Security and permissions|PASS|RLS: outsider reads nothing, direct approval insert=ERR:42501
+2026-11-02T07:13:11.4949816Z MX_RESULT|I2|Security and permissions|PASS|private functions refused to authenticated: ERR:42501 / ERR:42501
+2026-11-02T07:13:11.4950271Z MX_RESULT|I3|Security and permissions|PASS|anonymous: read=ERR:42501, approval RPC=ERR:42501
+2026-11-02T07:13:11.4950697Z MX_RESULT|I4|Security and permissions|PASS|self-escalation attempt (OK) left role unchanged
+2026-11-02T07:13:11.4951073Z ok: certification matrix (45 SQL cases; G4 in concurrency job)
+2026-11-02T07:13:11.4951366Z == G4 eight-way concurrency
+2026-11-02T07:13:24.2312899Z == G4 S1: 8 concurrent approvals of one approval
+2026-11-02T07:13:24.2313245Z   results: 7 40001;1 OK;
+2026-11-02T07:13:24.2313519Z   PASS exactly one approval wins, the rest get 40001 (won=1 lost=7)
+2026-11-02T07:13:24.2313854Z   PASS approval resolved once, invocation approved
+2026-11-02T07:13:24.2314178Z == G4 S2: 8 concurrent execution claims of one approved invocation
+2026-11-02T07:13:24.2314496Z   PASS S2 precondition: invocation is approved
+2026-11-02T07:13:24.2314784Z   results: 7 40001;1 OK;
+2026-11-02T07:13:24.2315063Z   PASS exactly one claim wins, the rest get 40001 (won=1 lost=7)
+2026-11-02T07:13:24.2315381Z   PASS invocation executing exactly once
+2026-11-02T07:13:24.2315671Z == G4 S3: 8 concurrent requests with one idempotency key
+2026-11-02T07:13:24.2316052Z   results: 7 23505;1 OK;
+2026-11-02T07:13:24.2316230Z   PASS exactly one row created, the rest get 23505 (created=1 dup=7)
+2026-11-02T07:13:24.2316422Z   PASS one invocation row for the key
+2026-11-02T07:13:24.2316629Z == G4 S4: 8 concurrent runs of the expiry job over 24 lapsed approvals
+2026-11-02T07:13:24.2316814Z   results: 5 N:0;2 N:10;1 N:4;
+2026-11-02T07:13:24.2316951Z   PASS no worker errored (errors=0)
+2026-11-02T07:13:24.2317139Z   PASS each lapsed approval converged exactly once (pre=24, summed=24)
+2026-11-02T07:13:24.2317369Z   PASS all 24 approvals and invocations expired, none pending
+2026-11-02T07:13:24.2317745Z   PASS each invocation expired exactly once in the audit trail (one approval_changed + one tool_invocation_status_changed each; no duplicates, none missing)
+2026-11-02T07:13:24.2318093Z   PASS audit chain still valid after the races
+2026-11-02T07:13:24.2318252Z ok: G4 eight-way concurrency
+2026-11-02T07:13:24.2318404Z == verify against manifest
+2026-11-02T07:13:24.2491095Z AiOS canonical matrix
+2026-11-02T07:13:24.2491269Z   Authentication and identity    5/5
+2026-11-02T07:13:24.2491421Z   Organization isolation         6/6
+2026-11-02T07:13:24.2491568Z   Agent registry and trust       5/5
+2026-11-02T07:13:24.2491706Z   Tool registry and contracts    5/5
+2026-11-02T07:13:24.2491840Z   Risk and budget controls       5/5
+2026-11-02T07:13:24.2491976Z   Approval lifecycle             7/7
+2026-11-02T07:13:24.2492113Z   Execution and idempotency      5/5
+2026-11-02T07:13:24.2492254Z   Audit and persistence          4/4
+2026-11-02T07:13:24.2492390Z   Security and permissions       4/4
+2026-11-02T07:13:24.2492550Z   TOTAL                          46/46   (G4 checks: 12/12)
+2026-11-02T07:13:24.2492732Z ok: canonical matrix verified (46/46)
+2026-11-02T07:13:24.2736745Z ##[group]Run actions/upload-artifact@v4
+2026-11-02T07:13:24.2736905Z with:
+2026-11-02T07:13:24.2737017Z   name: aios-ci-evidence
+2026-11-02T07:13:24.2737195Z   path: /tmp/matrix-out
+/tmp/matrix-run.txt
+/tmp/sql.txt
+/tmp/start.txt
+
+2026-11-02T07:13:24.2737394Z   if-no-files-found: warn
+2026-11-02T07:13:24.2737516Z   retention-days: 90
+2026-11-02T07:13:24.2737635Z   compression-level: 6
+2026-11-02T07:13:24.2737749Z   overwrite: false
+2026-11-02T07:13:24.2737993Z   include-hidden-files: false
+2026-11-02T07:13:24.2738157Z env:
+2026-11-02T07:13:24.2738258Z   DENO_VERSION: 2.9.8
+2026-11-02T07:13:24.2738378Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:13:24.2738507Z ##[endgroup]
+2026-11-02T07:13:24.3812821Z (node:7008) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T07:13:24.3813588Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T07:13:24.3868403Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-02T07:13:24.3870143Z The least common ancestor is /tmp. This will be the root directory of the artifact
+2026-11-02T07:13:24.3870698Z With the provided path, there will be 7 files uploaded
+2026-11-02T07:13:24.3873802Z Artifact name is valid!
+2026-11-02T07:13:24.3874320Z Root directory input is valid!
+2026-11-02T07:13:24.7458059Z Beginning upload of artifact content to blob storage
+2026-11-02T07:13:24.7630121Z (node:7008) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-02T07:13:25.0409351Z Uploaded bytes 13284
+2026-11-02T07:13:25.1090481Z Finished uploading artifact content to blob storage!
+2026-11-02T07:13:25.1091300Z SHA256 digest of uploaded artifact zip is fbf551f0b03800654bc619ededceeeae422dae779bad4e4944dc73ed2510d705
+2026-11-02T07:13:25.1093322Z Finalizing artifact upload
+2026-11-02T07:13:25.5554504Z Artifact aios-ci-evidence.zip successfully finalized. Artifact ID 13123335566
+2026-11-02T07:13:25.5554969Z Artifact aios-ci-evidence has been successfully uploaded! Final size is 13284 bytes. Artifact ID is 13123335566
+2026-11-02T07:13:25.5559530Z Artifact download URL: https://github.com/Neuracoderepo1/AiOS/actions/runs/41404721275/artifacts/13123335566
+2026-11-02T07:13:25.5694795Z ##[group]Run supabase stop --no-backup
+2026-11-02T07:13:25.5695011Z [36;1msupabase stop --no-backup[0m
+2026-11-02T07:13:25.5711757Z shell: /usr/bin/bash -e {0}
+2026-11-02T07:13:25.5711902Z env:
+2026-11-02T07:13:25.5712017Z   DENO_VERSION: 2.9.8
+2026-11-02T07:13:25.5712153Z   SUPABASE_CLI_VERSION: 2.122.0
+2026-11-02T07:13:25.5712305Z ##[endgroup]
+2026-11-02T07:13:25.8279784Z Stopping containers...
+2026-11-02T07:13:33.3894634Z Stopped supabase local development setup.
+2026-11-02T07:13:33.8873433Z Post job cleanup.
+2026-11-02T07:13:33.9411370Z [command]/usr/bin/git version
+2026-11-02T07:13:33.9445109Z git version 2.56.0
+2026-11-02T07:13:33.9470053Z Temporarily overriding HOME='/home/runner/work/_temp/389ce0de-cb46-4b84-a350-a4a4546318b3' before making global git config changes
+2026-11-02T07:13:33.9470746Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T07:13:33.9473497Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/AiOS/AiOS
+2026-11-02T07:13:33.9505643Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T07:13:33.9540622Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T07:13:33.9745252Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T07:13:33.9773729Z http.https://github.com/.extraheader
+2026-11-02T07:13:33.9783755Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T07:13:33.9817816Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T07:13:34.0021447Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T07:13:34.0059594Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T07:13:34.0371783Z Cleaning up orphan processes
+2026-11-02T07:13:34.0633940Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, supabase/setup-cli@v1. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

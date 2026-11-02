@@ -1,0 +1,111 @@
+[36;1mbash tests/matrix/run.sh "$DB_URL" /tmp/matrix-out 2>&1 | tee /tmp/matrix-run.txt[0m
+[36;1mrc=${PIPESTATUS[0]}[0m
+[36;1mif [ -f /tmp/matrix-out/report.json ]; then[0m
+[36;1m  python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"[0m
+[36;1mimport json[0m
+[36;1mr = json.load(open("/tmp/matrix-out/report.json"))[0m
+[36;1mprint("### AiOS canonical test matrix: %s/%s %s\n" % (r["passed"], r["manifest_total"], "PASS" if r["ok"] else "FAIL"))[0m
+[36;1mprint("| Domain | Passed | Expected |\n|---|---|---|")[0m
+[36;1mfor d, v in r["per_domain"].items():[0m
+[36;1m    print("| %s | %s | %s |" % (d, v["passed"], v["expected"]))[0m
+[36;1mfor e in r["errors"]:[0m
+[36;1m    print("\n- " + e)[0m
+[36;1mPY[0m
+[36;1mfi[0m
+[36;1mif [ $rc -ne 0 ]; then[0m
+[36;1m  echo "::error title=canonical-matrix::$(tail -c 3000 /tmp/matrix-run.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"[0m
+[36;1m  exit 1[0m
+[36;1mfi[0m
+shell: /usr/bin/bash -e {0}
+env:
+  DENO_VERSION: 2.9.8
+  SUPABASE_CLI_VERSION: 2.122.0
+Stopped services: [supabase_imgproxy_jtkcdwhiduixoiodhbfn supabase_studio_jtkcdwhiduixoiodhbfn supabase_edge_runtime_jtkcdwhiduixoiodhbfn supabase_analytics_jtkcdwhiduixoiodhbfn supabase_vector_jtkcdwhiduixoiodhbfn supabase_pooler_jtkcdwhiduixoiodhbfn]
+WARN: INBUCKET_URL is deprecated and will be removed in v3, use MAILPIT_URL instead.
+git_sha=a2de802277fdbf155e1c58c851b24d2ff6247efa
+started_utc=2026-11-02T07:13:11Z
+psql_client=psql (PostgreSQL) 16.15 (Ubuntu 16.15-1.pgdg24.04+2)
+server=PostgreSQL 17.11 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit
+migrations=110
+== 05_certification_matrix (45 SQL cases)
+MX_RESULT|A1|Authentication and identity|PASS|valid identity resolves its org role
+MX_RESULT|A2|Authentication and identity|PASS|missing identity has no role
+MX_RESULT|A3|Authentication and identity|PASS|unknown identity has no role
+MX_RESULT|A4|Authentication and identity|PASS|member sees 1, outsider sees 0 within one session
+MX_RESULT|A5|Authentication and identity|PASS|service db role without service JWT: ERR:42501; with service JWT: OK
+MX_RESULT|B1|Organization isolation|PASS|org A admin cannot see org B rows
+MX_RESULT|B2|Organization isolation|PASS|cross-tenant insert: ERR:42501
+MX_RESULT|B3|Organization isolation|PASS|org A invocation with org B agent refused: P0001
+MX_RESULT|B4|Organization isolation|PASS|approval bound to another org's task: 23514
+MX_RESULT|B5|Organization isolation|PASS|org B admin resolving org A approval: 42501|reviewer is not an organization owner/admin
+MX_RESULT|B6|Organization isolation|PASS|membership rows of another org are invisible
+MX_RESULT|C1|Agent registry and trust|PASS|registered agent, in-contract tool: approved
+MX_RESULT|C2|Agent registry and trust|PASS|unknown agent refused: P0001
+MX_RESULT|C3|Agent registry and trust|PASS|suspended agent: denied
+MX_RESULT|C4|Agent registry and trust|PASS|trust report: member=false (error key), outsider=true
+MX_RESULT|C5|Agent registry and trust|PASS|tool outside contract, even if approved: 42501|tool is not authorized by active contract
+MX_RESULT|D1|Tool registry and contracts|PASS|unknown tool refused at insert: 22023
+MX_RESULT|D2|Tool registry and contracts|PASS|agent without an active contract: denied
+MX_RESULT|D3|Tool registry and contracts|PASS|schema violation refused at insert: 22023
+MX_RESULT|D4|Tool registry and contracts|PASS|request under v1, contract now v2: 40901|authorization version is stale
+MX_RESULT|D5|Tool registry and contracts|PASS|tool disabled after request: 42501|tool unavailable
+MX_RESULT|E1|Risk and budget controls|PASS|medium-risk tool above a low contract ceiling, even if approved: 42501|tool registry risk (medium) exceeds current contract ceiling (low)
+MX_RESULT|E2|Risk and budget controls|PASS|USD above hard limit: denied
+MX_RESULT|E3|Risk and budget controls|PASS|at threshold: OK; one above: 42501|valid approval required
+MX_RESULT|E4|Risk and budget controls|PASS|concurrency at limit denied, below limit allowed
+MX_RESULT|E5|Risk and budget controls|PASS|missing usd_amount fails closed: 42501|valid approval required
+MX_RESULT|F1|Approval lifecycle|PASS|approval required before execution: 42501|valid approval required
+MX_RESULT|F2|Approval lifecycle|PASS|authorized reviewer: resolve=OK, execute=OK
+MX_RESULT|F3|Approval lifecycle|PASS|self-approval cannot execute (resolve=42501|self-approval is not permitted: requester and reviewer must differ): 42501|valid approval required
+MX_RESULT|F4|Approval lifecycle|PASS|lapsed approval: resolve=40001|approval expired, approval=expired, invocation=expired
+MX_RESULT|F5|Approval lifecycle|PASS|rejection denies the invocation: denied
+MX_RESULT|F6|Approval lifecycle|PASS|replayed decision and replayed execution both refused
+MX_RESULT|F7|Approval lifecycle|PASS|invalid binding detected (agent_organization_mismatch), left pending, manual_review recorded, guard enabled
+MX_RESULT|G1|Execution and idempotency|PASS|duplicate idempotency key: 23505
+MX_RESULT|G2|Execution and idempotency|PASS|retry of a claimed invocation refused: 40001|invocation already claimed for execution
+MX_RESULT|G3|Execution and idempotency|PASS|execution failure recorded
+MX_RESULT|G5|Execution and idempotency|PASS|cannot skip authorization by writing status: P0001
+MX_RESULT|H1|Audit and persistence|PASS|audit ledger update=42501, delete=42501
+MX_RESULT|H2|Audit and persistence|PASS|request and state changes are audited
+MX_RESULT|H3|Audit and persistence|PASS|failure and denial are recorded
+MX_RESULT|H4|Audit and persistence|PASS|audit chains valid (A=true, B=true) and approved approvals match invocation state
+MX_RESULT|I1|Security and permissions|PASS|RLS: outsider reads nothing, direct approval insert=ERR:42501
+MX_RESULT|I2|Security and permissions|PASS|private functions refused to authenticated: ERR:42501 / ERR:42501
+MX_RESULT|I3|Security and permissions|PASS|anonymous: read=ERR:42501, approval RPC=ERR:42501
+MX_RESULT|I4|Security and permissions|PASS|self-escalation attempt (OK) left role unchanged
+ok: certification matrix (45 SQL cases; G4 in concurrency job)
+== G4 eight-way concurrency
+== G4 S1: 8 concurrent approvals of one approval
+  results: 7 40001;1 OK;
+  PASS exactly one approval wins, the rest get 40001 (won=1 lost=7)
+  PASS approval resolved once, invocation approved
+== G4 S2: 8 concurrent execution claims of one approved invocation
+  PASS S2 precondition: invocation is approved
+  results: 7 40001;1 OK;
+  PASS exactly one claim wins, the rest get 40001 (won=1 lost=7)
+  PASS invocation executing exactly once
+== G4 S3: 8 concurrent requests with one idempotency key
+  results: 7 23505;1 OK;
+  PASS exactly one row created, the rest get 23505 (created=1 dup=7)
+  PASS one invocation row for the key
+== G4 S4: 8 concurrent runs of the expiry job over 24 lapsed approvals
+  results: 5 N:0;2 N:10;1 N:4;
+  PASS no worker errored (errors=0)
+  PASS each lapsed approval converged exactly once (pre=24, summed=24)
+  PASS all 24 approvals and invocations expired, none pending
+  PASS each invocation expired exactly once in the audit trail (one approval_changed + one tool_invocation_status_changed each; no duplicates, none missing)
+  PASS audit chain still valid after the races
+ok: G4 eight-way concurrency
+== verify against manifest
+AiOS canonical matrix
+  Authentication and identity    5/5
+  Organization isolation         6/6
+  Agent registry and trust       5/5
+  Tool registry and contracts    5/5
+  Risk and budget controls       5/5
+  Approval lifecycle             7/7
+  Execution and idempotency      5/5
+  Audit and persistence          4/4
+  Security and permissions       4/4
+  TOTAL                          46/46   (G4 checks: 12/12)
+ok: canonical matrix verified (46/46)

@@ -1,0 +1,45 @@
+{
+  "manifest_total": 46,
+  "passed": 46,
+  "g4_checks": 12,
+  "per_domain": {
+    "Authentication and identity": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Organization isolation": {
+      "expected": 6,
+      "passed": 6
+    },
+    "Agent registry and trust": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Tool registry and contracts": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Risk and budget controls": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Approval lifecycle": {
+      "expected": 7,
+      "passed": 7
+    },
+    "Execution and idempotency": {
+      "expected": 5,
+      "passed": 5
+    },
+    "Audit and persistence": {
+      "expected": 4,
+      "passed": 4
+    },
+    "Security and permissions": {
+      "expected": 4,
+      "passed": 4
+    }
+  },
+  "errors": [],
+  "ok": true
+}
