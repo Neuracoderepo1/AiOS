@@ -108,6 +108,12 @@ jobs:
             echo "::error title=canonical-matrix::$(tail -c 3000 /tmp/matrix-run.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      # Additive regression (not part of the historical 46-case matrix): parallel expiry workers converge exactly once per approval.
+      - name: Expiry concurrency regression (additive)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
       - name: Upload test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -116,6 +122,7 @@ jobs:
           path: |
             /tmp/matrix-out
             /tmp/matrix-run.txt
+            /tmp/expiry-race.txt
             /tmp/sql.txt
             /tmp/start.txt
           if-no-files-found: warn
