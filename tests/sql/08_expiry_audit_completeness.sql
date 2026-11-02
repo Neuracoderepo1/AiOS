@@ -22,7 +22,7 @@ insert into _exp_run select 3, private.aios_expire_stale_approvals();
 do $$
 declare r1 jsonb := (select r from _exp_run where n=1); r2 jsonb := (select r from _exp_run where n=2); r3 jsonb := (select r from _exp_run where n=3);
   valid uuid[] := array['a8300000-0000-0000-0000-000000000001','a8300000-0000-0000-0000-000000000002','a8300000-0000-0000-0000-000000000003']::uuid[];
-  bad uuid := 'a8300000-0000-0000-0000-000000000009'; id uuid; n int;
+  bad uuid := 'a8300000-0000-0000-0000-000000000009'; aid uuid; n int;
 begin
   -- Mixed batch: the oldest record is invalid and must not block the valid ones.
   if (r1->>'orphan_approvals_expired')::int <> 3 then raise exception 'expected 3 valid expirations in a mixed batch: %', r1; end if;
@@ -30,9 +30,9 @@ begin
   if exists (select 1 from public.aios_approvals where id = any(valid) and status <> 'expired') then raise exception 'a valid approval was not expired'; end if;
 
   -- Audit exactly once per transition (pending -> expired), for every approval, across three runs.
-  foreach id in array valid loop
-    select count(*) into n from public.aios_audit_events where approval_id = id and event_type = 'approval_changed' and new_state = 'expired' and previous_state = 'pending';
-    if n <> 1 then raise exception 'approval % has % expiry audit events, expected exactly 1', id, n; end if;
+  foreach aid in array valid loop
+    select count(*) into n from public.aios_audit_events where approval_id = aid and event_type = 'approval_changed' and new_state = 'expired' and previous_state = 'pending';
+    if n <> 1 then raise exception 'approval % has % expiry audit events, expected exactly 1', aid, n; end if;
   end loop;
 
   -- Invalid record: preserved, still pending, unmodified, no expiry audit, exactly one review disposition after 3 runs.
