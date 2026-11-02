@@ -1,0 +1,20 @@
+# AiOS integrity pins. Generated from git blobs of commit d762f2730be751b4f178741d11b512e41deb74d2
+# baseline_commit=292d398d552625a32f784e68f3f00b48a8efb0a0
+# format: <sha256>  <path>   (paths under docs/testing/evidence/ plus tests/matrix/manifest.json; the set must match exactly)
+5fdb616b1bb9f140cfb24d4ba7586e3d8b6c7645578aa2c900bb76a679024406  docs/testing/evidence/README.md
+cecc2bafae170797317e0d4842db4776ef3ec765e9b87e0a3339268ae95e1088  docs/testing/evidence/SHA256SUMS
+0d90f35926cc7769f147046e8fc6a6bacda5ca46f14383e034b7c77e1d8d8011  docs/testing/evidence/extracted/ci-verifier-output.txt
+1f2dea22b722a0b78b4e87999207822311a2d7cdfb5d8790ce852ec149553667  docs/testing/evidence/extracted/g4.log
+3100b9bd3c590c3d51a139b85d9f021d8bcba149c3a31e8b9f9ec6a3bd3d2a3e  docs/testing/evidence/extracted/matrix-run.txt
+9c00892e05b0e0919e9d3d649cdcf6818c1d5bb3e32c68ae5e2096eaaf9832ef  docs/testing/evidence/extracted/mx_results.txt
+7f7cadb702ef378bd2c4ffac02f2724ddbb55406736574380f0cb93fe6ae3003  docs/testing/evidence/extracted/report.reproduced.json
+d3bc3a3aa4fb864a1453e9d7f99b54e2193904410529c261d331084ace4da3f8  docs/testing/evidence/extracted/sql-05.reconstructed.log
+e58c421a342182d6d97f343e786473f91cfc9d51d24fa86c858bf45440ad5868  docs/testing/evidence/extracted/summary.json
+0d90f35926cc7769f147046e8fc6a6bacda5ca46f14383e034b7c77e1d8d8011  docs/testing/evidence/extracted/verify-reproduced.txt
+200f90511fc28c538be60b206993e3ae1ed7c2c893337ccb488a40c1112d48c3  docs/testing/evidence/raw-transport.sha256
+548fef3137d4ec491fdb09ef38d2992ffcee9628e4eda324dd5955afe53e28b1  docs/testing/evidence/raw/job-125144041843.log
+fc666afc4c4f3084c0cf7cc6d035a9371f2c314125832c013ed457f4f6682b79  docs/testing/evidence/raw/job-125144042093.log
+1debc2429f13a91c8c1a41a78e89aaf6c4f44a969925506e5b5612a9477e60eb  docs/testing/evidence/raw/run-41404721275.jobs.json
+4aea129138e37f0fea7af986ef5fe0fe40ce0d5874e61ec4844a920a1634ea0a  docs/testing/evidence/raw/run-41404721275.json
+4f45587d2aea7bdddf335a6c8517399e9f5463e538a0ea36e8bd0309015400bb  docs/testing/evidence/reproduce/reconstruct_matrix_evidence.py
+72e8b1c50677c30d2d58908ebb6a5592d78884c639a090791c6096ca13ed7c1c  tests/matrix/manifest.json

@@ -15,8 +15,21 @@ permissions:
 env:
   DENO_VERSION: "2.9.8"
   SUPABASE_CLI_VERSION: "2.122.0"
+  # Independent anchor for the active integrity pin file (matrix-v1). Changing this value is a deliberate,
+  # CODEOWNERS-reviewed act; see docs/testing/INTEGRITY.md.
+  ACTIVE_PINS: "tests/integrity/pins/matrix-v1.pins"
+  ACTIVE_PINS_SHA256: "e72d9171442047e6aac270cbea9ce9362b68d827a9112201e189e4c556d05a95"
 
 jobs:
+  evidence-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify evidence + manifest against pinned hashes
+        run: python3 tests/integrity/verify_integrity.py --root . --pins "$ACTIVE_PINS" --expect-pins-sha256 "$ACTIVE_PINS_SHA256"
+      - name: Integrity mutation tests (7 required cases)
+        run: python3 tests/integrity/test_integrity_mutations.py -v
+
   functions-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +50,7 @@ jobs:
           fi
 
   migrations-and-sql-tests:
+    needs: evidence-integrity   # integrity must pass before the matrix is accepted
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +108,12 @@ jobs:
             echo "::error title=canonical-matrix::$(tail -c 3000 /tmp/matrix-run.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      # Additive regression (not part of the historical 46-case matrix): parallel expiry workers converge exactly once per approval.
+      - name: Expiry concurrency regression (additive)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
       - name: Upload test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -102,6 +122,7 @@ jobs:
           path: |
             /tmp/matrix-out
             /tmp/matrix-run.txt
+            /tmp/expiry-race.txt
             /tmp/sql.txt
             /tmp/start.txt
           if-no-files-found: warn
