@@ -46,16 +46,17 @@ Live-database test adjustment: tests 03 and 08 were run on production with their
 1. **G4 eight-way concurrency.** `ci.yml` runs it inside the step "Canonical test matrix (46 cases)" (matrix 45 SQL cases + G4, verified against `tests/matrix/manifest.json`). That step concluded `success` on the PR run (https://github.com/Neuracoderepo1/AiOS/actions/runs/41534539112) and on the `main` push run (https://github.com/Neuracoderepo1/AiOS/actions/runs/41534944843). The step's raw log and `report.json` were not downloaded; the conclusion was read from the Actions API.
 2. **CI on merge commit `e123e4a`.** `AiOS CI` (push) concluded success: `functions-typecheck`, `evidence-integrity`, `migrations-and-sql-tests` (fresh-DB replay of all migrations, all `tests/sql/*.sql`, canonical matrix) all success.
 
-Known failing external check: **Supabase Preview** reports "Remote migration versions not found in local migrations directory". It also failed on the previous `main` commit (`75c1f98`), so it predates this change. Cause: three production migrations carry different version stamps than the repository (see section 3 reconciliation note). Not addressed here; tracked as follow-up.
+Known failing external check: **Supabase Preview** reports "Remote migration versions not found in local migrations directory". It also failed on the previous `main` commit (`75c1f98`), so it predates this change. Cause: three production migrations carry different version stamps than the repository (see section 3 reconciliation note). Resolved by renaming the three repository migrations to production's versions and adding production's `20261102062940` file (repository and production now both hold 113 migrations with identical versions).
 
 ## 5. Accepted exceptions
 
 - Approval `8c47bb48` remains pending with NULL expiry (agent_organization_mismatch, quarantined, three manual-review dispositions, append-only history intact). The janitor skips and reports it every run by design.
 - Six legacy invocations (`requested` x4, `requires_approval` x2, created 22-24 Aug; tools `execute_two_leg_arb`, `withdraw_funds`, `Python`) have no approval and no disposition. They cannot authorize without a valid approval; classification is a follow-up.
 - Mission `b3c24435` and task `281be61d` are cancelled by recorded owner decision (history append-only, original manual_review rows preserved).
+- Legacy invocations cannot be recorded in `aios_backlog_dispositions` (entity types are limited to approval, task, mission); classifying them needs a schema decision, not just an owner decision.
 - Four historical approved approvals have NULL expiry. They are sealed and cannot authorize (N3).
 - Leaked-password protection remains off (budget decision, unchanged).
 
 ## 6. Conclusion
 
-The NULL-expiry gap is eliminated for all new and updated approvals and is covered by regression tests. With the evidence items in section 4 closed, the approval-expiry change is certified for production, with the exceptions in section 5 owner-held and the Supabase Preview version-stamp mismatch open as a follow-up.
+The NULL-expiry gap is eliminated for all new and updated approvals and is covered by regression tests. With the evidence items in section 4 closed, the approval-expiry change is certified for production, with the exceptions in section 5 owner-held and the Supabase Preview version-stamp mismatch closed by follow-up PR (migration versions aligned).
