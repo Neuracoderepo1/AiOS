@@ -161,21 +161,22 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return json({ error: "Missing Authorization header" }, 401);
 
+  // Order of checks: authenticate -> parse request -> organization authorization -> resource and state validation ->
+  // external-service configuration -> first state mutation. Nothing is written before every check above has passed.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  if (userError || !userData?.user) return json({ error: "Invalid or expired session" }, 401);
+
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
   const task_id = body.task_id as string | undefined;
   const requestedIdempotency = body.idempotency_key as string | undefined;
   if (!task_id) return json({ error: "task_id is required" }, 400);
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!anthropicKey) return json({ error: "ANTHROPIC_API_KEY is not configured; refusing to fake agent execution" }, 503);
-
-  const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
-  const { data: userData, error: userError } = await userClient.auth.getUser();
-  if (userError || !userData?.user) return json({ error: "Invalid or expired session" }, 401);
   const admin = createAdminClient(supabaseUrl, serviceKey);
 
   const { data: task, error: taskError } = await admin.from("aios_tasks").select("id,organization_id,mission_id,assigned_agent_id,title,instructions,status,risk_level,result").eq("id", task_id).maybeSingle();
@@ -203,11 +204,13 @@ Deno.serve(async (req: Request) => {
   if (agentError || !agent) return json({ error: "Assigned agent not found" }, 500);
   if (agent.status === "suspended") return json({ error: "Agent is suspended" }, 403);
 
-  // Mission: only the caller that moves queued -> running writes started_at; if it is already running, leave it untouched.
-  const { error: missionStartError } = await admin.from("aios_missions").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "queued").select("id");
-  if (missionStartError) return json({ error: "Failed to start mission", detail: missionStartError.message }, 500);
+  // External-service configuration is checked only after authentication, authorization and resource/state validation, and
+  // before the first state mutation. (The read-only idempotent replay above never needs the model.)
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!anthropicKey) return json({ error: "ANTHROPIC_API_KEY is not configured; refusing to fake agent execution" }, 503);
 
-  // Task: atomic compare-and-set (queued/approved -> running). A caller that does not win it stops here, before any model call.
+  // Task: atomic compare-and-set (queued/approved -> running). A caller that does not win it stops here, before any model call
+  // and before the mission is touched, so a failed or lost claim can never leave the mission 'running'.
   const { data: taskClaimed, error: taskStartError } = await admin.from("aios_tasks").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.id).eq("status", task.status).select("id");
   if (taskStartError) return json({ error: "Failed to start task", detail: taskStartError.message }, 500);
   if (!taskClaimed || taskClaimed.length !== 1) return json({ error: "Task was already claimed by another execution", task_id: task.id }, 409);
@@ -231,6 +234,14 @@ Deno.serve(async (req: Request) => {
     const message = String(err).slice(0, 1000);
     await failTaskAndMission({ error: `${stage}_failed`, detail: message, ...extra }, stage);
   };
+
+  // Mission: only the caller that moves queued -> running writes started_at; if it is already running, leave it untouched.
+  // The task is already claimed, so a failure here fails the claimed task with a diagnosable stage instead of stranding it.
+  const { error: missionStartError } = await admin.from("aios_missions").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "queued").select("id");
+  if (missionStartError) {
+    await failClaimed("mission_start", missionStartError.message, { tool_executed: false });
+    return json({ error: "Failed to start mission", detail: missionStartError.message, tool_executed: false }, 500);
+  }
 
   const model = "claude-sonnet-4-6";
   const allowedTools = agent.authority?.allowed_tools ?? [];

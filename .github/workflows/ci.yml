@@ -37,6 +37,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
+      - name: Edge Function ordering and integrity invariants (O1-O6)
+        run: python3 tests/functions/check_function_invariants.py
       - name: Type-check Edge Functions
         run: |
           set +e
