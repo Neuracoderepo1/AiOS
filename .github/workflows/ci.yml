@@ -116,6 +116,13 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
+      # Proves each smoke check fails on its target defect and the runner fails closed (85 cases). Mutations are rolled back.
+      - name: Smoke suite self-test
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash scripts/smoke/selftest.sh "$DB_URL" 2>&1 | tee /tmp/smoke-selftest.txt
+          test "${PIPESTATUS[0]}" -eq 0
       - name: Upload test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -126,6 +133,7 @@ jobs:
             /tmp/matrix-run.txt
             /tmp/expiry-race.txt
             /tmp/sql.txt
+            /tmp/smoke-selftest.txt
             /tmp/start.txt
           if-no-files-found: warn
           retention-days: 90
