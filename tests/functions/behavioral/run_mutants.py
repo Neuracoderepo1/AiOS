@@ -80,7 +80,7 @@ MUTANTS = [
          must_fail=["claimed BEFORE the mission is started", "a LOST claim"]),
     dict(id="ET4", file=ET, why="task claim is no longer a compare-and-set on status",
          edits=[('.eq("id", task.id).eq("status", task.status).select("id");', '.eq("id", task.id).select("id");')],
-         must_fail=["claim is a compare-and-set", "a LOST claim"]),
+         must_fail=["claim is a compare-and-set", "a LOST claim", "task CANCELLED between read and claim"]),
     dict(id="ET5", file=ET, why="mission-start failure no longer fails the claimed task",
          edits=[('await failClaimed("mission_start", missionStartError.message, { tool_executed: false });', "")],
          must_fail=["mission-start failure -> 500, task FAILED"]),
@@ -94,6 +94,20 @@ MUTANTS = [
          edits=[('const { error: missionErr } = await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");',
                  "const missionErr = null as { message: string } | null;")],
          must_fail=["task AND mission end 'failed'"]),
+    # ---- terminal-state / cancellation-race guards (added with terminal_and_race_test.ts) -------------------------------
+    dict(id="ET9", file=ET, why="task failure overwrites the mission without the status = running guard (cancelled/terminal missions rewritten)",
+         edits=[('const { error: missionErr } = await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");',
+                 'const { error: missionErr } = await admin.from("aios_missions").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", task.mission_id);')],
+         must_fail=["mission CANCELLED while the task runs is not overwritten", "'completed' mission row is never modified"]),
+    dict(id="ET10", file=ET, why="mission start loses its status = queued guard (cancelled/terminal missions resurrected to running)",
+         edits=[('.eq("id", task.mission_id).eq("status", "queued").select("id");', '.eq("id", task.mission_id).select("id");')],
+         must_fail=["not resurrected to 'running'", "'cancelled' mission row is never modified"]),
+    dict(id="ET11", file=ET, why="task failure recording loses its status = running guard (a cancelled task is overwritten to failed)",
+         edits=[('.update(patch).eq("id", task.id).eq("status", "running");', '.update(patch).eq("id", task.id);')],
+         must_fail=["task cancelled WHILE running is never overwritten"]),
+    dict(id="LM10", file=LM, why="mission compensation loses its status = queued guard (a concurrent cancellation is overwritten)",
+         edits=[("reason:String(reason).slice(0,500)}}).eq('id',mission.id).eq('status','queued');", "reason:String(reason).slice(0,500)}}).eq('id',mission.id);")],
+         must_fail=["CANCELLED concurrently before compensation keeps the canceller's metadata", "compensation only touches a mission that is still 'queued'"]),
 ]
 
 

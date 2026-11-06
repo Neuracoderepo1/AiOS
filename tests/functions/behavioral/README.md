@@ -32,7 +32,22 @@ Negative tests (deliberately break copies of the functions; the suite must notic
 | Task claiming before mission startup (incl. lost claim) | `execute_task_test.ts` claim group |
 | Mission-start failure leaves a diagnosable failed task | `execute_task_test.ts` mission-start group |
 | Import map resolves every dependency | `import_map_test.ts` (scans the real sources) |
-| Harness can detect regressions | `run_mutants.py` (17 mutants + unmodified control) |
+| Terminal tasks/missions are never resurrected or overwritten | `terminal_and_race_test.ts` |
+| Cancellation races (task claim, mission start, failure recording, launch-mission compensation) | `terminal_and_race_test.ts` (races simulated with `world.onOp`) |
+| Harness can detect regressions | `run_mutants.py` (21 mutants + unmodified control) |
+
+## Known gap (probe, not certified behavior)
+
+`gaps/terminal_mission.gap.ts` asserts the desired invariant that a task under a `completed`/`failed`/`cancelled`/`expired`
+mission is refused before any claim or model call. It FAILS against the current functions: `execute-task` guards its mission
+*updates* but never reads mission status first, and neither the task status-guard trigger nor `aios_kernel_authorize_invocation`
+mentions mission status. It is deliberately not named `*_test.ts` so the certified run does not collect it. Run it with
+`node --no-warnings tests/functions/behavioral/node/run.mjs --gaps`. CI runs it informationally and uploads the output.
+
+## CI
+
+`.github/workflows/ci.yml` job `functions-behavioral` runs the suite and the mutation checks under the pinned Deno version and
+uploads `behavioral-evidence` (commit, functions tree hash, full results, mutants.json, gap probe output).
 
 ## What this does NOT establish
 

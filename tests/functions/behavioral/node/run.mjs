@@ -4,8 +4,10 @@ import { tests } from "./register.mjs";
 import { readdirSync } from "node:fs";
 
 const filter = process.argv.find((a) => a.startsWith("--filter="))?.slice("--filter=".length);
-const dir = new URL("../", import.meta.url);
-const files = readdirSync(dir).filter((f) => f.endsWith("_test.ts")).sort();
+// --gaps runs ONLY tests/functions/behavioral/gaps/*.gap.ts (desired-behavior probes that are known to fail today).
+const gaps = process.argv.includes("--gaps");
+const dir = new URL(gaps ? "../gaps/" : "../", import.meta.url);
+const files = readdirSync(dir).filter((f) => f.endsWith(gaps ? ".gap.ts" : "_test.ts")).sort();
 for (const f of files) await import(new URL(f, dir).href);
 
 const selected = tests.filter((t) => !filter || t.name.includes(filter));
