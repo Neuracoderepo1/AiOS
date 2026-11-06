@@ -5,6 +5,10 @@ set -u
 DB="$1"; N=8; fail=0
 q() { psql "$DB" -At -v ON_ERROR_STOP=1 -c "$1"; }
 q "select 1" >/dev/null || { echo "cannot connect"; exit 1; }
+# Own the clock: no pg_cron tick may expire fixtures between creation and assertion (see cron_guard.sh).
+. "$(dirname "$0")/cron_guard.sh"
+cron_pause "$DB" || { echo "G4 cannot guarantee a quiet scheduler"; exit 1; }
+trap 'rc=$?; cron_restore || rc=1; exit $rc' EXIT
 psql "$DB" -q -v ON_ERROR_STOP=1 -f "$(dirname "$0")/setup.sql" >/dev/null || { echo "G4 fixture setup failed"; exit 1; }
 
 ORG=c1c1c1c1-0000-4000-8000-000000000001; AGENT=c2c2c2c2-0000-4000-8000-000000000001

@@ -4,6 +4,10 @@
 set -u
 DB="$1"; N=8; fail=0; ORG=e9000000-0000-4000-8000-000000000001
 q() { psql "$DB" -At -v ON_ERROR_STOP=1 -c "$1"; }
+# Own the clock: no pg_cron tick may expire fixtures between creation and assertion (see cron_guard.sh).
+. "$(dirname "$0")/cron_guard.sh"
+cron_pause "$DB" || { echo "expiry race cannot guarantee a quiet scheduler"; exit 1; }
+trap 'rc=$?; cron_restore || rc=1; exit $rc' EXIT
 q "insert into public.aios_organizations (id,name) values ('$ORG','exp-race-org') on conflict do nothing" >/dev/null
 q "begin; set local session_replication_role = replica; insert into public.aios_approvals (organization_id,action,risk_level,status,created_at) select '$ORG','race','low','pending', now() - interval '3 days' - (g||' minutes')::interval from generate_series(1,24) g; commit;" >/dev/null || { echo "fixture failed"; exit 1; }
 rm -f /tmp/er_*.out
