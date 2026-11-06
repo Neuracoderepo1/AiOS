@@ -120,8 +120,13 @@ jobs:
       - name: Smoke suite self-test
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
+          # selftest.sh refuses to run unless the connecting role is a superuser (it mutates inside rolled-back transactions).
+          # The default local-stack URL connects as `postgres`, which is not a superuser; use the stack's `supabase_admin`.
+          # This is the throwaway CI database only. The role name is not a secret; the URL (with password) is never printed.
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          bash scripts/smoke/selftest.sh "$DB_URL" 2>&1 | tee /tmp/smoke-selftest.txt
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          echo "selftest connects as: $(psql "$SUPER_URL" -X -A -t -c "select current_user || ' rolsuper=' || rolsuper from pg_roles where rolname = current_user")"
+          bash scripts/smoke/selftest.sh "$SUPER_URL" 2>&1 | tee /tmp/smoke-selftest.txt
           test "${PIPESTATUS[0]}" -eq 0
       - name: Upload test evidence
         if: ${{ always() }}
