@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Fake psql simulating cron.job for cron_guard regression tests. State: $SHIM_DIR/jobs ("id flag" per line, flag t|f).
+# Fault injection env: SHIM_NO_CRON, SHIM_FAIL_SNAPSHOT, SHIM_FAIL_DEACT=<id>, SHIM_FAIL_ACT=<id>.
+sql=""; while [ $# -gt 0 ]; do [ "$1" = -c ] && { sql="$2"; break; }; shift; done
+J="$SHIM_DIR/jobs"
+case "$sql" in
+  *"to_regclass('cron.job')"*) [ -n "${SHIM_NO_CRON:-}" ] && echo f || echo t ;;
+  *"to_regprocedure"*) echo f ;;
+  *"active::text"*) [ -n "${SHIM_FAIL_SNAPSHOT:-}" ] && { echo "ERROR: snapshot unreadable" >&2; exit 1; }
+                    awk '{printf "%s%s:%s", (NR>1?" ":""), $1, $2} END{print ""}' "$J" ;;
+  *"count(*) from cron.job where active"*) awk '$2=="t"{n++} END{print n+0}' "$J" ;;
+  *pg_stat_activity*) echo 0 ;;
+  "update cron.job set active = "*)
+    flag=f; case "$sql" in *"= true"*) flag=t ;; esac; id=${sql##*jobid = }
+    if [ "$flag" = f ] && [ "${SHIM_FAIL_DEACT:-}" = "$id" ]; then echo "ERROR: injected deactivate failure" >&2; exit 1; fi
+    if [ "$flag" = t ] && [ "${SHIM_FAIL_ACT:-}" = "$id" ]; then echo "ERROR: injected activate failure" >&2; exit 1; fi
+    echo "$id $flag" >> "$SHIM_DIR/updates.log"; sed -i "s/^$id .*/$id $flag/" "$J" ;;
+  *) echo "fake_psql: unhandled sql: $sql" >&2; exit 2 ;;
+esac
