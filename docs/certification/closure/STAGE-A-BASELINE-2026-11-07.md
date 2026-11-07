@@ -92,3 +92,12 @@ Review comments not yet read.
 ## 8. Reproduction
 
 All production queries were read-only `SELECT`s against `supabase_migrations.schema_migrations`, `cron.job`, `cron.job_run_details` and `public.aios_approvals`, plus the Supabase security and performance advisors. Hash check: `md5(array_to_string(statements, E'\n'))` versus the PR file with the final newline removed.
+
+## Addendum 1 (2026-11-07 ~19:00 UTC): PR #16 merged
+
+The sections above are preserved as written at the time of inspection. Subsequent change:
+
+- PR #16 was merged into `main` at `3c09b90fbc9739edfd83c93768251b7b51443ab8` (merge commit) on the Human Director's instruction to proceed with merges. CI on PR #16 head `bef5f15c` was green, including the from-scratch migration replay (`migrations-and-sql-tests`).
+- Repository `main` now carries the two migrations verbatim: 115 repo migrations vs 115 production.
+- G1 remains **UNVERIFIED**: content parity (md5) and a green clean replay are shown, but a schema-level comparison of the replayed database against production has not been performed.
+- Not changed: production; decisions 1 and 2 in section 7 are still open. This merge does not authorize the original 2026-11-06 production application, and does not resolve the NULL-expiry pending approval.
