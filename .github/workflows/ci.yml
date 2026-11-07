@@ -67,6 +67,8 @@ jobs:
         run: |
           {
             echo "commit: $GITHUB_SHA"
+            echo "checked-out HEAD: $(git rev-parse HEAD)"
+            echo "pull-request head (the commit that was pushed): ${{ github.event.pull_request.head.sha || github.sha }}"
             echo "functions tree: $(git rev-parse HEAD:supabase/functions)"
             deno --version
           } | tee identity.txt
@@ -74,13 +76,21 @@ jobs:
         run: |
           set -o pipefail
           NO_COLOR=1 $DENO_RUN tests/functions/behavioral/ 2>&1 | tee behavioral.txt
+      - name: Dependency resolution - no remote imports, no network (Deno --no-remote)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN --no-remote tests/functions/behavioral/ 2>&1 | tee noremote.txt
+      - name: Invariant checks (O1-O7)
+        run: |
+          set -o pipefail
+          python3 tests/functions/check_function_invariants.py 2>&1 | tee invariants.txt
       - name: Mutation (negative) checks under Deno
         run: |
           set -o pipefail
           NO_COLOR=1 python3 tests/functions/behavioral/run_mutants.py --runner "$DENO_RUN tests/functions/behavioral/" --json mutants.json 2>&1 | tee mutation.txt
       - name: Known-gap probe (informational; expected to fail today, never fails the job)
         run: |
-          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/terminal_mission.gap.ts 2>&1 | tee gaps.txt || true
+          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt || true
       - name: Upload behavioral evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -89,6 +99,8 @@ jobs:
           path: |
             identity.txt
             behavioral.txt
+            noremote.txt
+            invariants.txt
             mutation.txt
             mutants.json
             gaps.txt

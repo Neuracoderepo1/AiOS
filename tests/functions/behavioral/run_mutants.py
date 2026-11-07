@@ -108,6 +108,13 @@ MUTANTS = [
     dict(id="LM10", file=LM, why="mission compensation loses its status = queued guard (a concurrent cancellation is overwritten)",
          edits=[("reason:String(reason).slice(0,500)}}).eq('id',mission.id).eq('status','queued');", "reason:String(reason).slice(0,500)}}).eq('id',mission.id);")],
          must_fail=["CANCELLED concurrently before compensation keeps the canceller's metadata", "compensation only touches a mission that is still 'queued'"]),
+    # ---- added with the terminal-state expansion (Agent 004 directive) ---------------------------------------------------
+    dict(id="ET12", file=ET, why="terminal task statuses (completed/failed/cancelled/expired) become executable (terminal guard removed)",
+         edits=[('if (!["queued", "approved"].includes(task.status)) {', 'if (!["queued", "approved", "completed", "failed", "cancelled", "expired"].includes(task.status)) {')],
+         must_fail=["task already 'completed'", "task already 'failed'", "task already 'cancelled'", "task already 'expired'"]),
+    dict(id="ET13", file=ET, why="a task-claim database error is no longer reported as a 500 (falls through to the lost-claim path)",
+         edits=[('if (taskStartError) return json({ error: "Failed to start task", detail: taskStartError.message }, 500);', "")],
+         must_fail=["a claim DB error -> 500"]),
 ]
 
 
@@ -148,6 +155,7 @@ def main():
         control_dir = make_copy(tmp / "control")
         code, failed, out = run_suite(args.runner, control_dir)
         control_ok = code == 0 and not failed
+        control_exit = code
         print(f"CONTROL (unmodified copy via FUNCTIONS_DIR): {'PASS' if control_ok else 'FAIL'}  exit={code} failed={len(failed)}")
         if not control_ok:
             print(out[-3000:])
@@ -161,7 +169,8 @@ def main():
             missing = [s for s in m["must_fail"] if not any(s in f for f in failed)]
             detected = code != 0 and loads and not missing
             results.append(dict(id=m["id"], file=m["file"], why=m["why"], detected=detected, exit=code, loads=loads,
-                                failed_count=len(failed), missing_expected=missing, failed_tests=failed))
+                                failed_count=len(failed), missing_expected=missing, must_fail=m["must_fail"], failed_tests=failed,
+                                transformation=[dict(find=f, replace=r) for f, r in m["edits"]]))
             status = "DETECTED" if detected else "SURVIVED/INVALID"
             print(f"{m['id']:4} {status:16} {len(failed):2} test(s) failed  | {m['why']}")
             if not detected:
@@ -170,7 +179,7 @@ def main():
     survivors = [r for r in results if not r["detected"]]
     print(f"\n{len(results) - len(survivors)}/{len(results)} mutants detected; control passes: {control_ok}")
     if args.json:
-        Path(args.json).write_text(json.dumps(dict(control_ok=control_ok, mutants=results), indent=2))
+        Path(args.json).write_text(json.dumps(dict(control_ok=control_ok, control_exit=control_exit, mutant_count=len(results), detected_count=len(results) - len(survivors), mutants=results), indent=2))
     sys.exit(1 if survivors else 0)
 
 

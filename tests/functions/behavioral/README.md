@@ -34,9 +34,12 @@ Negative tests (deliberately break copies of the functions; the suite must notic
 | Import map resolves every dependency | `import_map_test.ts` (scans the real sources) |
 | Terminal tasks/missions are never resurrected or overwritten | `terminal_and_race_test.ts` |
 | Cancellation races (task claim, mission start, failure recording, launch-mission compensation) | `terminal_and_race_test.ts` (races simulated with `world.onOp`) |
-| Harness can detect regressions | `run_mutants.py` (21 mutants + unmodified control) |
+| Terminal missions on the ordinary failure paths (model HTTP failure, mission-start DB error), canceller's rows preserved byte-for-byte | `terminal_and_race_test.ts` (second half, "Added by the terminal-state / cancellation-race expansion") |
+| Harness can detect regressions | `run_mutants.py` (23 mutants + unmodified control; JSON records each exact source transformation) |
 
 ## Known gap (probe, not certified behavior)
+
+Two probes live in `gaps/` (`terminal_mission.gap.ts`, `mission_start_race.gap.ts`); both FAIL today by design. Full analysis and remediation boundary: `evidence/FINDING-terminal-mission-gap.md`.
 
 `gaps/terminal_mission.gap.ts` asserts the desired invariant that a task under a `completed`/`failed`/`cancelled`/`expired`
 mission is refused before any claim or model call. It FAILS against the current functions: `execute-task` guards its mission
@@ -46,8 +49,10 @@ mentions mission status. It is deliberately not named `*_test.ts` so the certifi
 
 ## CI
 
-`.github/workflows/ci.yml` job `functions-behavioral` runs the suite and the mutation checks under the pinned Deno version and
-uploads `behavioral-evidence` (commit, functions tree hash, full results, mutants.json, gap probe output).
+`.github/workflows/ci.yml` job `functions-behavioral` runs, under the pinned Deno version: the suite, the suite again with `--no-remote`
+(proves no remote/network dependency), the O1-O7 invariant guard, the mutation checks, and the gap probes (informational, separate).
+It uploads `behavioral-evidence` (identity incl. PR head SHA + functions tree + Deno version, behavioral.txt, noremote.txt,
+invariants.txt, mutation.txt, mutants.json, gaps.txt).
 
 ## What this does NOT establish
 
@@ -56,3 +61,6 @@ establish real transaction atomicity, trigger behaviour, RLS enforcement, or pro
 is asserted at the call site; whether Postgres makes that statement atomic is a separate gate.
 Also out of scope here: the registered-tool execution path of `execute-task` (the stub does not model
 `.limit/.or/.gte/.lte/.order` and throws if they are reached), `invoke-tool`, and `review-approval`.
+
+Also not covered: the success / task-completion path of `execute-task` (it goes through the registered-tool path the stub does not
+model), so the guards on `completed` task/mission writes (`.eq("status","running")`) are not exercised by any test or mutant here.
