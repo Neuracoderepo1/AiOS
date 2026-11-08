@@ -1,0 +1,59 @@
+name: ET27 seal guard evidence
+
+# Additive evidence job for ET27 / G3. Replays ALL migrations on a fresh local stack, runs tests/sql/10_invocation_seal_guard.sql,
+# and publishes exact check/mutation counts as annotations plus an artifact. Does not replace or modify the AiOS CI workflow.
+on:
+  pull_request:
+    paths:
+      - "tests/sql/10_invocation_seal_guard.sql"
+      - "supabase/migrations/**"
+      - ".github/workflows/et27-seal-guard-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI_VERSION: "2.122.0"
+
+jobs:
+  seal-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - name: Replay all migrations from scratch
+        run: |
+          set -o pipefail
+          ls supabase/migrations | wc -l | tee /tmp/migration_count.txt
+          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector 2>&1 | tee /tmp/start.txt
+      - name: Run seal guard suite
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -X -A -t -f tests/sql/10_invocation_seal_guard.sql > /tmp/et27.txt 2>&1
+          rc=$?
+          echo "psql exit code: $rc" | tee -a /tmp/et27.txt
+          enc() { sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g'; }
+          echo "::notice title=ET27 migrations replayed::$(cat /tmp/migration_count.txt) migration files applied by supabase start on a fresh database"
+          echo "::notice title=ET27 summary::$(grep -E 'ET27_SUMMARY|psql exit code' /tmp/et27.txt | enc)"
+          echo "::notice title=ET27 mutants::$(grep 'ET27_MUTANT' /tmp/et27.txt | cut -d'|' -f2- | enc)"
+          echo "::notice title=ET27 coverage::$(grep 'ET27_COVERAGE' /tmp/et27.txt | cut -d'|' -f2- | enc)"
+          echo "::notice title=ET27 results FAIL rows::$(grep 'ET27_RESULT' /tmp/et27.txt | grep -c '|FAIL|') failing; $(grep 'ET27_RESULT' /tmp/et27.txt | grep -c '|PASS|') passing"
+          grep 'ET27_RESULT' /tmp/et27.txt | grep '|FAIL|' | head -20 | cut -c1-300
+          exit $rc
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: et27-seal-guard-evidence
+          path: |
+            /tmp/et27.txt
+            /tmp/start.txt
+            /tmp/migration_count.txt
+          retention-days: 90
+      - name: Stop
+        if: always()
+        run: supabase stop --no-backup
