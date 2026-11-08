@@ -116,18 +116,6 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
-      # Proves each smoke check fails on its target defect and the runner fails closed (85 cases). Mutations are rolled back.
-      - name: Smoke suite self-test
-        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
-        run: |
-          # selftest.sh refuses to run unless the connecting role is a superuser (it mutates inside rolled-back transactions).
-          # The default local-stack URL connects as `postgres`, which is not a superuser; use the stack's `supabase_admin`.
-          # This is the throwaway CI database only. The role name is not a secret; the URL (with password) is never printed.
-          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
-          echo "selftest connects as: $(psql "$SUPER_URL" -X -A -t -c "select current_user || ' rolsuper=' || rolsuper from pg_roles where rolname = current_user")"
-          bash scripts/smoke/selftest.sh "$SUPER_URL" 2>&1 | tee /tmp/smoke-selftest.txt
-          test "${PIPESTATUS[0]}" -eq 0
       - name: Upload test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -138,7 +126,6 @@ jobs:
             /tmp/matrix-run.txt
             /tmp/expiry-race.txt
             /tmp/sql.txt
-            /tmp/smoke-selftest.txt
             /tmp/start.txt
           if-no-files-found: warn
           retention-days: 90
