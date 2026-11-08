@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: Run gate
         run: |
+          # GitHub's default step shell is bash -e; grep -c exits 1 on a zero count (e.g. zero 5xx), which aborted the gate on success.
+          set +e
           set -u
           INV="$SUPABASE_URL/functions/v1/invoke-tool"
           EXE="$SUPABASE_URL/functions/v1/execute-task"
@@ -59,7 +61,7 @@ jobs:
           echo "::add-mask::$JWT"
 
           post() { CODE=$(curl -s -o /tmp/body -w "%{http_code}" -X POST "$1" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $JWT" -d "$2"); BODY=$(cat /tmp/body); }
-          ppost() { curl -s -o "$1.body" -w "%{http_code}" -X POST "$2" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $JWT" -d "$3" > "$1.code"; }
+          ppost() { curl -s -o "$1.body" -w "%{http_code}\n" -X POST "$2" -H "Content-Type: application/json" -H "apikey: $ANON" -H "Authorization: Bearer $JWT" -d "$3" > "$1.code"; }
           ibody() { jq -nc --arg a "$AGENT" --arg t "$1" --arg r "$2" --arg k "$3" --argjson args "$4" '{agent_id:$a,tool_name:$t,risk_level:$r,idempotency_key:$k,arguments:$args}'; }
 
           echo "== invoke-tool: replay and binding =="
