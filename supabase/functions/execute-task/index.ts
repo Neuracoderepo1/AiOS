@@ -204,6 +204,19 @@ Deno.serve(async (req: Request) => {
   if (agentError || !agent) return json({ error: "Assigned agent not found" }, 500);
   if (agent.status === "suspended") return json({ error: "Agent is suspended" }, 403);
 
+  // Parent mission must be executable before anything is claimed. This is a read-only early exit for a clean 409; it is NOT the
+  // authority. The database re-checks task and mission state at the claim (aios_task_mission_gate) and at kernel authorization
+  // (aios_assert_invocation_executable), and this handler re-validates again at each boundary below. Accepted mission states are
+  // exactly the database gate's: 'queued', or 'running' (including a resumed approved task, because aios_resolve_approval moves
+  // the mission blocked_pending_approval -> running when it approves).
+  if (!task.mission_id) return json({ error: "Task has no parent mission" }, 422);
+  const { data: parentMission, error: parentMissionError } = await admin.from("aios_missions").select("id,status").eq("id", task.mission_id).maybeSingle();
+  if (parentMissionError) return json({ error: "Mission lookup failed", detail: parentMissionError.message }, 500);
+  if (!parentMission) return json({ error: "Parent mission not found" }, 404);
+  if (!["queued", "running"].includes(parentMission.status)) {
+    return json({ error: `Parent mission is not executable (current status: ${parentMission.status})`, mission_status: parentMission.status, tool_executed: false }, 409);
+  }
+
   // External-service configuration is checked only after authentication, authorization and resource/state validation, and
   // before the first state mutation. (The read-only idempotent replay above never needs the model.)
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
@@ -212,6 +225,9 @@ Deno.serve(async (req: Request) => {
   // Task: atomic compare-and-set (queued/approved -> running). A caller that does not win it stops here, before any model call
   // and before the mission is touched, so a failed or lost claim can never leave the mission 'running'.
   const { data: taskClaimed, error: taskStartError } = await admin.from("aios_tasks").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.id).eq("status", task.status).select("id");
+  // 42501 from the claim is the database refusing to put a task into a live state under a terminal mission (the mission went
+  // terminal after the read above). That is a lost race, not a server fault.
+  if (taskStartError?.code === "42501") return json({ error: "Parent mission became terminal before the task could start", detail: taskStartError.message, task_id: task.id, tool_executed: false }, 409);
   if (taskStartError) return json({ error: "Failed to start task", detail: taskStartError.message }, 500);
   if (!taskClaimed || taskClaimed.length !== 1) return json({ error: "Task was already claimed by another execution", task_id: task.id }, 409);
 
@@ -237,10 +253,39 @@ Deno.serve(async (req: Request) => {
 
   // Mission: only the caller that moves queued -> running writes started_at; if it is already running, leave it untouched.
   // The task is already claimed, so a failure here fails the claimed task with a diagnosable stage instead of stranding it.
-  const { error: missionStartError } = await admin.from("aios_missions").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "queued").select("id");
+  const { data: missionStarted, error: missionStartError } = await admin.from("aios_missions").update({ status: "running", started_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "queued").select("id");
   if (missionStartError) {
     await failClaimed("mission_start", missionStartError.message, { tool_executed: false });
     return json({ error: "Failed to start mission", detail: missionStartError.message, tool_executed: false }, 500);
+  }
+
+  // Re-validate execution authority at a boundary. Authority is: our task is still 'running' AND its mission is 'running'. A
+  // cancelled/failed/completed/expired mission cascades its live tasks to terminal in the database, so a mismatch means the
+  // database has already withdrawn authority. We stop WITHOUT writing to the task or mission (the database terminal state is
+  // the truth, and the handler must not overwrite it). Returns a Response to send when authority is gone, or null to proceed.
+  const revalidateAuthority = async (stage: string, onLost?: () => Promise<void>): Promise<Response | null> => {
+    const [taskRead, missionRead] = await Promise.all([
+      admin.from("aios_tasks").select("status").eq("id", task.id).maybeSingle(),
+      admin.from("aios_missions").select("status").eq("id", task.mission_id).maybeSingle(),
+    ]);
+    const readError = taskRead.error ?? missionRead.error;
+    if (readError) {
+      await failClaimed(`${stage}_revalidation`, readError.message, { tool_executed: false });
+      return json({ error: "Execution authority could not be re-validated", detail: readError.message, stage, tool_executed: false }, 500);
+    }
+    const taskStatus = taskRead.data?.status ?? "missing";
+    const missionStatus = missionRead.data?.status ?? "missing";
+    if (taskStatus === "running" && missionStatus === "running") return null;
+    console.error(`[execute-task] execution authority lost at ${stage} for task ${task.id}: task=${taskStatus} mission=${missionStatus}`);
+    if (onLost) await onLost();
+    return json({ error: "Execution authority was withdrawn; processing stopped", stage, task_status: taskStatus, mission_status: missionStatus, task_id: task.id, tool_executed: false }, 409);
+  };
+
+  // The conditional queued -> running update only counts if it touched a row. Zero rows is fine ONLY when the mission is
+  // already 'running' (another task of the mission started it). Any other state means the mission is no longer executable.
+  if (!missionStarted || missionStarted.length === 0) {
+    const lost = await revalidateAuthority("mission_start");
+    if (lost) return lost;
   }
 
   const model = "claude-sonnet-4-6";
@@ -254,6 +299,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Model request failed before any tool was proposed", detail: String(e), tool_executed: false }, 502);
   }
   await bestEffort("model_runs:tool_proposal", admin.from("aios_model_runs").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, provider: "anthropic", model, input_hash: await sha256(proposalPrompt), output_hash: await sha256(proposal.text), prompt_reference: "kernel.tool_selection.v2.registry", input_tokens: proposal.input_tokens, output_tokens: proposal.output_tokens, latency_ms: proposal.latency_ms, status: "succeeded", outcome: "tool_proposal" }));
+
+  // The model call is the longest window in this handler. Authority may have been withdrawn while it ran (mission cancelled,
+  // task reaped or cancelled, approval lapsed). Do not continue processing the proposal if it was.
+  {
+    const lost = await revalidateAuthority("after_model_proposal");
+    if (lost) return lost;
+  }
 
   let proposed: { tool_key: string; arguments: Record<string, unknown> };
   try {
@@ -352,6 +404,16 @@ Deno.serve(async (req: Request) => {
     return json({ task_id: task.id, status: "blocked_pending_approval", invocation_id: invocation.id, approval_id: invocation.approval_id, reason: invocation.result?.kernel_reason }, 202);
   }
 
+  // Last handler-side check before the kernel claims the invocation for execution. If authority is gone, withdraw the invocation
+  // we created or resumed (approved -> cancelled, the same transition the mission cascade uses) so no approved row is orphaned.
+  {
+    const lost = await revalidateAuthority("before_authorization", async () => {
+      const { error: cancelError } = await admin.from("aios_tool_invocations").update({ status: "cancelled", completed_at: new Date().toISOString(), error_code: "EXECUTION_AUTHORITY_LOST", error_message: "task or mission left 'running' before kernel authorization" }).eq("id", invocation.id).eq("status", "approved");
+      if (cancelError) console.error(`[execute-task] failed to cancel invocation ${invocation.id} after authority loss: ${cancelError.message}`);
+    });
+    if (lost) return lost;
+  }
+
   const { data: authorized, error: authError } = await admin.rpc("aios_kernel_authorize_invocation", { p_invocation_id: invocation.id });
   if (authError || !authorized) {
     await admin.from("aios_tool_invocations").update({ status: "failed", error_code: "AUTHORIZATION_RECHECK_FAILED", error_message: authError?.message ?? "kernel authorization failed", completed_at: new Date().toISOString() }).eq("id", invocation.id).eq("status", "approved");
@@ -403,19 +465,35 @@ Deno.serve(async (req: Request) => {
   const score = (correctness + completeness + policy + efficiency + executionSuccess) / 5;
 
   const taskResult = { objective: task.instructions, tool: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_result: { count: toolResult.count, summary: toolResult.summary }, output: finalOutput, evaluation: { overall_score: score, correctness, completeness, policy_compliance: policy, tool_efficiency: efficiency, execution_success: executionSuccess }, model_run: { provider: "anthropic", model } };
-  const { error: taskCompleteError } = await admin.from("aios_tasks").update({ status: "completed", result: taskResult, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running");
+  const { data: taskCompletedRows, error: taskCompleteError } = await admin.from("aios_tasks").update({ status: "completed", result: taskResult, completed_at: new Date().toISOString() }).eq("id", task.id).eq("status", "running").select("id");
   if (taskCompleteError) {
     await failClaimed("task_completion", taskCompleteError.message, { invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false });
     return json({ error: "Failed to complete task", detail: taskCompleteError.message, invocation_id: invocation.id }, 500);
+  }
+  // Zero rows means the task left 'running' while the tool executed (mission cancelled/failed/expired, or the reaper took it).
+  // The tool side effect already happened and its result is sealed on the invocation; it must never be reported as a completed
+  // task. Report the real state, do not touch the mission or record an evaluation, and never re-run the tool.
+  if (!taskCompletedRows || taskCompletedRows.length !== 1) {
+    const { data: currentTask } = await admin.from("aios_tasks").select("status").eq("id", task.id).maybeSingle();
+    console.error(`[execute-task] task ${task.id} was no longer running at completion (status=${currentTask?.status ?? "missing"}); tool already executed, result preserved on invocation ${invocation.id}`);
+    return json({ error: "Task is no longer running; completion was not recorded", task_id: task.id, task_status: currentTask?.status ?? "missing", invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false, tool_result_preserved: true }, 409);
   }
 
   // The task is now durably completed. Settle the mission and episodic memory BEFORE the evaluation record, so a failed
   // evaluation write can never leave the mission stuck 'running' or drop memory of a completed task.
   const { data: remaining } = await admin.from("aios_tasks").select("status").eq("mission_id", task.mission_id);
   const missionDone = (remaining ?? []).length > 0 && (remaining ?? []).every((x) => x.status === "completed");
+  // Report the mission's real status, not an assumption: the conditional update only counts if it touched a row.
+  let missionStatus = "running";
   if (missionDone) {
-    const { error: missionDoneError } = await admin.from("aios_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running");
+    const { data: missionDoneRows, error: missionDoneError } = await admin.from("aios_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running").select("id");
     if (missionDoneError) console.error(`[execute-task] failed to complete mission ${task.mission_id}: ${missionDoneError.message}`);
+    if (!missionDoneError && missionDoneRows && missionDoneRows.length === 1) {
+      missionStatus = "completed";
+    } else {
+      const { data: currentMission } = await admin.from("aios_missions").select("status").eq("id", task.mission_id).maybeSingle();
+      missionStatus = currentMission?.status ?? "unknown";
+    }
   }
 
   await bestEffort("memory:episodic", admin.from("aios_memory").insert({ organization_id: task.organization_id, agent_id: agent.id, scope: "episodic", content: JSON.stringify({ task_objective: task.instructions, tool_used: tool.tool_key, registry_version: tool.version, important_findings: expected, result_summary: finalOutput.summary ?? null, success: true, evaluation_score: score, timestamp: new Date().toISOString() }), metadata: { task_id: task.id, mission_id: task.mission_id, invocation_id: invocation.id, memory_type: "task_execution" } }));
@@ -423,8 +501,8 @@ Deno.serve(async (req: Request) => {
   const { data: evaluation, error: evaluationError } = await admin.rpc("aios_record_evaluation", { p_task_id: task.id, p_invocation_id: invocation.id, p_correctness: correctness, p_completeness: completeness, p_policy: policy, p_efficiency: efficiency, p_execution: executionSuccess, p_summary: `Kernel evaluation: ${Math.round(score * 100)}%` });
   if (evaluationError) {
     console.error(`[execute-task] evaluation record failed for task ${task.id}: ${evaluationError.message}`);
-    return json({ error: "Evaluation failed", detail: evaluationError.message, task_id: task.id, task_completed: true, mission_status: missionDone ? "completed" : "running" }, 500);
+    return json({ error: "Evaluation failed", detail: evaluationError.message, task_id: task.id, task_completed: true, mission_status: missionStatus }, 500);
   }
 
-  return json({ task_id: task.id, invocation_id: invocation.id, status: "completed", tool_key: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_latency_ms: toolLatency, result: taskResult, evaluation, mission_status: missionDone ? "completed" : "running" }, 200);
+  return json({ task_id: task.id, invocation_id: invocation.id, status: "completed", tool_key: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_latency_ms: toolLatency, result: taskResult, evaluation, mission_status: missionStatus }, 200);
 });
