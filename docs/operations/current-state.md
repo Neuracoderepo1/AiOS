@@ -4,7 +4,7 @@ Status: **database migrations and Edge Function source captured; live certificat
 
 ## What is captured
 
-- `supabase/migrations/`: 96 files, one per row of `supabase_migrations.schema_migrations` on project `jtkcdwhiduixoiodhbfn`, named `<version>_<name>.sql`, original chronology preserved. Content is the exact recorded SQL (compared by md5 after trimming trailing whitespace).
+- `supabase/migrations/`: 115 files (as of 2026-11-08), one per row of `supabase_migrations.schema_migrations` on project `jtkcdwhiduixoiodhbfn`, named `<version>_<name>.sql`, original chronology preserved. Content is the exact recorded SQL (compared by md5 after trimming trailing whitespace).
 - `supabase/functions/`: source of the deployed Edge Functions, compared byte-for-byte (trailing whitespace trimmed) with the deployed source.
 
 | Function | Deployed version |
@@ -35,4 +35,8 @@ All four have `verify_jwt = true`.
 - `private.aios_expire_stale_approvals()` validates organization bindings first (`private.aios_approval_binding_defect`), skips and reports invalid records untouched, isolates each transition in a subtransaction, and appends a `manual_review` disposition (append-only). Live as migration `20261101232313` (captured in this repo).
 - `public.aios_backlog_effective_dispositions` resolves the latest disposition per entity. Private-schema tables have deny-by-default RLS (invariant 9).
 - Production applied 2026-11-02 via the Supabase connector, so production versions for the view/RLS migrations carry connector timestamps, not the repo filenames.
-- Open: one pending approval with a cross-organization agent binding (quarantined, owner review); two queued manual-review items (owner decision); 46-case matrix, concurrency test and audit-chain verification not yet run. AiOS remains open for production certification.
+- Open: one pending approval with a cross-organization agent binding (quarantined, owner review); two queued manual-review items (owner decision); audit-chain verification on production data not yet run (service-role only). The 46-case matrix and G4 concurrency run on every CI run against a replay and are green on `main`; that is replay evidence, not live certification. AiOS remains open for production certification.
+
+## Audit TRUNCATE guard (2026-11-06)
+
+- Applied to production and captured as migration `20261106193358_aios_execution_gate_cascade_and_audit_truncate_guard.sql`: `service_role` no longer holds TRUNCATE on `public.aios_audit_events` and `trg_aios_audit_no_truncate` blocks it. Verified read-only on 2026-11-08 (privilege false, trigger present). Smoke check S11 reports PASS in this state.
