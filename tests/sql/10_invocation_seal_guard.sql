@@ -160,7 +160,7 @@ create function mx.attacks() returns jsonb language sql as $$ select jsonb_build
   jsonb_build_array('requested_by',    format('requested_by = %L', mx.u('u_req2'))),
   jsonb_build_array('risk_level',      $q$risk_level = 'critical'$q$),
   jsonb_build_array('approval_id',     format('approval_id = %L', mx.u('apr_any'))),
-  jsonb_build_array('status',          $q$status = 'cancelled'$q$),
+  jsonb_build_array('status',          $q$status = 'executing'$q$),
   jsonb_build_array('result',          $q$result = '{"tickets":[],"count":9,"summary":"forged"}'::jsonb$q$),
   jsonb_build_array('result_hash',     $q$result_hash = 'forged'$q$),
   jsonb_build_array('error_code',      $q$error_code = 'FORGED'$q$),
