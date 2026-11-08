@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: Run gate
         run: |
+          # GitHub's default step shell is bash -e; grep -c exits 1 on a zero count (e.g. zero 5xx), which aborted the gate on success.
+          set +e
           set -u
           INV="$SUPABASE_URL/functions/v1/invoke-tool"
           EXE="$SUPABASE_URL/functions/v1/execute-task"
