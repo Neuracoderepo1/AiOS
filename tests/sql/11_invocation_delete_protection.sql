@@ -297,10 +297,6 @@ begin
                   array['drop trigger trg_aios_invocation_no_delete on public.aios_tool_invocations',
                         'create trigger trg_aios_invocation_no_delete before delete on public.aios_tool_invocations for each row when (old.status is null) execute function private.aios_invocation_no_delete()'],
                   array['drop trigger trg_aios_invocation_no_delete on public.aios_tool_invocations', trg_orig]);
-  perform mx.dmut('trigger-made-update-only',
-                  array['drop trigger trg_aios_invocation_no_delete on public.aios_tool_invocations',
-                        'create trigger trg_aios_invocation_no_delete before update on public.aios_tool_invocations for each row execute function private.aios_invocation_no_delete()'],
-                  array['drop trigger trg_aios_invocation_no_delete on public.aios_tool_invocations', trg_orig]);
   perform mx.dmut('delete-regranted-to-service_role', array['grant delete on public.aios_tool_invocations to service_role'], array['revoke delete on public.aios_tool_invocations from service_role']);
   perform mx.dmut('delete-regranted-to-authenticated', array['grant delete on public.aios_tool_invocations to authenticated'], array['revoke delete on public.aios_tool_invocations from authenticated']);
   perform mx.dmut('delete-regranted-to-anon', array['grant delete on public.aios_tool_invocations to anon'], array['revoke delete on public.aios_tool_invocations from anon']);
