@@ -2,7 +2,7 @@
 
 Decision: **CONDITIONAL PASS.** The guard works and no tested invariant was bypassable; conditions are listed under "Limitations".
 
-- Branch: `feat/et27-g3-invocation-seal-guard` (draft PR #22, not merged, **not applied to production**)
+- Branch: `feat/et27-g3-invocation-seal-guard` (draft PR #22, not merged; superseded by PR #24, merged and deployed to production, see Limitations 1)
 - Code verified at commit `b0dc65a4530cc65a8d2d8c23ecfcda802fd4d2ef`
 - CI evidence, same commit: AiOS CI run 42479692042 (success), ET27 seal guard evidence run 42479692136 (success)
 - Earlier green run on `4209bc1`: AiOS CI run 42479469905
@@ -32,7 +32,7 @@ Decision: **CONDITIONAL PASS.** The guard works and no tested invariant was bypa
 - Executing to denied is not a supported transition (denial happens before execution); the suite asserts it is rejected.
 
 ## Limitations (reasons for CONDITIONAL)
-1. Not deployed. Production `jtkcdwhiduixoiodhbfn` has no seal guard and still lets service_role rewrite terminal outcomes until the migration is applied.
+1. Deployment status (updated 2026-11-08): the Supabase GitHub integration applied both ET27 migrations to production `jtkcdwhiduixoiodhbfn` automatically on merge of PR #24 (merge commit `97139267af287ac54a2a4282d76557cb4673a8a5`, about 15:57 UTC), and redeployed all four Edge Functions in the same run. Merging `main` deploys; there is no separate manual production gate. Post-deploy checks: migration history hash matches the repo (117 versions); guard functions identical to the migration, triggers enabled, DELETE/TRUNCATE revoked from anon, authenticated, service_role; rollback-protected probes confirmed DELETE and terminal-state rewrite are refused on production. TRUNCATE is additionally blocked by the foreign-key check, so the TRUNCATE trigger was not exercised by that probe.
 2. `retry_count` stays mutable on sealed rows (operational counter, not an outcome).
 3. Pre-execution rows (requested through approved) are sealed by this guard only for `id` and `created_at`; their other columns rely on existing triggers, which were not mutation-tested here.
 4. DELETE protection is indirect: deleting an audited invocation fails on the deferred FK from `aios_audit_events`, and audit rows are immutable. There is no explicit DELETE trigger, and `service_role` still holds DELETE.
