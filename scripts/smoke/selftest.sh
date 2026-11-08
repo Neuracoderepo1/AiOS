@@ -8,6 +8,12 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; root="$(cd "$here/../.." &
 fails=0; total=0
 psqlq() { PGOPTIONS= psql "$DB" -X -q -A -F'|' -t -v ON_ERROR_STOP=1 "$@"; }
 [ "$(psqlq -c "select rolsuper from pg_roles where rolname = current_user")" = t ] || { echo "selftest needs a superuser on a throwaway database"; exit 2; }
+# The audit TRUNCATE guard (proposal 001) is now part of supabase/migrations, so a clean replay HAS it. Cases that need the
+# guard absent create that state explicitly (inside the rolled-back transaction) instead of assuming the DB lacks it.
+noguard="drop trigger if exists trg_aios_audit_no_truncate on public.aios_audit_events;
+drop function if exists private.aios_audit_no_truncate();
+grant truncate on public.aios_audit_events to service_role;"
+guard_live="$(psqlq -c "select exists (select 1 from pg_trigger where tgrelid = 'public.aios_audit_events'::regclass and tgname = 'trg_aios_audit_no_truncate') and not has_table_privilege('service_role', 'public.aios_audit_events', 'TRUNCATE')")"
 proposal="$(sed '/^begin;$/d;/^commit;$/d' "$root/docs/certification/proposals/001-audit-truncate-guard.sql")"
 
 pass() { total=$((total+1)); echo "  PASS $1"; }
@@ -46,7 +52,8 @@ base="$(run_sql smoke_readonly.sql "" 2>&1)" || { echo "baseline query failed: $
 for id in S01 S02 S03 S05 S07 S08 S09 S10 S12 S13 S14 S15 S16 S17 S18 S19 S23; do
   [ "$(status_of $id <<<"$base")" = PASS ] && pass "baseline $id PASS" || { fail "baseline $id not PASS: $(grep "^$id" <<<"$base" | cut -c1-200)"; }
 done
-for pair in S04:INFO S06:INFO S11:WARN S20:INFO S21:INFO S22:WARN; do
+s11_base=WARN; [ "$guard_live" = t ] && s11_base=PASS
+for pair in S04:INFO S06:INFO S11:$s11_base S20:INFO S21:INFO S22:WARN; do
   id="${pair%%:*}"; want="${pair##*:}"; [ "$(status_of $id <<<"$base")" = "$want" ] && pass "baseline $id $want" || fail "baseline $id expected $want"
 done
 
@@ -74,11 +81,14 @@ case_ "audit UPDATE guard disabled"        smoke_readonly.sql S09 FAIL "alter ta
 case_ "audit DELETE guard disabled"        smoke_readonly.sql S10 FAIL "alter table public.aios_audit_events disable trigger trg_aios_audit_immutable_delete;"
 
 echo "== E. proposal 001 / S11 (WARN -> PASS, never a silent half-state)"
-case_ "proposal 001 applied"               smoke_readonly.sql S11 PASS "$proposal"
+case_ "guard absent -> WARN (known gap state)" smoke_readonly.sql S11 WARN "$noguard"
+case_ "proposal 001 applied on a guard-less DB" smoke_readonly.sql S11 PASS "$noguard
+$proposal"
 case_ "proposal applied, TRUNCATE re-granted" smoke_readonly.sql S11 FAIL "$proposal
 grant truncate on public.aios_audit_events to service_role;"
-case_ "only the privilege revoked"         smoke_readonly.sql S11 FAIL "revoke truncate on public.aios_audit_events from service_role;"
-case_ "expected live but absent"           smoke_readonly.sql S11 FAIL "" replay 1
+case_ "only the privilege revoked"         smoke_readonly.sql S11 FAIL "$noguard
+revoke truncate on public.aios_audit_events from service_role;"
+case_ "expected live but absent"           smoke_readonly.sql S11 FAIL "$noguard" replay 1
 case_ "expected live and present"          smoke_readonly.sql S11 PASS "$proposal" replay 1
 
 echo "== F. grants and definer hygiene (S12-S19, S23)"
@@ -99,8 +109,8 @@ case_ "production profile without retain record" smoke_readonly.sql S20 FAIL "" 
 case_ "replay profile does not fail on absent production data" smoke_readonly.sql S20 INFO "" replay
 
 echo "== H. post-proposal verifier (P1-P6): missing objects are FAIL rows, not query errors"
-case_ "before proposal 001: P2"            post_proposal_001_verify.sql P2 FAIL ""
-case_ "before proposal 001: P4 (no function)" post_proposal_001_verify.sql P4 FAIL ""
+case_ "before proposal 001: P2"            post_proposal_001_verify.sql P2 FAIL "$noguard"
+case_ "before proposal 001: P4 (no function)" post_proposal_001_verify.sql P4 FAIL "$noguard"
 for id in P1 P2 P3 P4 P5 P6; do case_ "after proposal 001" post_proposal_001_verify.sql $id PASS "$proposal"; done
 case_ "guard trigger disabled"             post_proposal_001_verify.sql P2 FAIL "$proposal
 alter table public.aios_audit_events disable trigger trg_aios_audit_no_truncate;"
@@ -111,7 +121,14 @@ echo "== I. non-production TRUNCATE test fences"
 g="$here/nonprod_truncate_guard_test.sql"
 out="$(PGOPTIONS= psql "$DB" -X -q -t -f "$g" 2>&1)"; rc=$?
 { [ $rc -ne 0 ] && ! grep -q '^ok:' <<<"$out"; } && pass "refuses without smoke.nonprod=1 (exit $rc, no ok line)" || fail "ran without smoke.nonprod=1 (rc=$rc)"
-out="$(PGOPTIONS='-c smoke.nonprod=1' psql "$DB" -X -q -t -f "$g" 2>&1)"; rc=$?
+trg_before="$(psqlq -c "select count(*) from pg_trigger where tgname = 'trg_aios_audit_no_truncate'")"
+out="$(psqlq <<SQL 2>&1
+begin;
+set local smoke.nonprod = '1';
+$noguard
+\i $g
+SQL
+)"; rc=$?
 { [ $rc -ne 0 ] && ! grep -q '^ok:' <<<"$out"; } && pass "refuses when the guard trigger is absent, before any TRUNCATE (exit $rc, no ok line)" || fail "proceeded without the guard (rc=$rc)"
 out="$(psqlq <<SQL 2>&1
 begin;
@@ -121,7 +138,7 @@ $proposal
 SQL
 )"; rc=$?
 { [ $rc -eq 0 ] && grep -q '^ok:' <<<"$out"; } && pass "passes with guard present (exit 0, ok line)" || fail "did not pass with the guard present (rc=$rc): $(head -c 200 <<<"$out")"
-[ "$(psqlq -c "select count(*) from pg_trigger where tgname = 'trg_aios_audit_no_truncate'")" = 0 ] && pass "nothing was committed by the guard test" || fail "guard test left the trigger behind"
+[ "$(psqlq -c "select count(*) from pg_trigger where tgname = 'trg_aios_audit_no_truncate'")" = "$trg_before" ] && pass "guard state unchanged by the guard tests (nothing committed)" || fail "guard tests changed the committed trigger state"
 
 echo "== J. runner: verdict logic, fail-closed behaviour, credentials"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
