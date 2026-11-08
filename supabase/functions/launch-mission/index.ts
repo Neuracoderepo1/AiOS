@@ -66,7 +66,7 @@ Deno.serve(async(req:Request)=>{
    const reason=te?.message??'task insert returned an unexpected row count';
    const {error:ce}=await admin.from('aios_missions').update({status:'cancelled',metadata:{creation_failed:true,stage:'task_creation',reason:String(reason).slice(0,500)}}).eq('id',mission.id).eq('status','queued');
    if(ce)console.error(`[launch-mission] compensation failed for mission ${mission.id}: ${ce.message}`);
-   const {error:ae2}=await admin.from('aios_audit_events').insert({organization_id,actor_user_id:u.user.id,actor_type:'user',mission_id:mission.id,event_type:'mission_creation_failed',risk_level:'low',action:'launch_mission',decision:'deny',previous_state:'queued',new_state:ce?'queued':'cancelled',metadata:{mission_id:mission.id,stage:'task_creation',compensated:!ce}});
+   const {error:ae2}=await admin.from('aios_audit_events').insert({organization_id,actor_user_id:u.user.id,actor_type:'user',mission_id:mission.id,event_type:'mission_creation_failed',risk_level:'low',action:'launch_mission',decision:'deny',previous_state:'queued',new_state:ce?'queued':'cancelled',metadata:{mission_id:mission.id,stage:'task_creation',reason:String(reason).slice(0,500),compensated:!ce,...(ce?{compensation_error:String(ce.message).slice(0,500)}:{})}});
    if(ae2)console.error(`[launch-mission] audit write failed for mission ${mission.id}: ${ae2.message}`);
    return json({error:'Task creation failed',mission_id:mission.id,mission_status:ce?'queued':'cancelled'},500);
  }

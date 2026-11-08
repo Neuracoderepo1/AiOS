@@ -8,6 +8,8 @@ Invariants (each failure names the file and rule):
   O4  launch-mission performs no database write (insert/update) before the plan has been produced and validated.
   O5  launch-mission never coerces a missing or invalid model risk_level to a default.
   O6  launch-mission inserts all tasks in a single statement and compensates a failed task insert without deleting the mission.
+  O7  launch-mission records a mission_creation_failed audit event inside the task-insert failure branch, after the compensating
+      update, with mission_id, stage and reason in its metadata, and surfaces a failed compensation in the event.
 """
 import re, sys, pathlib
 
@@ -52,6 +54,20 @@ check("Model returned an invalid risk_level" in lm, "O5 launch-mission: invalid 
 check(len(re.findall(r"from\('aios_tasks'\)\.insert", lm)) == 1 and "plan.map(" in lm, "O6 launch-mission: tasks must be inserted in one statement")
 check("status:'cancelled'" in lm and not re.search(r"from\('aios_missions'\)\.delete", lm), "O6 launch-mission: failed task insert must cancel (not delete) the mission")
 
+# O7
+br_start = pos(lm, r"if\(te\|\|!tasks")
+br_end = pos(lm, r"error:'Task creation failed'", br_start) if br_start >= 0 else -1
+branch = lm[br_start:br_end] if br_start >= 0 and br_end > br_start else ""
+comp = pos(branch, r"from\('aios_missions'\)\.update\(\{status:'cancelled'")
+aud = pos(branch, r"from\('aios_audit_events'\)\.insert\(\{[^\n]*?event_type:'mission_creation_failed'")
+check(bool(branch), "O7 launch-mission: task-insert failure branch not found")
+check(comp >= 0 and aud > comp, "O7 launch-mission: mission_creation_failed audit must be written after the compensating update, inside the failure branch")
+audit_line = branch[aud:branch.find("\n", aud)] if aud >= 0 else ""
+for key in ("mission_id:mission.id", "stage:'task_creation'", "reason:", "compensated:"):
+    check(key in audit_line, f"O7 launch-mission: mission_creation_failed metadata must include {key.split(':')[0]}")
+check("compensation_error" in audit_line, "O7 launch-mission: failed compensation must be recorded in the audit event")
+check(len(re.findall(r"event_type:'mission_creation_failed'", lm)) == 1, "O7 launch-mission: exactly one mission_creation_failed insertion expected")
+
 if failures:
     print("\n".join("FAIL " + f for f in failures)); sys.exit(1)
-print("ok: edge function invariants O1-O6")
+print("ok: edge function invariants O1-O7")
