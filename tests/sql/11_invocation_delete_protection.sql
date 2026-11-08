@@ -162,7 +162,7 @@ declare
   aud uuid; e uuid; s uuid; f uuid; d uuid; c uuid; z uuid; q uuid; ur uuid; ue uuid;
   targets uuid[]; names text[] := array['pre-execution (audited)','executing (audited)','succeeded','failed','denied','cancelled','expired','requires_approval','pre-execution (UNAUDITED)','executing (UNAUDITED)'];
   audtrgs text[]; trg text; i int; r text; en "char"; ty int; guard_found boolean;
-  n_inv bigint; n_aud bigint; ok boolean;
+  n_inv bigint; n_aud bigint;
 begin
   perform mx.reset_ctx();
   -- audited fixtures, all triggers ON, through the real kernel
