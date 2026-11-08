@@ -1,0 +1,58 @@
+name: ET27 delete protection evidence
+
+# Additive evidence job for ET27 follow-up: invocation DELETE protection. Replays ALL migrations on a fresh local stack, runs tests/sql/11_invocation_delete_protection.sql,
+# and publishes exact check/mutation counts as annotations plus an artifact. Does not replace or modify the AiOS CI workflow.
+on:
+  pull_request:
+    paths:
+      - "tests/sql/11_invocation_delete_protection.sql"
+      - "supabase/migrations/**"
+      - ".github/workflows/et27-delete-protection-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI_VERSION: "2.122.0"
+
+jobs:
+  delete-protection:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - name: Replay all migrations from scratch
+        run: |
+          set -o pipefail
+          ls supabase/migrations | wc -l | tee /tmp/migration_count.txt
+          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector 2>&1 | tee /tmp/start.txt
+      - name: Run delete protection suite
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -X -A -t -f tests/sql/11_invocation_delete_protection.sql > /tmp/et27d.txt 2>&1
+          rc=$?
+          echo "psql exit code: $rc" | tee -a /tmp/et27d.txt
+          enc() { sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g'; }
+          echo "::notice title=ET27D migrations replayed::$(cat /tmp/migration_count.txt) migration files applied by supabase start on a fresh database"
+          echo "::notice title=ET27D summary::$(grep -E 'ET27D_SUMMARY|psql exit code' /tmp/et27d.txt | enc)"
+          echo "::notice title=ET27D mutants::$(grep 'ET27D_MUTANT' /tmp/et27d.txt | cut -d'|' -f2- | enc)"
+          echo "::notice title=ET27D results FAIL rows::$(grep 'ET27D_RESULT' /tmp/et27d.txt | grep -c '|FAIL|') failing; $(grep 'ET27D_RESULT' /tmp/et27d.txt | grep -c '|PASS|') passing"
+          grep 'ET27D_RESULT' /tmp/et27d.txt | grep '|FAIL|' | head -20 | cut -c1-300
+          exit $rc
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: et27-delete-protection-evidence
+          path: |
+            /tmp/et27d.txt
+            /tmp/start.txt
+            /tmp/migration_count.txt
+          retention-days: 90
+      - name: Stop
+        if: always()
+        run: supabase stop --no-backup
