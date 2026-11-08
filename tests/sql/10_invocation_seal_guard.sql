@@ -155,7 +155,7 @@ create function mx.attacks() returns jsonb language sql as $$ select jsonb_build
   jsonb_build_array('arguments',       $q$arguments = '{"limit":6}'::jsonb$q$),
   jsonb_build_array('arguments_hash',  $q$arguments_hash = repeat('0', 64)$q$),
   jsonb_build_array('authorization_version', 'authorization_version = 99'),
-  jsonb_build_array('idempotency_key', $q$idempotency_key = 'tamper-idem'$q$),
+  jsonb_build_array('idempotency_key', $q$idempotency_key = 'tamper-' || gen_random_uuid()::text$q$),
   jsonb_build_array('request_id',      'request_id = gen_random_uuid()'),
   jsonb_build_array('requested_by',    format('requested_by = %L', mx.u('u_req2'))),
   jsonb_build_array('risk_level',      $q$risk_level = 'critical'$q$),
@@ -176,7 +176,7 @@ create function mx.attacks() returns jsonb language sql as $$ select jsonb_build
 create function mx.battery(p_label text, p_isolated boolean) returns int language plpgsql as $$
 declare
   res text := '{"tickets":[],"count":0,"summary":"ok"}';
-  e uuid; s uuid; f uuid; d uuid; p1 uuid; p2 uuid;
+  e uuid; s uuid; f uuid; d uuid; c uuid; z uuid; q uuid; p1 uuid; p2 uuid;
   a jsonb; r text; k text; st text; skip_exec text[] := array['status','result','result_hash','error_code','error_message','completed_at'];
   trg text; n0 bigint; n1 bigint; blocked boolean;
 begin
@@ -185,8 +185,11 @@ begin
   s  := mx.mk_exec(); perform mx.svc(format($q$update public.aios_tool_invocations set status='succeeded', result=%L::jsonb, result_hash='hash-orig', completed_at=now() where id=%L$q$, res, s));
   f  := mx.mk_exec(); perform mx.svc(format($q$update public.aios_tool_invocations set status='failed', error_code='E_ORIG', error_message='orig', completed_at=now() where id=%L$q$, f));
   d  := mx.mk_inv(mx.u('orgA'), mx.u('a_sus'), 'support.search_tickets', '{"limit":5}'::jsonb, mx.u('u_req'));
-  if mx.st(s) <> 'succeeded' or mx.st(f) <> 'failed' or mx.st(d) <> 'denied' then
-    raise exception 'fixture states wrong: s=% f=% d=%', mx.st(s), mx.st(f), mx.st(d);
+  c  := mx.mk_exec(); perform mx.svc(format($q$update public.aios_tool_invocations set status='cancelled', error_code='E_CANC', error_message='orig', completed_at=now() where id=%L$q$, c));
+  z  := mx.mk_exec(); perform mx.svc(format($q$update public.aios_tool_invocations set status='expired', error_code='E_EXP', error_message='orig', completed_at=now() where id=%L$q$, z));
+  q  := mx.mk_inv(mx.u('orgA'), mx.u('a1'), 'support.export_customer_data', '{"format":"csv","scope":"all"}'::jsonb, mx.u('u_req'));
+  if mx.st(s) <> 'succeeded' or mx.st(f) <> 'failed' or mx.st(d) <> 'denied' or mx.st(c) <> 'cancelled' or mx.st(z) <> 'expired' or mx.st(q) <> 'requires_approval' then
+    raise exception 'fixture states wrong: s=% f=% d=% c=% z=% q=%', mx.st(s), mx.st(f), mx.st(d), mx.st(c), mx.st(z), mx.st(q);
   end if;
 
   if p_isolated then
@@ -213,14 +216,20 @@ begin
   -- 4-11. every column of every terminal state, through service_role
   for a in select value from jsonb_array_elements(mx.attacks()) loop
     k := a->>0;
-    foreach st in array array['succeeded','failed','denied'] loop
-      r := mx.attack(case st when 'succeeded' then s when 'failed' then f else d end, a->>1);
+    foreach st in array array['succeeded','failed','denied','cancelled','expired'] loop
+      r := mx.attack(case st when 'succeeded' then s when 'failed' then f when 'denied' then d when 'cancelled' then c else z end, a->>1);
       perform mx.rec2(p_label, 'T ' || st || ' rewrite ' || k || ' rejected', r like 'ERR:%|true', r);
     end loop;
     if not (k = any (skip_exec)) then
       r := mx.attack(e, a->>1);
       perform mx.rec2(p_label, 'X executing rewrite ' || k || ' rejected', r like 'ERR:%|true', r);
     end if;
+  end loop;
+
+  -- pre-execution rows keep their lifecycle, but identity and creation time never change
+  foreach k in array array['created_at','id'] loop
+    r := mx.attack(q, (select x->>1 from jsonb_array_elements(mx.attacks()) x where x->>0 = k));
+    perform mx.rec2(p_label, 'P pre-execution rewrite ' || k || ' rejected', r like 'ERR:%|true', r);
   end loop;
 
   -- operational metadata and benign writes stay possible; combined writes cannot launder an outcome change
@@ -310,7 +319,7 @@ begin
   select * into tg from pg_trigger where tgrelid = 'public.aios_tool_invocations'::regclass and tgname = 'trg_aios_invocation_no_truncate';
   perform mx.rec('TRG3', 'Coverage', tg.oid is not null and tg.tgenabled = 'O' and (tg.tgtype & 32) = 32, 'TRUNCATE guard trigger present and enabled');
   select p.prosecdef, p.proconfig into fn from pg_proc p where p.oid = 'private.aios_invocation_seal_guard()'::regprocedure;
-  perform mx.rec('FN1', 'Coverage', fn.prosecdef and fn.proconfig::text like '%search_path=""%', 'guard is SECURITY DEFINER with an empty search_path');
+  perform mx.rec('FN1', 'Coverage', fn.prosecdef and exists (select 1 from unnest(fn.proconfig) cfg where cfg in ('search_path=""', 'search_path=')) , 'guard is SECURITY DEFINER with an empty search_path');
   perform mx.rec('FN2', 'Coverage',
     not has_function_privilege('anon', 'private.aios_invocation_seal_guard()', 'execute') and not has_function_privilege('authenticated', 'private.aios_invocation_seal_guard()', 'execute')
     and not has_function_privilege('service_role', 'private.aios_invocation_seal_guard()', 'execute')
