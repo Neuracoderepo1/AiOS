@@ -51,7 +51,8 @@ print_failure_diag() { # stdout, before $D is removed. Only workers with non-zer
   done
   echo "--- gate session output"; head -20 "$D/gate.out" 2>/dev/null
   echo "--- server state at exit"; cat "$EVID/server_state_at_exit.txt" 2>/dev/null | head -40
-  echo "--- postgres server log: deadlock graphs / errors"; grep -nE -B1 -A14 'deadlock detected|ERROR:' "$EVID/postgres_server.log" 2>/dev/null | head -150
+  echo "--- postgres server log: deadlock graphs (full log is in the artifact)"; grep -nE -B1 -A14 'deadlock detected' "$EVID/postgres_server.log" 2>/dev/null | head -100
+  echo "--- postgres server log: ERROR message counts"; grep -oE 'ERROR:  .*' "$EVID/postgres_server.log" 2>/dev/null | cut -c1-110 | sort | uniq -c | sort -rn | head -10
   echo "================ END FAILURE DIAGNOSTICS ================"
 }
 # NOTE: the previous trap ran `exec 5>&- 2>/dev/null`, which silenced this shell's own stderr for the rest of cleanup. fd 5 is now closed on its own.

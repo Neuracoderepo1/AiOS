@@ -133,7 +133,7 @@ jobs:
           cat /tmp/approval-lock-order.txt
           # Raw logs are not retrievable from every environment; surface the result as an annotation as well.
           lvl=notice; [ $rc -ne 0 ] && lvl=error
-          echo "::$lvl title=approval-lock-order (rc=$rc)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/approval-lock-order.txt | { [ $rc -ne 0 ] && tail -c 3500 || head -c 3500; } | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+          echo "::$lvl title=approval-lock-order (rc=$rc)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/approval-lock-order.txt | { if [ $rc -ne 0 ]; then grep -nE '^(==|  (PASS|FAIL|barrier|deadlocks|worker exit codes))' /tmp/approval-lock-order.txt | head -c 1700; echo ' ## DIAGNOSTICS TAIL ##'; tail -c 1700 /tmp/approval-lock-order.txt; else head -c 3500 /tmp/approval-lock-order.txt; fi; } | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
           exit $rc
       # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
