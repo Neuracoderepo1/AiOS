@@ -28,7 +28,21 @@ jobs:
         run: |
           set -o pipefail
           ls supabase/migrations | wc -l | tee /tmp/migration_count.txt
-          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector 2>&1 | tee /tmp/start.txt
+          : > /tmp/start.txt; : > /tmp/ports.txt
+          # Infrastructure-only retry. A previous run failed in `supabase start` with "54324/tcp: address already in use" (a Supabase
+          # default service port) before any delete-protection check executed. Each attempt records the listening Supabase-range ports
+          # and any leftover containers, tears the stack down fully, and only a successful start proceeds. The ET27 SQL suite below runs
+          # exactly once, unmodified; if every attempt fails the job fails.
+          started=0
+          for attempt in 1 2 3; do
+            { echo "=== attempt $attempt pre-start $(date -u +%FT%TZ)"; ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':54[0-9]{3}$' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
+            if supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector 2>&1 | tee -a /tmp/start.txt; then started=1; break; fi
+            { echo "=== attempt $attempt FAILED; post-failure listeners"; ss -ltnpH 2>/dev/null | grep -E ':54[0-9]{3}\b' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
+            supabase stop --no-backup >> /tmp/start.txt 2>&1 || true
+            sleep 5
+          done
+          echo "::notice title=ET27D supabase start::started=$started after attempt $attempt"
+          [ "$started" = 1 ]
       - name: Run delete protection suite
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
@@ -51,6 +65,7 @@ jobs:
           path: |
             /tmp/et27d.txt
             /tmp/start.txt
+            /tmp/ports.txt
             /tmp/migration_count.txt
           retention-days: 90
       - name: Stop
