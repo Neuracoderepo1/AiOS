@@ -122,6 +122,18 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           bash tests/concurrency/mission_task_races.sh "$DB_URL" 2>&1 | tee /tmp/mission-task-races.txt; exit ${PIPESTATUS[0]}
+      # Approval resolution / expiry job / reaper against the authorizer and mission cancel (global lock order, real PostgreSQL).
+      - name: Approval-path lock-order races
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          bash tests/concurrency/approval_lock_order.sh "$DB_URL" > /tmp/approval-lock-order.txt 2>&1; rc=$?
+          cat /tmp/approval-lock-order.txt
+          # Raw logs are not retrievable from every environment; surface the result as an annotation as well.
+          lvl=notice; [ $rc -ne 0 ] && lvl=error
+          echo "::$lvl title=approval-lock-order (rc=$rc)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/approval-lock-order.txt | head -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+          exit $rc
       # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
@@ -144,6 +156,7 @@ jobs:
             /tmp/matrix-run.txt
             /tmp/expiry-race.txt
             /tmp/mission-task-races.txt
+            /tmp/approval-lock-order.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
             /tmp/start.txt
