@@ -89,7 +89,7 @@ def assert_final_approval_audit_contract(source: str) -> None:
             raise AssertionError("post-lock binding revalidation missing: " + fragment)
 
     audit_locks = source[source.index("create or replace function private.aios_prelock_audit_organizations"):]
-    if "order by x.organization_id\\n" not in audit_locks or "pg_advisory_xact_lock" not in audit_locks:
+    if "order by x.organization_id\n" not in audit_locks or "pg_advisory_xact_lock" not in audit_locks:
         raise AssertionError("cross-organization audit locks are not acquired in global order")
     if "aios_prelock_audit_organizations" not in source:
         raise AssertionError("batch processors do not pre-acquire organization audit locks")
@@ -107,7 +107,7 @@ class FinalApprovalAuditClosureTests(unittest.TestCase):
 
     def test_cross_organization_audit_locks_are_sorted(self):
         assert_final_approval_audit_contract(self.source)
-        self.assertIn("order by x.organization_id\\n", self.source)
+        self.assertIn("order by x.organization_id\n", self.source)
 
     def test_audit_writer_is_timezone_independent(self):
         assert_final_approval_audit_contract(self.source)
