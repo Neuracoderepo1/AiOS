@@ -54,7 +54,7 @@ Deno.test("execute-task: task CANCELLED between read and claim -> 409, stays can
   const r = await call("execute-task", BODY);
   eq(r.status, 409, "status");
   eq(task().status, "cancelled", "the cancellation is not overwritten by 'running'");
-  assert(!world.ops.some((o) => o.table === "aios_missions"), "mission never touched");
+  assert(!world.ops.some((o) => o.table === "aios_missions" && o.mode !== "select"), "no mission writes occur after task claim is lost");
   eq(model.calls, 0, "no model call");
 });
 
@@ -134,21 +134,26 @@ const assertNoRecordCreation = () => eq(inserts("aios_tasks", "aios_missions").l
 const CANCELLER = { status: "cancelled", result: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z", last_error: "cancelled by ops" };
 
 // ---- execute-task: terminal parent missions are rejected before claim/model execution -------------------------------
-// Terminal missions are an authorization failure, not an ordinary execution failure. The task remains queued and no writes,
-// model calls or invocation creation are permitted. The dedicated gap probe is also required in CI.
+// Exercise both downstream failure configurations, while asserting neither can be reached for a terminal parent mission.
+const FAILURE_PATHS: Array<{ label: string; arm: () => void }> = [
+  { label: "model HTTP failure configured", arm: () => { model.status = 500; } },
+  { label: "mission-start database error configured", arm: () => { world.fail["aios_missions:update"] = "db down"; } },
+];
 for (const status of TERMINAL) {
-  Deno.test(`execute-task: terminal '${status}' mission is rejected before task claim or model call`, async () => {
-    fresh(executeTables({ mission: { status, started_at: "2026-01-01T00:00:00Z", completed_at: "2026-01-02T00:00:00Z", metadata: { closed_by: "ops" } } }));
-    const before = structuredClone(mission());
-    model.status = 500;
-    const r = await call("execute-task", BODY);
-    eq(r.status, 409, "terminal mission rejection");
-    eq(model.calls, 0, "model is never called");
-    eq(writeLog(), [], "no database writes");
-    eq(task().status, "queued", "task remains queued");
-    eq(mission(), before, "terminal mission row remains byte-for-byte unchanged");
-    assertNoRecordCreation();
-  });
+  for (const p of FAILURE_PATHS) {
+    Deno.test(`execute-task: terminal '${status}' mission is rejected before ${p.label}`, async () => {
+      fresh(executeTables({ mission: { status, started_at: "2026-01-01T00:00:00Z", completed_at: "2026-01-02T00:00:00Z", metadata: { closed_by: "ops" } } }));
+      const before = structuredClone(mission());
+      p.arm();
+      const r = await call("execute-task", BODY);
+      eq(r.status, 409, "terminal mission rejection");
+      eq(model.calls, 0, "model is never called");
+      eq(writeLog(), [], "no database writes");
+      eq(task().status, "queued", "task remains queued");
+      eq(mission(), before, "terminal mission row remains byte-for-byte unchanged");
+      assertNoRecordCreation();
+    });
+  }
 }
 
 // ---- execute-task: a canceller's task row is preserved, not just its status ------------------------------------------------
