@@ -207,6 +207,25 @@ jobs:
           SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
           psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/12_part_d_restoration.sql 2>&1 | tee /tmp/restoration-role-sql.txt
           test "${PIPESTATUS[0]}" -eq 0
+      - name: Run Part E audit anchoring SQL regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          set -o pipefail
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/13_part_e_audit_anchoring.sql 2>&1 | tee /tmp/audit-anchoring-sql.txt
+      - name: Run Part E external verifier end-to-end fixture
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          set -o pipefail
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          bash tests/external/e2e.sh "$SUPER_URL" 2>&1 | tee /tmp/audit-anchoring-e2e.txt
+      - name: Run Part E RPC tooling regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          set -o pipefail
+          python3 -m unittest -v tests.external.test_rpc_tools 2>&1 | tee /tmp/audit-rpc-tools.txt
       - name: Prove unsafe pre-existing restorer role aborts migration without repair
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
@@ -321,6 +340,9 @@ jobs:
             /tmp/restoration-runner.txt
             /tmp/restoration-role-sql.txt
             /tmp/restoration-unsafe-role.txt
+            /tmp/audit-anchoring-sql.txt
+            /tmp/audit-anchoring-e2e.txt
+            /tmp/audit-rpc-tools.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
             /tmp/start.txt
