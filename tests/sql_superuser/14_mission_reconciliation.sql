@@ -1,5 +1,16 @@
 \set ON_ERROR_STOP on
 begin;
+do $privileges$
+begin
+  if not has_function_privilege('service_role','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
+    raise exception 'service_role cannot invoke the public reconciler RPC';
+  end if;
+  if has_function_privilege('anon','public.aios_reconcile_mission_completion(uuid)','EXECUTE')
+     or has_function_privilege('authenticated','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
+    raise exception 'untrusted role can invoke the public reconciler RPC';
+  end if;
+end
+$privileges$;
 do $test$
 declare v_org uuid; v_mission uuid; v_task uuid; v_status text; v_count bigint;
 begin

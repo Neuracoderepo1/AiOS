@@ -122,13 +122,21 @@ begin
 end
 $fn$;
 
+-- PostgREST exposes public RPCs only; keep the implementation private and expose a service-role-only wrapper.
+create or replace function public.aios_reconcile_mission_completion(p_mission_id uuid)
+returns text language sql security definer set search_path = '' as $fn$
+  select private.aios_reconcile_mission_completion(p_mission_id)
+$fn$;
+revoke all on function public.aios_reconcile_mission_completion(uuid) from public,anon,authenticated;
+grant execute on function public.aios_reconcile_mission_completion(uuid) to service_role;
+
 create or replace function private.aios_process_mission_reconciliation_queue(p_batch_size integer default 100)
 returns jsonb language plpgsql security definer set search_path = '' as $fn$
 declare q record; v_status text; v_done integer:=0; v_failed integer:=0;
 begin
   if p_batch_size<1 or p_batch_size>1000 then raise exception 'batch size must be between 1 and 1000' using errcode='22023'; end if;
   for q in select mission_id from private.aios_mission_reconciliation_queue order by requested_at,mission_id
-    for update skip locked limit p_batch_size
+    limit p_batch_size for update skip locked
   loop
     begin
       v_status:=private.aios_reconcile_mission_completion(q.mission_id);

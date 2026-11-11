@@ -155,6 +155,20 @@ jobs:
              and m.member = session_role.oid
             where runner_role.rolname = current_user;
           " | tee /tmp/restoration-runner.txt
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -P pager=off -c "
+            select member.rolname as member_name,
+                   m.admin_option, m.set_option, m.inherit_option,
+                   (al.member_oid is not null
+                     and al.member_name=member.rolname
+                     and al.admin_option=m.admin_option
+                     and al.set_option=m.set_option
+                     and al.inherit_option=m.inherit_option) as allowlisted_exactly
+            from pg_catalog.pg_auth_members m
+            join pg_catalog.pg_roles member on member.oid=m.member
+            join pg_catalog.pg_roles restorer on restorer.oid=m.roleid and restorer.rolname='aios_restorer'
+            left join private.aios_restorer_member_allowlist al on al.member_oid=m.member
+            order by member.rolname;
+          " | tee -a /tmp/restoration-runner.txt
           # Exercise the exact membership grant in a disposable transaction and roll it back.
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c "
             begin;

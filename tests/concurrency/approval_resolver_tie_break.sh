@@ -57,18 +57,22 @@ select id as invocation_two, approval_id as approval_two from i \gset
 update public.aios_tool_invocations set approval_id=:'approval_one' where id=:'invocation_two';
 update public.aios_approvals set invocation_id=null where id in (:'approval_one',:'approval_two');
 
-select count(distinct t.mission_id) as mission_count
+select (count(distinct t.mission_id)=2) as fixture_valid
 from public.aios_tool_invocations i join public.aios_tasks t on t.id=i.task_id
 where i.approval_id=:'approval_one' \gset
-\if :mission_count != 2
+\if :fixture_valid
+\else
   \echo 'FAIL: fixture did not create two mission chains'
   \quit 1
 \endif
 
-select id::text as expected_invocation from public.aios_tool_invocations
-where approval_id=:'approval_one' order by created_at desc,id desc limit 1 \gset
-select private.aios_resolve_approval_invocation(:'approval_one'::uuid)::text as actual_invocation \gset
-\if :actual_invocation != :expected_invocation
+select (
+  private.aios_resolve_approval_invocation(:'approval_one'::uuid)::text =
+  (select id::text from public.aios_tool_invocations
+   where approval_id=:'approval_one' order by created_at desc,id desc limit 1)
+) as resolver_valid \gset
+\if :resolver_valid
+\else
   \echo 'FAIL: resolver did not use created_at DESC, id DESC'
   \quit 1
 \endif
