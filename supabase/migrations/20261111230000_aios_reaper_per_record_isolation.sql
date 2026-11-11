@@ -142,7 +142,9 @@ begin
         loop
           if not (v_deferred_diag ? v_task_id::text) then
             v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
-              jsonb_build_object('sqlstate','55P03','error',
+              -- pg_try_advisory_xact_lock returns boolean and raises no SQLSTATE on false.
+              -- Store NULL rather than inventing a PostgreSQL error code.
+              jsonb_build_object('sqlstate',null,'error',
                 'organization audit advisory lock unavailable (pg_try_advisory_xact_lock returned false)'));
           end if;
         end loop;
@@ -295,4 +297,4 @@ $body$;
 comment on table private.aios_task_reaper_deferred is
   'Transient stale-task reaper lock failures; bounded exponential retry, never a permanent disposition.';
 comment on function private.aios_reap_stale_tasks(interval) is
-  'Per-mission-subtree and per-task isolated stale-task recovery. Transient lock conflicts defer; invariant failures quarantine; audit locks are acquired after all row-lock attempts.';
+  'Per-mission-subtree and per-task isolated stale-task recovery. Transient lock conflicts defer; invariant failures quarantine; audit locks are acquired after all row-lock attempts using non-blocking try-locks.';
