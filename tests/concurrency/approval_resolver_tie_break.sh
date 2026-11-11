@@ -79,6 +79,29 @@ select (
 
 select private.aios_prelock_approvals_batch(array[:'approval_one'::uuid]);
 select private.aios_lock_approval_chain(:'approval_one'::uuid);
-\echo 'PASS: tied reverse links resolve deterministically; both production lock paths execute'
+
+-- Exercise the real phase-two expiry processor, not only its helper. The selected
+-- reverse link is the deterministic (created_at DESC, id DESC) winner.
+select private.aios_resolve_approval_invocation(:'approval_one'::uuid) as expected_invocation \gset
+select id as other_invocation from public.aios_tool_invocations
+ where approval_id=:'approval_one' and id <> :'expected_invocation'::uuid \gset
+update public.aios_approvals set expires_at=now()-interval '1 minute' where id=:'approval_one';
+update public.aios_approvals set expires_at=now()+interval '1 day' where id=:'approval_two';
+update public.aios_tasks set status='blocked_pending_approval'
+ where id in (select task_id from public.aios_tool_invocations where id in (:'expected_invocation',:'other_invocation'));
+update public.aios_missions set status='blocked_pending_approval'
+ where id in (select t.mission_id from public.aios_tasks t join public.aios_tool_invocations i on i.task_id=t.id
+              where i.id in (:'expected_invocation',:'other_invocation'));
+select private.aios_expire_stale_approvals();
+select (select status='expired' from public.aios_tool_invocations where id=:'expected_invocation'::uuid)
+   and (select status='requires_approval' from public.aios_tool_invocations where id=:'other_invocation'::uuid)
+   and (select status='expired' from public.aios_approvals where id=:'approval_one'::uuid)
+   as expiry_selected_same_invocation \gset
+\if :expiry_selected_same_invocation
+\else
+  \echo 'FAIL: phase-two expiry did not transition the deterministic resolver winner only'
+  \quit 1
+\endif
+\echo 'PASS: phase-one pre-lock and phase-two expiry use the same tied reverse-link winner'
 rollback;
 SQL
