@@ -50,6 +50,8 @@ begin
     where task_id=p_task_id and resolved_at is null;
   get diagnostics v_rows=row_count;
   if v_rows<>1 then raise exception 'quarantine changed concurrently' using errcode = '40001'; end if;
+  -- Owner resolution clears stale transient backoff so the next scheduled run can re-evaluate immediately.
+  delete from private.aios_task_reaper_deferred where task_id=p_task_id;
   insert into public.aios_backlog_dispositions
     (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
   values (v_org,'task',p_task_id,'owner_decision','owner_decision_retain',
@@ -244,6 +246,7 @@ begin
     values (v_task_id,v_org_id,'Structural failure acquiring stale-task mission/task lock subtree',null)
     on conflict(task_id) do update set organization_id=excluded.organization_id,reason=excluded.reason,
       sqlstate=excluded.sqlstate,created_at=clock_timestamp(),resolved_at=null,resolved_by=null,resolution_note=null;
+    delete from private.aios_task_reaper_deferred where task_id=v_task_id;
     insert into public.aios_backlog_dispositions
       (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
     values (v_org_id,'task',v_task_id,'needs_owner_review','manual_review',
@@ -335,6 +338,7 @@ begin
         values (r.id,r.organization_id,'Stale-task transition invariant failure: '||left(sqlerrm,500),sqlstate)
         on conflict(task_id) do update set organization_id=excluded.organization_id,reason=excluded.reason,
           sqlstate=excluded.sqlstate,created_at=clock_timestamp(),resolved_at=null,resolved_by=null,resolution_note=null;
+        delete from private.aios_task_reaper_deferred where task_id=r.id;
         insert into public.aios_backlog_dispositions
           (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
         values (r.organization_id,'task',r.id,'needs_owner_review','manual_review',
