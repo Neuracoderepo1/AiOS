@@ -348,6 +348,9 @@ select mx.rec('D05.8', 'schedule',
     and schedule='* * * * *'
     and btrim(command)='select private.aios_process_mission_reconciliation_queue(100)'),
   'mission reconciliation worker is registered with the exact required schedule and command');
+select mx.rec('D05.9', 'guard',
+  (private.aios_guard_drift() ->> 'drift_count')::int = 0,
+  'mission completion enqueue trigger is registered and restoration guard has no drift');
 set session authorization postgres;   -- cron.job is keyed by (jobname, username): re-register as the same user that migrated
 select cron.schedule('aios-restoration-watchdog', '*/5 * * * *', $$select private.aios_restoration_watchdog()$$);
 select cron.schedule('aios-audit-verify-hourly', '7 * * * *', $$select private.aios_scheduled_verify()$$);
