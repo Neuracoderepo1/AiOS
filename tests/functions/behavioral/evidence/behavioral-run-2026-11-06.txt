@@ -1,0 +1,99 @@
+AiOS edge-function behavioral evidence
+run date (UTC)      : 2026-11-06T22:13:30Z
+harness commit      : f8620eac9b2b32872a1d565d443525f76f2182f7   (branch test/edge-function-behavioral)
+candidate under test: 6da09d660546ef81ee354a1ee6e5da83ea5f07b8   = PR #12 head bfb376a0 (includes PR #14) + PR #13 head f25ac8a9 (merge, no conflicts)
+functions tree hash : 1bc9b0f230609ab0bd2d716add6fbe6044b6a7a5   (candidate: 1bc9b0f230609ab0bd2d716add6fbe6044b6a7a5)
+working tree clean  : yes   (checked before this log file was created)
+runtime             : node v22.23.4 with Deno shim (tests/functions/behavioral/node). Deno is NOT installed in this environment; the Deno run is pending (CI).
+
+================ 1. behavioral suite ================
+execute-task: missing Authorization -> 401, nothing touched ... ok (33ms)
+execute-task: authentication happens BEFORE API-key validation (invalid session + no key -> 401, not 503) ... ok (0ms)
+execute-task: org authorization happens BEFORE API-key validation (non-member + no key -> 403, not 503) ... ok (1ms)
+execute-task: request/resource validation happens BEFORE API-key validation ... ok (3ms)
+execute-task: suspended agent -> 403 before API-key validation, no writes ... ok (0ms)
+execute-task: valid caller, executable task, no API key -> 503 with the task left untouched ... ok (1ms)
+execute-task: idempotent replay of a succeeded invocation works WITHOUT an API key, read-only ... ok (0ms)
+execute-task: replay of a requires_approval invocation -> 202 without a key, read-only ... ok (1ms)
+execute-task: replay of an executing invocation -> 202 without a key, read-only ... ok (0ms)
+execute-task: replay of a failed invocation -> 409 with its recorded error code, read-only ... ok (0ms)
+execute-task: a key bound to a DIFFERENT task is not replayed (plain 409, no idempotent_replay) ... ok (1ms)
+execute-task: a replay key from another organization is not honoured ... ok (0ms)
+execute-task: non-executable task WITHOUT an idempotency key -> plain 409, never replayed ... ok (0ms)
+execute-task: the task is claimed BEFORE the mission is started, and both happen before any model call ... ok (3ms)
+execute-task: the claim is a compare-and-set on the status that was read ... ok (1ms)
+execute-task: a LOST claim -> 409, mission untouched, no model call, winner's task is not failed ... ok (0ms)
+execute-task: a claim DB error -> 500, mission untouched, no model call ... ok (0ms)
+execute-task: an already-running mission keeps its original started_at ... ok (1ms)
+execute-task: mission-start failure -> 500, task FAILED with stage + error, no model call ... ok (0ms)
+execute-task: model failure after the claim -> task AND mission end 'failed' with stage model_proposal ... ok (1ms)
+execute-task: invalid tool proposal after the claim -> 422, task and mission end 'failed' ... ok (1ms)
+import map resolves every external import in every Edge Function ... ok (2ms)
+every import map target exists on disk ... ok (1ms)
+execute-task and launch-mission load under the import map and register a handler ... ok (5ms)
+launch-mission: missing Authorization -> 401, nothing touched ... ok (1ms)
+launch-mission: authentication happens BEFORE API-key validation (invalid session + no key -> 401, not 503) ... ok (0ms)
+launch-mission: org authorization happens BEFORE API-key validation (non-member + no key -> 403, not 503) ... ok (0ms)
+launch-mission: agent eligibility is checked BEFORE API-key validation (no agent + no key -> 422, not 503) ... ok (1ms)
+launch-mission: valid caller but no API key on an AI-planned objective -> 503 with zero writes ... ok (0ms)
+launch-mission: deterministic support objective needs no API key and creates the mission ... ok (1ms)
+launch-mission: no database writes when planning fails: model network failure -> 502 ... ok (1ms)
+launch-mission: no database writes when planning fails: model HTTP 500 -> 502 ... ok (0ms)
+launch-mission: no database writes when planning fails: model returns non-JSON text -> 422 ... ok (0ms)
+launch-mission: no database writes when planning fails: model returns empty array (0 tasks) -> 422 ... ok (0ms)
+launch-mission: no database writes when planning fails: model returns 4 tasks (over the limit) -> 422 ... ok (0ms)
+launch-mission: no database writes when planning fails: model returns blank title -> 422 ... ok (0ms)
+launch-mission: no database writes when planning fails: model returns non-string instructions -> 422 ... ok (1ms)
+launch-mission: no database writes when planning fails: model returns oversized title -> 422 ... ok (0ms)
+launch-mission: no database writes when planning fails: second task has an invalid risk level (first is fine) -> 422 ... ok (0ms)
+launch-mission: success writes in the documented order (mission, tasks, model run, audit) ... ok (1ms)
+launch-mission: invalid model risk_level "critical" -> HTTP 422 and nothing written ... ok (1ms)
+launch-mission: invalid model risk_level "HIGH" -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: invalid model risk_level "Low" -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: invalid model risk_level "" -> HTTP 422 and nothing written ... ok (1ms)
+launch-mission: invalid model risk_level " low" -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: invalid model risk_level "none" -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: invalid model risk_level null -> HTTP 422 and nothing written ... ok (1ms)
+launch-mission: invalid model risk_level 3 -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: invalid model risk_level ["low"] -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: invalid model risk_level {"level":"low"} -> HTTP 422 and nothing written ... ok (0ms)
+launch-mission: missing risk_level -> 422 (not defaulted) ... ok (0ms)
+launch-mission: valid risk levels are persisted verbatim, never rewritten ... ok (9ms)
+launch-mission: all tasks go in ONE insert statement (all-or-nothing) ... ok (1ms)
+launch-mission: task insert failure -> 500, mission compensated to 'cancelled' (not deleted), no orphan tasks ... ok (0ms)
+launch-mission: compensation only touches a mission that is still 'queued' (guarded update) ... ok (1ms)
+launch-mission: mission insert failure -> 500 and no tasks are attempted ... ok (0ms)
+launch-mission: mission_creation_failed audit event records stage, reason and compensated=true ... ok (0ms)
+launch-mission: compensation failure is reported, not hidden (mission stays queued, audit says compensated=false) ... ok (0ms)
+launch-mission: audit write failure during compensation is logged and the 500 response still carries the mission id ... ok (1ms)
+launch-mission: failure reason is truncated to 500 characters in mission metadata and audit ... ok (0ms)
+
+ok | 60 passed | 0 failed | 60 total
+exit=0
+
+================ 2. mutation (negative) checks ================
+CONTROL (unmodified copy via FUNCTIONS_DIR): PASS  exit=0 failed=0
+LM1  DETECTED         12 test(s) failed  | invalid model risk level is coerced to 'low' instead of rejected
+LM2  DETECTED         25 test(s) failed  | mission row is written BEFORE planning/validation
+LM3  DETECTED          1 test(s) failed  | failed task insert no longer compensates the mission to 'cancelled'
+LM4  DETECTED          3 test(s) failed  | mission_creation_failed audit drops the failure reason
+LM5  DETECTED          1 test(s) failed  | compensation_error is omitted from the audit when compensation fails
+LM6  DETECTED          1 test(s) failed  | compensation failure is swallowed silently (no console.error)
+LM7  DETECTED          2 test(s) failed  | tasks inserted one-by-one instead of one atomic statement
+LM8  DETECTED          1 test(s) failed  | session validation removed (authentication no longer precedes the API-key check)
+LM9  DETECTED          3 test(s) failed  | API-key check hoisted above organization authorization
+ET1  DETECTED         11 test(s) failed  | API-key check hoisted above authentication
+ET2  DETECTED          8 test(s) failed  | API-key check hoisted above the idempotent-replay path
+ET3  DETECTED          3 test(s) failed  | mission is started BEFORE the task is claimed
+ET4  DETECTED          2 test(s) failed  | task claim is no longer a compare-and-set on status
+ET5  DETECTED          1 test(s) failed  | mission-start failure no longer fails the claimed task
+ET6  DETECTED          3 test(s) failed  | failed stage / last_error diagnostics dropped from failed tasks
+ET7  DETECTED          1 test(s) failed  | a lost task claim is ignored and execution continues
+ET8  DETECTED          3 test(s) failed  | task failure no longer fails the mission
+
+17/17 mutants detected; control passes: True
+exit=0
+
+================ 3. existing invariant guard (PR #13 modified it) ================
+ok: edge function invariants O1-O7
+exit=0
