@@ -126,6 +126,66 @@ jobs:
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Capture migration runner and restorer membership authority
+        if: steps.start.conclusion == 'success'
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -P pager=off -c "
+            select current_user as current_user,
+                   session_user as session_user,
+                   current_setting('server_version') as postgres_version,
+                   current_role.rolsuper as current_user_is_superuser,
+                   current_role.rolcreaterole as current_user_has_createrole,
+                   current_role.rolinherit as current_user_inherit,
+                   current_role.rolcanlogin as current_user_can_login,
+                   session_role.rolsuper as session_user_is_superuser,
+                   session_role.rolcreaterole as session_user_has_createrole,
+                   session_role.rolinherit as session_user_inherit,
+                   session_role.rolcanlogin as session_user_can_login,
+                   coalesce(m.admin_option, false) as creator_admin_option,
+                   coalesce(m.set_option, false) as creator_set_option,
+                   coalesce(m.inherit_option, false) as creator_inherit_option
+            from pg_roles current_role
+            join pg_roles session_role on session_role.rolname = session_user
+            left join pg_auth_members m
+              on m.roleid = (select oid from pg_roles where rolname = 'aios_restorer')
+             and m.member = session_role.oid
+            where current_role.rolname = current_user;
+          " | tee /tmp/restoration-runner.txt
+          # Exercise the exact membership grant in a disposable transaction and roll it back.
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c "
+            begin;
+            create role aios_ci_membership_probe nologin;
+            grant aios_restorer to aios_ci_membership_probe;
+            rollback;
+          "
+          test "$(psql "$DB_URL" -X -A -t -c "select count(*) from pg_roles where rolname = 'aios_ci_membership_probe'")" = "0"
+          # Verify PostgreSQL grants ADMIN OPTION to a CREATEROLE role that creates a child role.
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          begin;
+          create role aios_ci_creator_probe nologin createrole;
+          create role aios_ci_recipient_probe nologin;
+          set local role aios_ci_creator_probe;
+          create role aios_ci_child_probe nologin;
+          do $guard$
+          begin
+            if not exists (
+              select 1 from pg_auth_members m
+              join pg_roles creator on creator.oid = m.member
+              join pg_roles child on child.oid = m.roleid
+              where creator.rolname = 'aios_ci_creator_probe'
+                and child.rolname = 'aios_ci_child_probe'
+                and m.admin_option
+            ) then
+              raise exception 'CREATEROLE role creator did not receive ADMIN OPTION'
+                using errcode = '42501';
+            end if;
+          end
+          $guard$;
+          grant aios_ci_child_probe to aios_ci_recipient_probe;
+          rollback;
+          SQL
       - name: Run SQL regression and invariant tests
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
@@ -137,6 +197,31 @@ jobs:
             echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Run restoration role and authorization SQL regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/12_part_d_restoration.sql 2>&1 | tee /tmp/restoration-role-sql.txt
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: Prove unsafe pre-existing restorer role aborts migration without repair
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          psql "$DB_URL" -X -v ON_ERROR_STOP=0 <<'SQL' 2>&1 | tee /tmp/restoration-unsafe-role.txt
+          \set VERBOSITY verbose
+          begin;
+          alter role aios_restorer login;
+          \i supabase/migrations/20261109120000_aios_restoration_part_d.sql
+          rollback;
+          SQL
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -q '42501' /tmp/restoration-unsafe-role.txt
+          grep -q 'unsafe role attributes; refusing repair' /tmp/restoration-unsafe-role.txt
+          test "$(psql "$DB_URL" -X -A -t -c "select rolcanlogin from pg_roles where rolname = 'aios_restorer'")" = "f"
+          echo "PASS: migration rejects unsafe pre-existing role with SQLSTATE 42501 and leaves it unchanged (rollback verified)"
       # Canonical matrix: 45 SQL cases (tests/sql/05) + G4 eight-way concurrency, verified against tests/matrix/manifest.json.
       # Runs even if the generic SQL step failed so one failure never hides the other; G4 commits fixtures, so this is its only run.
       - name: Canonical test matrix (46 cases)
@@ -230,6 +315,9 @@ jobs:
             /tmp/l3_lock_conflict_deferral.txt
             /tmp/l3_audit_lock_subtree_levels.txt
             /tmp/l4_reaper_whole_job_failure.txt
+            /tmp/restoration-runner.txt
+            /tmp/restoration-role-sql.txt
+            /tmp/restoration-unsafe-role.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
             /tmp/start.txt
