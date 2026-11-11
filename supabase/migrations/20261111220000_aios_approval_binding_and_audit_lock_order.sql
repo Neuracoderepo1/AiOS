@@ -14,6 +14,8 @@ declare
   v_task uuid;
   v_mission uuid;
   v_inv_org uuid;
+  v_inv_approval_snapshot uuid;
+  v_approval_inv_snapshot uuid;
   v_task_org uuid;
   v_mission_org uuid;
   v_approval_org uuid;
@@ -37,8 +39,14 @@ begin
     return;
   end if;
 
+  select invocation_id into v_approval_inv_snapshot
+    from public.aios_approvals where id = p_approval_id;
+  if not found then
+    raise exception 'resolved approval disappeared' using errcode = '40001';
+  end if;
+
   select task_id, organization_id, approval_id
-    into v_task, v_inv_org, v_current_inv_approval
+    into v_task, v_inv_org, v_inv_approval_snapshot
     from public.aios_tool_invocations where id = v_inv;
   if not found then
     raise exception 'resolved approval invocation disappeared' using errcode = '40001';
@@ -78,8 +86,10 @@ begin
   end if;
 
   if v_current_inv is distinct from v_inv
+     or v_current_approval_inv is distinct from v_approval_inv_snapshot
      or v_current_task is distinct from v_task
-     or v_current_inv_org is distinct from v_inv_org then
+     or v_current_inv_org is distinct from v_inv_org
+     or v_current_inv_approval is distinct from v_inv_approval_snapshot then
     raise exception 'approval invocation binding changed while locking' using errcode = '40001';
   end if;
 
