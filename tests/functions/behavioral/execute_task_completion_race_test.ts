@@ -3,6 +3,52 @@
 // and lock behavior remain covered by the real-Postgres concurrency suites.
 import { call, eq, executeTables, fresh, model, world } from "./harness.ts";
 
+Deno.test("execute-task: registered tool success completes task and mission and records evaluation", async () => {
+  const tables = executeTables();
+  tables.aios_tools = [{
+    id: "tool-1",
+    tool_key: "support.search_tickets",
+    name: "Search support tickets",
+    version: 1,
+    risk_level: "low",
+    input_schema: { type: "object" },
+    output_schema: { type: "object" },
+    handler: "support.search_tickets",
+    status: "active",
+    is_enabled: true,
+    requires_approval: false,
+    idempotency_required: false,
+    timeout_ms: 5000,
+  }];
+  tables.aios_demo_support_tickets = [{
+    id: "ticket-1",
+    organization_id: "org-1",
+    category: "billing",
+    issue_summary: "A customer reports a duplicate charge",
+    created_at: "2026-01-01T00:00:00Z",
+  }];
+  fresh(tables);
+
+  const proposal = JSON.stringify({ tool_key: "support.search_tickets", arguments: { limit: 2 } });
+  const final = JSON.stringify({ summary: "One billing issue found", findings: [] });
+  model.onCall = () => { model.text = model.calls === 1 ? proposal : final; };
+  world.onOp = (op) => {
+    if (op.table === "aios_tool_invocations" && op.mode === "insert" && op.rows?.[0]) {
+      op.rows[0].status = "executing";
+    }
+  };
+
+  const r = await call("execute-task", { task_id: "task-1" });
+  eq(r.status, 200, "successful tool execution response");
+  eq(model.calls, 2, "planning and final analysis each ran once");
+  eq(world.tables.aios_tasks[0].status, "completed", "task reaches completed");
+  eq(world.tables.aios_missions[0].status, "completed", "single-task mission reaches completed");
+  eq(world.tables.aios_tool_invocations.length, 1, "exactly one invocation exists");
+  eq(world.tables.aios_tool_invocations[0].status, "succeeded", "invocation is sealed succeeded");
+  eq(world.tables.aios_tool_invocations[0].result.count, 1, "registered tool result is persisted");
+  eq(world.rpcs.some((rpc) => rpc.name === "aios_record_evaluation"), true, "evaluation is recorded after successful completion");
+});
+
 Deno.test("execute-task: cancellation after tool result sealing prevents task completion and preserves invocation result", async () => {
   const tables = executeTables();
   tables.aios_tools = [{
