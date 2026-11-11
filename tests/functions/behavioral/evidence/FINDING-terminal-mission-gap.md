@@ -43,3 +43,10 @@ test double cannot.
 `launch-mission` compensation is guarded by `status = queued`. When a concurrent cancellation wins, the guarded update matches zero rows
 with no error, so by code reading the audit event still records `compensated: true` although the canceller's state stands. The mission is
 correctly left cancelled; whether `compensated` should instead be false is a product decision. No test asserts either value.
+
+
+## Agent 004 closure update (2026-11-11)
+
+The original handler gap is addressed on the execution-authority stack: the handler reads the parent mission before task claim, the database claim gate rejects a task whose mission became terminal after that read, and the handler checks the affected-row result of the mission-start compare-and-set. A lost mission-start update triggers task + mission authority revalidation and stops before model use. The handler also revalidates after model planning and immediately before kernel authorization.
+
+Closure evidence is still conditional on the required PR #32 CI run: terminal mission and mission-start race probes must pass; the behavioral suite and mutation controls must remain green; and the real-Postgres mission/task race job must pass on the same PR-head SHA. This note is an implementation status update, not Agent 003 certification.
