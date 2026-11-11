@@ -63,6 +63,8 @@ jobs:
         run: |
           ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
           test ! -s /tmp/dups
+      - name: Guard restoration migration against ALTER ROLE
+        run: python3 tests/security/check_restorer_role_guard.py --self-test --migration supabase/migrations/20261109120000_aios_restoration_part_d.sql
       - name: Start local stack and apply ALL migrations from scratch
         id: start
         run: |
