@@ -79,15 +79,16 @@ jobs:
       - name: Capture migration runner and restorer membership authority
         if: steps.start.conclusion == 'success'
         run: |
+          set -o pipefail
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -P pager=off -c "
             select current_user as current_user,
                    session_user as session_user,
                    current_setting('server_version') as postgres_version,
-                   current_role.rolsuper as current_user_is_superuser,
-                   current_role.rolcreaterole as current_user_has_createrole,
-                   current_role.rolinherit as current_user_inherit,
-                   current_role.rolcanlogin as current_user_can_login,
+                   runner_role.rolsuper as current_user_is_superuser,
+                   runner_role.rolcreaterole as current_user_has_createrole,
+                   runner_role.rolinherit as current_user_inherit,
+                   runner_role.rolcanlogin as current_user_can_login,
                    session_role.rolsuper as session_user_is_superuser,
                    session_role.rolcreaterole as session_user_has_createrole,
                    session_role.rolinherit as session_user_inherit,
@@ -95,12 +96,12 @@ jobs:
                    coalesce(m.admin_option, false) as creator_admin_option,
                    coalesce(m.set_option, false) as creator_set_option,
                    coalesce(m.inherit_option, false) as creator_inherit_option
-            from pg_roles current_role
+            from pg_roles runner_role
             join pg_roles session_role on session_role.rolname = session_user
             left join pg_auth_members m
               on m.roleid = (select oid from pg_roles where rolname = 'aios_restorer')
              and m.member = session_role.oid
-            where current_role.rolname = current_user;
+            where runner_role.rolname = current_user;
           " | tee /tmp/restoration-runner.txt
           # Exercise the exact membership grant in a disposable transaction and roll it back.
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c "
