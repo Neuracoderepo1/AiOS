@@ -35,7 +35,7 @@ Negative tests (deliberately break copies of the functions; the suite must notic
 | Terminal tasks/missions are never resurrected or overwritten | `terminal_and_race_test.ts` |
 | Cancellation races (task claim, mission start, model planning, failure recording, launch-mission compensation) | `terminal_and_race_test.ts` (races simulated with `world.onOp` and model-call barriers) |
 | Terminal missions are rejected before ordinary failure paths; task/mission canceller rows remain byte-for-byte intact | `terminal_and_race_test.ts` |
-| Cancellation after a registered tool result is sealed, before task completion | `execute_task_completion_race_test.ts` (support search tool, invocation result preserved, task completion CAS loses) |\n| Harness can detect regressions | `run_mutants.py` (23 mutants + unmodified control; JSON records each exact source transformation) |
+| Registered support-tool success and cancellation after its result is sealed | `execute_task_completion_race_test.ts` (success completes task/mission and records evaluation; cancellation preserves the invocation result and defeats the completion CAS) |\n| Harness can detect regressions | `run_mutants.py` (23 mutants + unmodified control; JSON records each exact source transformation) |
 
 ## Terminal-mission and mission-start race closure probes
 
