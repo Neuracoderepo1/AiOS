@@ -14,6 +14,7 @@ def assert_reverse_link_contract(source: str) -> None:
         "left join lateral",
         "where i0.id = ap.invocation_id",
         "where ap.invocation_id is null and i1.approval_id = ap.id",
+        "order by candidate.link_priority, candidate.created_at desc, candidate.id desc",
         "order by t.mission_id nulls last, t.id nulls last, i.id nulls last, ap.id",
     )
     missing = [fragment for fragment in required if fragment not in body]
