@@ -121,6 +121,12 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
+      # Real-PostgreSQL mission/task authority races (event barriers, no sleeps as proof). Commits fixtures: throwaway CI database only.
+      - name: Mission/task authority races (lock order, terminal cascade)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/mission_task_races.sh "$DB_URL" 2>&1 | tee /tmp/mission-task-races.txt; exit ${PIPESTATUS[0]}
       # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
@@ -142,6 +148,7 @@ jobs:
             /tmp/matrix-out
             /tmp/matrix-run.txt
             /tmp/expiry-race.txt
+            /tmp/mission-task-races.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
             /tmp/start.txt
