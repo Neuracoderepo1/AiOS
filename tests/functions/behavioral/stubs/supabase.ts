@@ -36,7 +36,7 @@ export function resetWorld(tables: Record<string, any[]> = {}) {
 }
 export const writes = () => world.ops.filter((o) => o.mode !== "select");
 
-const UNSUPPORTED = ["limit", "or", "gte", "lte", "order", "in", "is", "gt", "lt", "ilike", "like", "not", "upsert"];
+const UNSUPPORTED = ["or", "gte", "lte", "in", "is", "gt", "lt", "ilike", "like", "not", "upsert"];
 
 class Query {
   client: "user" | "admin";
@@ -61,6 +61,8 @@ class Query {
   delete() { this.mode = "delete"; return this; }
   eq(c: string, v: unknown) { this.filters.push(["eq", c, v]); return this; }
   neq(c: string, v: unknown) { this.filters.push(["neq", c, v]); return this; }
+  limit(_count: number) { return this; }
+  order(_column: string, _options?: { ascending?: boolean }) { return this; }
   single() { this.one = "single"; return this; }
   maybeSingle() { this.one = "maybe"; return this; }
   then(res: (v: any) => any, rej?: (e: any) => any) {
