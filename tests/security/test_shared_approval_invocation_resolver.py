@@ -95,6 +95,16 @@ def assert_final_approval_audit_contract(source: str) -> None:
         raise AssertionError("cross-organization audit locks are not acquired in global order")
     if "aios_prelock_audit_organizations" not in source:
         raise AssertionError("batch processors do not pre-acquire organization audit locks")
+
+    prelock_start = source.index("create or replace function private.aios_prelock_approvals_batch")
+    prelock_end = source.index("$f$;", prelock_start)
+    prelock = source[prelock_start:prelock_end]
+    if "private.aios_resolve_approval_invocation(ap.id)" not in prelock:
+        raise AssertionError("phase-one pre-lock does not use the shared resolver")
+    if "private.aios_lock_approval_chain" in prelock:
+        raise AssertionError("phase-one pre-lock invokes phase-two tenant validation on invalid legacy bindings")
+    if "for no key update" not in prelock or "for update" not in prelock:
+        raise AssertionError("phase-one pre-lock does not preserve task/invocation/approval row lock order")
     if "set timezone = 'UTC'" not in audit_locks:
         raise AssertionError("audit append trigger does not pin UTC")
     if "expected_function_fp = private.aios_function_fingerprint('private.aios_audit_append()'::regprocedure)" not in source:
