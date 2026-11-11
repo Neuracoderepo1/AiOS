@@ -174,6 +174,35 @@ Deno.test("execute-task: a task cancelled while running keeps the canceller's re
   assertNoRecordCreation();
 });
 
+// ---- execute-task: model failure races with cancellation (exercise failure-write CAS guards) ---------------------------
+Deno.test("execute-task: mission cancellation during a model failure is preserved byte-for-byte", async () => {
+  fresh(executeTables());
+  model.throwNetwork = true;
+  let snapshot: unknown;
+  model.onCall = () => {
+    Object.assign(mission(), { status: "cancelled", metadata: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z" });
+    snapshot = structuredClone(mission());
+  };
+  const r = await call("execute-task", BODY);
+  eq(r.status, 502, "model failure response remains visible");
+  assert(snapshot, "cancellation barrier fired");
+  eq(mission(), snapshot, "failure recording cannot overwrite the canceller's mission row");
+});
+
+Deno.test("execute-task: task cancellation during a model failure is preserved byte-for-byte", async () => {
+  fresh(executeTables());
+  model.throwNetwork = true;
+  let snapshot: unknown;
+  model.onCall = () => {
+    Object.assign(task(), CANCELLER);
+    snapshot = structuredClone(task());
+  };
+  const r = await call("execute-task", BODY);
+  eq(r.status, 502, "model failure response remains visible");
+  assert(snapshot, "cancellation barrier fired");
+  eq(task(), snapshot, "failure recording cannot overwrite the canceller's task row");
+});
+
 // ---- execute-task: cancellation at the exact boundary of each failure write -------------------------------------------------
 
 Deno.test("execute-task: mission CANCELLED at the exact moment of mission-failure recording keeps the canceller's row", async () => {
