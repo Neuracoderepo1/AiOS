@@ -51,6 +51,61 @@ jobs:
             exit 1
           fi
 
+  # Behavioral tests: run the real execute-task / launch-mission handlers against a fake Supabase client + fake Anthropic
+  # endpoint, then prove the suite can fail by running it against deliberately broken copies (mutants). Test double only:
+  # this does NOT establish PostgreSQL atomicity, triggers, RLS or concurrency (see tests/functions/behavioral/README.md).
+  functions-behavioral:
+    runs-on: ubuntu-latest
+    env:
+      DENO_RUN: "deno test --import-map=tests/functions/behavioral/import_map.json --allow-env --allow-read"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+      - name: Record identity of what is under test
+        run: |
+          {
+            echo "commit: $GITHUB_SHA"
+            echo "checked-out HEAD: $(git rev-parse HEAD)"
+            echo "pull-request head (the commit that was pushed): ${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "functions tree: $(git rev-parse HEAD:supabase/functions)"
+            deno --version
+          } | tee identity.txt
+      - name: Behavioral suite (Deno)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/ 2>&1 | tee behavioral.txt
+      - name: Dependency resolution - no remote imports, no network (Deno --no-remote)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN --no-remote tests/functions/behavioral/ 2>&1 | tee noremote.txt
+      - name: Invariant checks (O1-O7)
+        run: |
+          set -o pipefail
+          python3 tests/functions/check_function_invariants.py 2>&1 | tee invariants.txt
+      - name: Mutation (negative) checks under Deno
+        run: |
+          set -o pipefail
+          NO_COLOR=1 python3 tests/functions/behavioral/run_mutants.py --runner "$DENO_RUN tests/functions/behavioral/" --json mutants.json 2>&1 | tee mutation.txt
+      - name: Terminal-mission and mission-start race closure probes (required)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt
+      - name: Upload behavioral evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-evidence
+          path: |
+            identity.txt
+            behavioral.txt
+            noremote.txt
+            invariants.txt
+            mutation.txt
+            mutants.json
+            gaps.txt
+
   migrations-and-sql-tests:
     needs: evidence-integrity   # integrity must pass before the matrix is accepted
     runs-on: ubuntu-latest
