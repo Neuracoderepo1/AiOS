@@ -5,7 +5,7 @@ import argparse
 import re
 from pathlib import Path
 
-TARGET = re.compile(r'\bALTER\s+(?:ROLE|USER)\s+(?:aios_restorer|"aios_restorer")(?=\s|;|$)', re.I)
+TARGET = re.compile(r'\bALTER\s+(?:ROLE|USER)\s+(?:IF\s+EXISTS\s+)?(?:aios_restorer|"aios_restorer")(?=\s|;|$)', re.I)
 
 def strip_comments(sql: str) -> str:
     # Preserve quoted strings (including dynamic SQL) while removing SQL comments.
@@ -57,6 +57,9 @@ def self_test() -> None:
       ("-- ALTER ROLE aios_restorer LOGIN\nSELECT 1;", False),
       ("/* ALTER ROLE aios_restorer LOGIN */ SELECT 1;", False),
       ("ALTER ROLE another_role NOLOGIN;", False),
+      ("ALTER ROLE IF EXISTS aios_restorer LOGIN;", True),
+      ("ALTER USER IF EXISTS aios_restorer LOGIN;", True),
+      ("ALTER /* comment */ ROLE IF /* comment */ EXISTS aios_restorer LOGIN;", True),
     ]
     for source, expected in cases:
         actual=bool(violations(source))
