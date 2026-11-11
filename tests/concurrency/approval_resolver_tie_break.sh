@@ -29,7 +29,7 @@ q "insert into auth.users (id,aud,role,email) values ('$REQ','authenticated','au
    insert into public.aios_organizations (id,name) values ('$ORG','approval-resolver-tie') on conflict do nothing;
    insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$REQ','member'),('$ORG','$ADM','admin') on conflict do nothing;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','tie-resolver-agent','tie-resolver','tie-resolver','idle',jsonb_build_object('risk_level','medium','allowed_tools',jsonb_build_array('support.export_customer_data'),'limits','{}'::jsonb)) on conflict do nothing;
-   insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium','["support.export_customer_data"]','{}',true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null
+   insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium',jsonb_build_array('support.export_customer_data'),'{}'::jsonb,true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null
 new_chain() {
   q "with m as (
        insert into public.aios_missions (organization_id,title,objective,status)
