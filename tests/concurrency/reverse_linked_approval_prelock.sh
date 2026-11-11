@@ -77,6 +77,24 @@ read -r M1 T1 I1 A1 <<<"$(new_chain a)"
 read -r M2 T2 I2 A2 <<<"$(new_chain b)"
 need_id "$M1"; need_id "$M2"
 [ "$M1" != "$M2" ] || { echo "fixture missions must differ"; exit 2; }
+# Shape the fixture so the legacy approval-UUID sort would take the higher mission first.
+OLD_FIRST_MISSION=$(q "select t.mission_id from public.aios_approvals ap
+                      join public.aios_tool_invocations i on i.approval_id=ap.id
+                      join public.aios_tasks t on t.id=i.task_id
+                      where ap.id in ('$A1','$A2') order by ap.id limit 1")
+HIGHEST_MISSION=$(printf '%s\n%s\n' "$M1" "$M2" | sort | tail -1)
+if [ "$OLD_FIRST_MISSION" != "$HIGHEST_MISSION" ]; then
+  q "update public.aios_tasks set mission_id=case when id='$T1' then '$M2' else '$M1' end
+     where id in ('$T1','$T2')" >/dev/null
+  M1=$(q "select mission_id from public.aios_tasks where id='$T1'")
+  M2=$(q "select mission_id from public.aios_tasks where id='$T2'")
+fi
+[ "$(q "select t.mission_id from public.aios_approvals ap
+        join public.aios_tool_invocations i on i.approval_id=ap.id
+        join public.aios_tasks t on t.id=i.task_id
+        where ap.id in ('$A1','$A2') order by ap.id limit 1")" = "$(printf '%s\n%s\n' "$M1" "$M2" | sort | tail -1)" ] || {
+  echo "fixture failed to invert legacy approval-id order against mission order"; exit 2;
+}
 S1=$(new_stale_sibling "$M1" a)
 S2=$(new_stale_sibling "$M2" b)
 need_id "$S1"; need_id "$S2"
@@ -94,11 +112,11 @@ MAP=$(q "select count(distinct t.mission_id)||'|'||
 # on the gate, then requests the second mission row. If approval pre-lock still takes
 # the reverse-linked second mission first, releasing the gate creates the exact cycle:
 # expiry holds second -> waits first; blocker holds first -> waits second.
-FIRST=$(printf '%s\\n%s\\n' "$M1" "$M2" | sort | head -1)
-SECOND=$(printf '%s\\n%s\\n' "$M1" "$M2" | sort | tail -1)
+FIRST=$(printf '%s\n%s\n' "$M1" "$M2" | sort | head -1)
+SECOND=$(printf '%s\n%s\n' "$M1" "$M2" | sort | tail -1)
 GATE=942731
 exec 5> >(psql "$DB" -X -At -q >"$D/controller.out" 2>"$D/controller.err")
-printf 'select pg_advisory_lock(%s);\\nselect %s;\\n' "$GATE" "'CONTROLLER_HELD'" >&5
+printf 'select pg_advisory_lock(%s);\nselect %s;\n' "$GATE" "'CONTROLLER_HELD'" >&5
 i=0
 until grep -q CONTROLLER_HELD "$D/controller.out" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 400 ] && { echo "controller gate was not acquired"; exit 2; }; sleep 0.05; done
 
@@ -145,7 +163,7 @@ echo "  barrier: both helpers are blocked on row locks; granted advisory locks h
 
 # Release the blocker to request the second mission row. Correct order completes; a
 # reverse-order approval helper forms a real PostgreSQL deadlock against this blocker.
-printf 'select pg_advisory_unlock(%s);\\nselect %s;\\n' "$GATE" "'CONTROLLER_OPEN'" >&5
+printf 'select pg_advisory_unlock(%s);\nselect %s;\n' "$GATE" "'CONTROLLER_OPEN'" >&5
 i=0
 until grep -q CONTROLLER_OPEN "$D/controller.out" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 400 ] && { echo "controller gate did not open"; exit 2; }; sleep 0.05; done
 exec 5>&-
