@@ -5,13 +5,8 @@ import { assert, loadHandler, functionsBase } from "./harness.ts";
 const SPEC = /(?:^|\n)\s*import\s+(?:[^"';]*?\s+from\s+)?["']([^"']+)["']/g;
 const mapUrl = new URL("./import_map.json", import.meta.url);
 
-function externalSpecifiers(source: string): string[] {
-  const found: string[] = [];
-  for (const m of source.matchAll(SPEC)) {
-    const s = m[1];
-    if (!s.startsWith(".") && !s.startsWith("/")) found.push(s);
-  }
-  return found;
+function importSpecifiers(source: string): string[] {
+  return [...source.matchAll(SPEC)].map((m) => m[1]);
 }
 
 Deno.test("import map resolves every external import in every Edge Function", async () => {
@@ -22,9 +17,10 @@ Deno.test("import map resolves every external import in every Edge Function", as
   assert(dirs.includes("execute-task") && dirs.includes("launch-mission"), `execute-task and launch-mission present (found ${dirs.join(",")})`);
   for (const d of dirs.sort()) {
     const source = await Deno.readTextFile(new URL(`${d}/index.ts`, base));
-    const specs = externalSpecifiers(source);
-    assert(specs.length > 0, `${d}: scanner found no imports (scanner broken?)`);
-    for (const s of specs) assert(s in imports, `${d} imports "${s}" but import_map.json does not map it`);
+    const allSpecs = importSpecifiers(source);
+    assert(allSpecs.length > 0, d + ": scanner found no static imports (scanner broken?)");
+    const external = allSpecs.filter((s) => !s.startsWith(".") && !s.startsWith("/"));
+    for (const s of external) assert(s in imports, d + " imports \"" + s + "\" but import_map.json does not map it");
   }
 });
 
