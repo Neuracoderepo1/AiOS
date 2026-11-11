@@ -231,3 +231,26 @@ Deno.test("execute-task: failed mission read is surfaced, never replaced by runn
   eq(world.tables.aios_tasks[0].status,"completed","task completion preserved");
   eq(world.rpcs.some(x=>x.name==="aios_reconcile_mission_completion"),true,"reconciler invoked");
 });
+
+
+Deno.test("execute-task: reconciliation read failure leaves durable queue work pending and returns actual mission state", async () => {
+  const tables = executeTables();
+  tables.aios_tools = [{ id:"tool-1",tool_key:"support.search_tickets",name:"Search",version:1,risk_level:"low",input_schema:{type:"object"},output_schema:{type:"object"},handler:"support.search_tickets",status:"active",is_enabled:true,requires_approval:false,idempotency_required:false,timeout_ms:5000 }];
+  tables.aios_demo_support_tickets = [{ id:"ticket-1",organization_id:"org-1",category:"billing",issue_summary:"fixture",created_at:"2026-01-01T00:00:00Z" }];
+  fresh(tables);
+  model.onCall=()=>{model.text=model.calls===1?JSON.stringify({tool_key:"support.search_tickets",arguments:{limit:2}}):JSON.stringify({summary:"done",findings:[]});};
+  world.onOp=(op)=>{
+    if(op.table==="aios_tool_invocations"&&op.mode==="insert"&&op.rows?.[0]) op.rows[0].status="executing";
+    if(op.table==="aios_tasks"&&op.mode==="update"&&op.patch?.status==="completed") {
+      world.failRpcs["aios_reconcile_mission_completion"]="temporary task-status read failure in reconciler";
+    }
+  };
+  const r=await call("execute-task",{task_id:"task-1"});
+  eq(r.status,202,"completed task is acknowledged while durable reconciliation is pending");
+  eq(r.json.task_completed,undefined,"normal completed response shape is preserved");
+  eq(r.json.mission_status,"running","actual persisted status is reported, not fabricated");
+  eq(r.json.mission_reconciliation_pending,true,"failed reconciliation is explicitly pending");
+  eq(world.tables.aios_tasks[0].status,"completed","task completion remains committed");
+  eq(world.tables.aios_missions[0].status,"running","handler does not falsely complete the mission");
+  eq(world.rpcs.some(x=>x.name==="aios_reconcile_mission_completion"),true,"reconciler failure was exercised");
+});

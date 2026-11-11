@@ -137,7 +137,7 @@ grant aios_restorer to mx_unapproved_login;
 select mx.rec('D07.14','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_login%',
   'unapproved non-application login detected');
 set session authorization mx_unapproved_login;
-select mx.rec('D07.15','authz',mx.try($select private.aios_restoration_install_credential(repeat('x',40))$) like '42501:%',
+select mx.rec('D07.15','authz',mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
   'unapproved non-application login cannot restore');
 reset session authorization;
 rollback to s_unapproved_member;
@@ -152,7 +152,7 @@ select mx.rec('D07.17','authz',exists(select 1 from pg_auth_members m join pg_ro
   'negative fixture actually has ADMIN OPTION');
 set session authorization mx_unapproved_admin;
 select mx.rec('D07.18','authz',
-  mx.try($select private.aios_restoration_install_credential(repeat('x',40))$) like '42501:%',
+  mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
   'unapproved ADMIN OPTION holder cannot exercise restoration');
 reset session authorization;
 rollback to s_unapproved_admin_option;

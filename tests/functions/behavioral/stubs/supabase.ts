@@ -18,18 +18,20 @@ export interface World {
   ops: Op[];
   rpcs: Array<{ name: string; args: unknown }>;
   fail: Record<string, string>; // "table:mode" -> error message returned for EVERY such operation
+  failRpcs: Record<string, string>; // RPC name -> injected error
   validSession: boolean;
   isMember: boolean;
   // Called at the start of every operation, before it is applied. Lets a test change the world "between" a handler's read
   // and its next write (for example to simulate another execution winning a task claim).
   onOp: ((op: Op) => void) | null;
 }
-export const world: World = { tables: {}, ops: [], rpcs: [], fail: {}, validSession: true, isMember: true, onOp: null };
+export const world: World = { tables: {}, ops: [], rpcs: [], fail: {}, failRpcs: {}, validSession: true, isMember: true, onOp: null };
 export function resetWorld(tables: Record<string, any[]> = {}) {
   world.tables = structuredClone(tables);
   world.ops = [];
   world.rpcs = [];
   world.fail = {};
+  world.failRpcs = {};
   world.validSession = true;
   world.isMember = true;
   world.onOp = null;
@@ -115,6 +117,7 @@ export function createClient(_url: string, _key: string, opts?: { global?: { hea
     },
     rpc: async (name: string, args: unknown) => {
       world.rpcs.push({ name, args });
+      if (world.failRpcs[name]) return { data: null, error: { message: world.failRpcs[name] } };
       if (name === "aios_reconcile_mission_completion") {
         const missionId = (args as { p_mission_id?: string })?.p_mission_id;
         const mission = (world.tables.aios_missions ?? []).find((m) => m.id === missionId);
