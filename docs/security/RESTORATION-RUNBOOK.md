@@ -65,7 +65,11 @@ A successful disposable grant test demonstrates the runner's effective authority
 
 Hosted project provisioning and rollback are environment-specific. Before any hosted action, verify the exact AiOS project reference, current database version, migration history, backup/PITR availability, and the actual migration executor's role attributes and role-membership authority. Confirm a tested rollback or forward-recovery plan with the database owner.
 
-**Current Agent 004 evidence limitation:** the connected Supabase projects available during this task did not include the AiOS project reference. No hosted AiOS bootstrap, rollback, SQL query, migration, credential operation, membership grant, or restoration activation was attempted. Hosted capability therefore remains unverified and must not be inferred from local CI success.
+**Read-only hosted inspection (11 November 2026):** the connected Supabase account exposed two AiOS projects. The production project is `jtkcdwhiduixoiodhbfn` (Project AiOS, PostgreSQL 17.6); its hosted migration history contains 117 entries and ends at `20261108130000_aios_invocation_delete_protection`. A read-only catalog probe confirmed that `aios_restorer` is not present, while the invocation delete guard, invocation seal guard, and mission-terminal cascade trigger are present. The probe ran with `current_user = session_user = postgres`; this observation is not evidence that the migration runner or approved creator identity has been validated for a hosted restoration bootstrap.
+
+A separate project, `jgmpodbamtqhofdocvdo` (AiOS branch, PostgreSQL 17.11), was also visible but had zero applied migrations and zero deployed Edge Functions at inspection time. It is not a provisioned hosted verification target.
+
+No hosted migration, bootstrap, rollback, credential operation, membership grant, restoration activation, or production write was attempted. The catalog inspection was read-only. Hosted bootstrap and rollback therefore remain NOT TESTED. Before any hosted write, the database owner must explicitly designate the target project and approve the migration executor, backup/PITR check, recovery plan, and exact operation.
 
 ## Production safety boundary
 
