@@ -46,9 +46,9 @@ select mx.rec('D07.4', 'roles', not exists (select 1 from pg_auth_members where 
 savepoint s_reverse_membership;
 create role mx_bridge nologin;
 grant aios_restorer to mx_bridge;
-grant mx_bridge to mx_app;
-select mx.rec('D07.4a', 'roles', pg_has_role('mx_app', 'aios_restorer', 'MEMBER')
-  and private.aios_restorer_boundary_violations()::text like '%app_role_is_member:mx_app%',
+grant mx_bridge to service_role;
+select mx.rec('D07.4a', 'roles', pg_has_role('service_role', 'aios_restorer', 'MEMBER')
+  and private.aios_restorer_boundary_violations()::text like '%app_role_is_member:service_role%',
   'transitive application membership is detected');
 rollback to s_reverse_membership;
 
