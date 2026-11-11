@@ -189,17 +189,6 @@ jobs:
           grant aios_ci_child_probe to aios_ci_recipient_probe;
           rollback;
           SQL
-      - name: Run SQL regression and invariant tests
-        run: |
-          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          set +e
-          : > /tmp/sql.txt
-          for t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 && echo "PASS $t" >> /tmp/sql.txt || { echo "FAILED $t" >> /tmp/sql.txt; }; done
-          cat /tmp/sql.txt
-          if grep -q '^FAILED' /tmp/sql.txt; then
-            echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
-            exit 1
-          fi
       - name: Run restoration role and authorization SQL regression
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
@@ -226,6 +215,17 @@ jobs:
         run: |
           set -o pipefail
           python3 -m unittest -v tests.external.test_rpc_tools 2>&1 | tee /tmp/audit-rpc-tools.txt
+      - name: Run SQL regression and invariant tests
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          : > /tmp/sql.txt
+          for t in tests/sql/*.sql; do echo "== $t" >> /tmp/sql.txt; psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$t" >> /tmp/sql.txt 2>&1 && echo "PASS $t" >> /tmp/sql.txt || { echo "FAILED $t" >> /tmp/sql.txt; }; done
+          cat /tmp/sql.txt
+          if grep -q '^FAILED' /tmp/sql.txt; then
+            echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
       - name: Prove unsafe pre-existing restorer role aborts migration without repair
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
