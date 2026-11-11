@@ -1,5 +1,5 @@
-// Behavioral tests for supabase/functions/execute-task. Scope: everything up to and including the first model call. The
-// registered-tool execution path is NOT exercised here (the stub does not model .limit/.or/.gte/.lte/.order).
+// Behavioral tests for supabase/functions/execute-task covering authentication, claiming, model planning and failure paths.
+// The registered support.search_tickets completion/cancellation boundary is exercised separately in execute_task_completion_race_test.ts.
 import { assert, call, eq, errors, executeTables, fresh, model, ORG, world, writeLog, writes } from "./harness.ts";
 
 const FN = "execute-task";
