@@ -11,11 +11,40 @@ q() { psql "$DB" -X -At -q -v ON_ERROR_STOP=1 -c "$1"; }
 check() { if [ "$2" = true ]; then echo "  PASS $1"; else echo "  FAIL $1"; fail=1; fi; }
 . "$(dirname "$0")/cron_guard.sh"
 cron_pause "$DB" || { echo "cannot guarantee a quiet scheduler"; exit 1; }
+cleanup_fixtures() {
+  q "begin;
+     set local session_replication_role=replica;
+     delete from public.aios_approvals ap
+       where ap.id in (
+         select i.approval_id from public.aios_tool_invocations i
+         join public.aios_tasks t on t.id=i.task_id
+         where t.organization_id='$ORG' and (t.title like 'reverse-%' or t.title like 'stale-%')
+           and i.approval_id is not null
+       ) or ap.invocation_id in (
+         select i.id from public.aios_tool_invocations i
+         join public.aios_tasks t on t.id=i.task_id
+         where t.organization_id='$ORG' and (t.title like 'reverse-%' or t.title like 'stale-%')
+       );
+     delete from public.aios_tool_invocations i
+       where i.organization_id='$ORG' and i.task_id in (
+         select t.id from public.aios_tasks t
+         where t.organization_id='$ORG' and (t.title like 'reverse-%' or t.title like 'stale-%')
+       );
+     delete from public.aios_tasks
+       where organization_id='$ORG' and (title like 'reverse-%' or title like 'stale-%');
+     delete from public.aios_missions
+       where organization_id='$ORG' and title like 'reverse-%';
+     commit;" >/dev/null 2>&1 || true
+}
 cleanup() {
   rc=$?
   [ -n "${BLOCK_PID:-}" ] && kill "$BLOCK_PID" 2>/dev/null || true
   [ -n "${APP_PID:-}" ] && kill "$APP_PID" 2>/dev/null || true
   [ -n "${TASK_PID:-}" ] && kill "$TASK_PID" 2>/dev/null || true
+  [ -n "${BLOCK_PID:-}" ] && wait "$BLOCK_PID" 2>/dev/null || true
+  [ -n "${APP_PID:-}" ] && wait "$APP_PID" 2>/dev/null || true
+  [ -n "${TASK_PID:-}" ] && wait "$TASK_PID" 2>/dev/null || true
+  cleanup_fixtures
   cron_restore || rc=1
   rm -rf "$D"
   exit "$rc"
@@ -26,6 +55,7 @@ ORG=ab010101-0000-4000-8000-000000000001
 AGT=ab010101-0000-4000-8000-000000000002
 REQ=ab010101-0000-4000-8000-000000000003
 ADM=ab010101-0000-4000-8000-000000000004
+cleanup_fixtures
 q "insert into auth.users (id,aud,role,email) values ('$REQ','authenticated','authenticated','rev-req@example.test'),('$ADM','authenticated','authenticated','rev-adm@example.test') on conflict do nothing;
    insert into public.aios_organizations (id,name) values ('$ORG','reverse-link-order') on conflict do nothing;
    insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$REQ','member'),('$ORG','$ADM','admin') on conflict do nothing;
@@ -84,7 +114,7 @@ OLD_FIRST_MISSION=$(q "select t.mission_id from public.aios_approvals ap
                       where ap.id in ('$A1','$A2') order by ap.id limit 1")
 HIGHEST_MISSION=$(printf '%s\n%s\n' "$M1" "$M2" | sort | tail -1)
 if [ "$OLD_FIRST_MISSION" != "$HIGHEST_MISSION" ]; then
-  q "update public.aios_tasks set mission_id=case when id='$T1' then '$M2' else '$M1' end
+  q "update public.aios_tasks set mission_id=case when id='$T1' then '$M2'::uuid else '$M1'::uuid end
      where id in ('$T1','$T2')" >/dev/null
   M1=$(q "select mission_id from public.aios_tasks where id='$T1'")
   M2=$(q "select mission_id from public.aios_tasks where id='$T2'")
