@@ -144,5 +144,12 @@ rm -f "$LOCK_LOG"
 check "both organization audit chains remain valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && [ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG2'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
 
 echo
+# Remove the test-only owner-decision fixture so later production-profile smoke checks
+# cannot mistake this throwaway task's owner decision for production evidence.
+q "begin; set local session_replication_role=replica;
+   delete from public.aios_backlog_dispositions where entity_id='$T2' and classification='owner_decision';
+   commit;" >/dev/null
+check "test-only owner-decision fixture cleaned up" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and classification='owner_decision'")" = 0 ] && echo true || echo false)"
+
 echo "== F-2 per-record isolation: $([ "$fail" = 0 ] && echo ALL PASS || echo FAILURES)"
 exit "$fail"
