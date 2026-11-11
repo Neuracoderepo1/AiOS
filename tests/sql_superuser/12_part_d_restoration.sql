@@ -403,7 +403,9 @@ $inventory$;
 -- Durable mission completion reconciliation acceptance (same disposable transaction).
 do $mission_reconcile$
 declare
-  v_org uuid; v_mission uuid; v_task uuid; v_terminal_mission uuid; v_status text; v_count bigint;
+  v_org uuid; v_mission uuid; v_task uuid; v_terminal_mission uuid;
+  v_retry_mission uuid; v_retry_task uuid; v_attempts integer; v_last_error text;
+  v_status text; v_count bigint;
 begin
   if not has_function_privilege('service_role','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
     raise exception 'service_role cannot invoke public mission reconciler';
@@ -447,12 +449,6 @@ begin
   if v_status<>'cancelled' then raise exception 'queue retry changed terminal mission to %',v_status; end if;
 
   -- Inject a transient write failure and prove the queue records it, retains work, then retries successfully.
-  declare
-    v_retry_mission uuid;
-    v_retry_task uuid;
-    v_attempts integer;
-    v_last_error text;
-  begin
     insert into public.aios_missions(organization_id,title,objective,status)
       values(v_org,'retry-mission-test','durable retry fixture','running') returning id into v_retry_mission;
     insert into public.aios_tasks(organization_id,mission_id,title,instructions,status)
@@ -490,7 +486,6 @@ begin
     if v_status<>'completed' then raise exception 'reconciliation retry did not converge: %',v_status; end if;
     select count(*) into v_count from private.aios_mission_reconciliation_queue where mission_id=v_retry_mission;
     if v_count<>0 then raise exception 'successful retry did not drain queue'; end if;
-  end;
 end
 $mission_reconcile$;
 
