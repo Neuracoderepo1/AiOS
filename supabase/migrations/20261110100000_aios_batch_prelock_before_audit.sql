@@ -38,11 +38,26 @@ create or replace function private.aios_prelock_approvals_batch(p_ids uuid[])
 returns void language plpgsql security definer set search_path = '' as $f$
 declare r record; v_last_mission uuid := null;
 begin
-  -- Order by (mission, task, invocation, approval) so concurrent batches acquire in one global order. Missions are locked once, subtree first.
+  -- Resolve the same effective invocation as aios_lock_approval_chain: prefer the direct FK,
+  -- then fall back to the reverse invocation.approval_id link. Reverse-linked approvals are NOT orphans.
+  -- Sort every real chain by its actual mission/task/invocation/approval tuple before taking any lock.
   for r in
-    select ap.id as approval_id, t.mission_id
+    select ap.id as approval_id, i.id as invocation_id, i.task_id, t.mission_id
     from public.aios_approvals ap
-    left join public.aios_tool_invocations i on i.id = ap.invocation_id
+    left join lateral (
+      select candidate.id, candidate.task_id
+      from (
+        select i0.id, i0.task_id, 0 as link_priority
+        from public.aios_tool_invocations i0
+        where i0.id = ap.invocation_id
+        union all
+        select i1.id, i1.task_id, 1 as link_priority
+        from public.aios_tool_invocations i1
+        where ap.invocation_id is null and i1.approval_id = ap.id
+      ) candidate
+      order by candidate.link_priority, candidate.id
+      limit 1
+    ) i on true
     left join public.aios_tasks t on t.id = i.task_id
     where ap.id = any(p_ids)
     order by t.mission_id nulls last, t.id nulls last, i.id nulls last, ap.id
@@ -50,6 +65,7 @@ begin
     if r.mission_id is not null then
       if r.mission_id is distinct from v_last_mission then perform private.aios_lock_mission_subtree(r.mission_id); v_last_mission := r.mission_id; end if;
     else
+      -- Truly orphaned approvals have no effective invocation/task/mission.
       perform private.aios_lock_approval_chain(r.approval_id);
     end if;
   end loop;
