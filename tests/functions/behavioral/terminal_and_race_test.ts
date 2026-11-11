@@ -24,6 +24,26 @@ for (const status of [...TERMINAL, "running", "blocked_pending_approval"]) {
   });
 }
 
+// ---- execute-task: cancellation while the model request is in flight -------------------------------------------------
+Deno.test("execute-task: cancellation during model planning is observed before proposal processing or invocation creation", async () => {
+  fresh(executeTables());
+  model.text = JSON.stringify({ tool_key: "support.search_tickets", arguments: { limit: 2 } });
+  let cancelled = false;
+  model.onCall = () => {
+    if (cancelled) return;
+    cancelled = true;
+    Object.assign(task(), CANCELLER);
+    Object.assign(mission(), { status: "cancelled", metadata: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z" });
+  };
+  const r = await call("execute-task", BODY);
+  eq(model.calls, 1, "the in-flight planning request was made once");
+  eq(r.status, 409, "lost authority after model response is rejected");
+  eq(task().status, "cancelled", "task cancellation is preserved");
+  eq(mission().status, "cancelled", "mission cancellation is preserved");
+  eq(world.ops.filter((o) => o.table === "aios_tool_invocations" && o.mode !== "select").length, 0, "no invocation is created after cancellation");
+  eq(world.ops.filter((o) => o.table === "aios_tasks" && o.mode === "update" && o.patch?.status === "completed").length, 0, "task is never completed");
+});
+
 // ---- execute-task: cancellation races on the task ------------------------------------------------------------------------
 
 Deno.test("execute-task: task CANCELLED between read and claim -> 409, stays cancelled, mission untouched, no model call", async () => {
