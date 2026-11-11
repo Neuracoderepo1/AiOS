@@ -376,6 +376,78 @@ reset session_replication_role;
 select mx.rec('D07.19', 'audit', mx.enabled('public.aios_audit_events', 'trg_aios_audit_immutable_update') = 'A', 'existing audit triggers hardened to ENABLE ALWAYS by this migration');
 select mx.rec('D07.20', 'audit', not has_table_privilege('service_role', 'public.aios_audit_events', 'UPDATE') and not has_table_privilege('service_role', 'public.aios_audit_events', 'DELETE') and not has_table_privilege('service_role', 'public.aios_audit_events', 'TRUNCATE') and not has_table_privilege('service_role', 'public.aios_audit_events', 'TRIGGER') and has_table_privilege('service_role', 'public.aios_audit_events', 'INSERT') and has_table_privilege('service_role', 'public.aios_audit_events', 'SELECT'), 'service_role keeps SELECT/INSERT only');
 
+-- Complete membership inventory evidence: every direct member and all PostgreSQL membership options.
+do $inventory$
+declare v jsonb;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'member',pr.rolname,
+    'admin_option',am.admin_option,
+    'set_option',am.set_option,
+    'inherit_option',am.inherit_option,
+    'allowlisted_exactly',(
+      al.member_oid is not null and al.member_name=pr.rolname
+      and al.admin_option=am.admin_option and al.set_option=am.set_option
+      and al.inherit_option=am.inherit_option
+    )
+  ) order by pr.rolname),'[]'::jsonb)
+  into v
+  from pg_catalog.pg_auth_members am
+  join pg_catalog.pg_roles pr on pr.oid=am.member
+  join pg_catalog.pg_roles rr on rr.oid=am.roleid and rr.rolname='aios_restorer'
+  left join private.aios_restorer_member_allowlist al on al.member_oid=am.member;
+  raise notice 'RESTORER_MEMBER_INVENTORY|%',v;
+end
+$inventory$;
+
+-- Durable mission completion reconciliation acceptance (same disposable transaction).
+do $mission_reconcile$
+declare
+  v_org uuid; v_mission uuid; v_task uuid; v_terminal_mission uuid; v_status text; v_count bigint;
+begin
+  if not has_function_privilege('service_role','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
+    raise exception 'service_role cannot invoke public mission reconciler';
+  end if;
+  if has_function_privilege('anon','public.aios_reconcile_mission_completion(uuid)','EXECUTE')
+     or has_function_privilege('authenticated','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
+    raise exception 'untrusted role can invoke public mission reconciler';
+  end if;
+
+  insert into public.aios_organizations(name) values('mission-reconcile-test') returning id into v_org;
+  insert into public.aios_missions(organization_id,title,objective,status)
+    values(v_org,'mission-reconcile-test','durable queue regression','running') returning id into v_mission;
+  insert into public.aios_tasks(organization_id,mission_id,title,instructions,status)
+    values(v_org,v_mission,'task-reconcile-test','fixture','running') returning id into v_task;
+
+  -- Test the enqueue trigger independently of the task guard's succeeded-invocation invariant.
+  -- Only that one guard is disabled in this rolled-back superuser fixture; audit and queue triggers remain active.
+  alter table public.aios_tasks disable trigger trg_aios_task_status_guard;
+  update public.aios_tasks set status='completed' where id=v_task and status='running';
+  alter table public.aios_tasks enable trigger trg_aios_task_status_guard;
+
+  select count(*) into v_count from private.aios_mission_reconciliation_queue where mission_id=v_mission;
+  if v_count<>1 then raise exception 'task completion did not durably enqueue mission'; end if;
+  select private.aios_reconcile_mission_completion(v_mission) into v_status;
+  if v_status<>'completed' then raise exception 'expected completed mission, got %',v_status; end if;
+
+  insert into public.aios_missions(organization_id,title,objective,status)
+    values(v_org,'terminal-mission-test','must remain cancelled','cancelled') returning id into v_terminal_mission;
+  insert into private.aios_mission_reconciliation_queue(mission_id) values(v_terminal_mission);
+  select private.aios_reconcile_mission_completion(v_terminal_mission) into v_status;
+  if v_status<>'cancelled' then raise exception 'terminal mission overwritten: %',v_status; end if;
+
+  if not exists(select 1 from cron.job where jobname='aios-reconcile-mission-completions') then
+    raise exception 'mission reconciliation cron job is not registered';
+  end if;
+  perform private.aios_process_mission_reconciliation_queue(100);
+  select count(*) into v_count from private.aios_mission_reconciliation_queue
+    where mission_id in(v_mission,v_terminal_mission);
+  if v_count<>0 then raise exception 'mission reconciliation queue did not drain'; end if;
+  select status into v_status from public.aios_missions where id=v_terminal_mission;
+  if v_status<>'cancelled' then raise exception 'queue retry changed terminal mission to %',v_status; end if;
+end
+$mission_reconcile$;
+
 -- ================================================================== report
 select 'MXTOTAL|' || last_value || '|checks executed (each emitted a MXRES notice; any failure aborted the script)' from mx.cnt;
 rollback;
