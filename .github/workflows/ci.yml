@@ -309,8 +309,9 @@ jobs:
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
           set -o pipefail
-          bash tests/concurrency/approval_resolver_tie_break.sh "$DB_URL" 2>&1 | tee /tmp/approval-resolver-tie-break.txt
+          bash tests/concurrency/approval_resolver_tie_break.sh "$SUPER_URL" 2>&1 | tee /tmp/approval-resolver-tie-break.txt
       - name: Shared approval resolver static and mutation controls
         run: python3 -m unittest -v tests.security.test_shared_approval_invocation_resolver
 
