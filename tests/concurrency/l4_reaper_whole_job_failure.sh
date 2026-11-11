@@ -62,6 +62,57 @@ check "T4 converged to failed on retry" "$([ "$(status "$T4")" = failed ] && ech
 check "successful retry cleared deferred state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4'")" = 0 ] && echo true || echo false)"
 check "repeated run did not duplicate T1 disposition or recovery" "$([ "$(q "select count(*) from public.aios_tasks where id='$T1' and status='failed'")" = 1 ] && echo true || echo false)"
 check "audit chain remains valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
+echo "== run 3: one organization audit lock is held; another organization must still recover"
+ORG2=b4b4b4b4-0000-4000-8000-000000000011; AGT2=b4b4b4b4-0000-4000-8000-000000000012
+q "insert into public.aios_organizations (id,name) values ('$ORG2','f2-org-independent') on conflict do nothing;
+   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG2','$REQ','member') on conflict do nothing;
+   insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority)
+     values ('$AGT2','$ORG2','f2-agent-independent','f2-independent','f2','idle','{\\"risk_level\\":\\"medium\\",\\"allowed_tools\\":[\\"support.export_customer_data\\"],\\"limits\\":{}}') on conflict do nothing;" >/dev/null || { echo "second-org fixture failed"; exit 2; }
+OUT=$(q "with m as (
+  insert into public.aios_missions (organization_id,title,objective,status)
+  values ('$ORG2','f2-independent','f2','queued') returning id
+), t as (
+  insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status)
+  select '$ORG2',id,'$AGT2','f2-independent','queued' from m returning id,mission_id
+)
+select mission_id||' '||id from t" | tail -1)
+read M5 T5 <<<"$OUT"; need_ids "$M5" "$T5"
+q "update public.aios_missions set status='running' where id='$M5';
+   update public.aios_tasks set status='running' where id='$T5';
+   begin; set local session_replication_role=replica;
+   update public.aios_tasks set updated_at=now()-interval '60 minutes' where id='$T5'; commit;" >/dev/null
+ORG_AUDIT_BEFORE=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG'")
+LOCK_LOG=$(mktemp)
+(
+  psql "$DB" -X -At -q -v ON_ERROR_STOP=1 >"$LOCK_LOG" 2>&1 <<SQL
+begin;
+select pg_advisory_xact_lock(hashtextextended('$ORG',0));
+select 'F2_ORG_AUDIT_LOCK_HELD';
+select pg_sleep(20);
+commit;
+SQL
+) &
+LOCK_PID=$!
+i=0
+until grep -q F2_ORG_AUDIT_LOCK_HELD "$LOCK_LOG" 2>/dev/null; do
+  i=$((i+1)); [ "$i" -gt 400 ] && { echo "audit lock holder never reached barrier"; kill "$LOCK_PID" 2>/dev/null || true; exit 2; }
+  sleep 0.05
+done
+echo "  barrier: organization $ORG audit advisory lock is held"
+START=$(date +%s)
+R3=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "reaper failed during cross-org contention"; wait "$LOCK_PID" || true; exit 1; }
+ELAPSED=$(( $(date +%s) - START ))
+ORG_AUDIT_AFTER=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG'")
+check "reaper returns without waiting for the contended organization lock (<5s; elapsed=${ELAPSED}s)" "$([ "$ELAPSED" -lt 5 ] && echo true || echo false)"
+check "all candidates in contended organization remain untouched" "$([ "$(status "$T2")" = running ] && [ "$(q "select status from public.aios_missions where id='$M2'")" = running ] && echo true || echo false)"
+check "contended organization's candidate is durably deferred with lock-unavailable SQLSTATE" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T2' and last_sqlstate='55P03' and last_error like '%pg_try_advisory_xact_lock returned false%'")" = 1 ] && echo true || echo false)"
+check "no public audit event was appended for contended organization" "$([ "$ORG_AUDIT_BEFORE" = "$ORG_AUDIT_AFTER" ] && echo true || echo false)"
+check "unrelated organization task recovered while first org lock remains held" "$([ "$(status "$T5")" = failed ] && echo true || echo false)"
+check "unrelated organization mission reached terminal failed state" "$([ "$(q "select status from public.aios_missions where id='$M5'")" = failed ] && echo true || echo false)"
+wait "$LOCK_PID" || { echo "audit lock holder failed"; fail=1; }
+rm -f "$LOCK_LOG"
+check "both organization audit chains remain valid" "$([ "$(q "select (private.verify_audit_chain('$ORG'))->>'valid'")" = true ] && [ "$(q "select (private.verify_audit_chain('$ORG2'))->>'valid'")" = true ] && echo true || echo false)"
+
 echo
 echo "== F-2 per-record isolation: $([ "$fail" = 0 ] && echo ALL PASS || echo FAILURES)"
 exit "$fail"
