@@ -325,14 +325,14 @@ jobs:
           for t in l3_audit_lock_forced l4_reaper_audit_lock_forced l3_lock_conflict_deferral l3_audit_lock_subtree_levels; do
             L3F_EVIDENCE_DIR=/tmp/forced-evidence/$t L3S_EVIDENCE_DIR=/tmp/forced-evidence/$t bash tests/concurrency/$t.sh "$DB_URL" > /tmp/$t.txt 2>&1; r=$?; cat /tmp/$t.txt
             lvl=notice; [ $r -ne 0 ] && lvl=error && rc=1
-            echo "::$lvl title=$t (rc=$r)::$(sed 's/\\x1b\\[[0-9;]*m//g' /tmp/$t.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\\r/%0D/g;s/\\n/%0A/g')"
+            echo "::$lvl title=$t (rc=$r)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/$t.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
           done
           # Repeat F-2 three times on distinct fixtures to exercise cross-org isolation.
           for attempt in 1 2 3; do
             t=l4_reaper_whole_job_failure
             L3F_EVIDENCE_DIR=/tmp/forced-evidence/$t-$attempt L3S_EVIDENCE_DIR=/tmp/forced-evidence/$t-$attempt bash tests/concurrency/$t.sh "$DB_URL" > /tmp/$t-$attempt.txt 2>&1; r=$?; cat /tmp/$t-$attempt.txt
             lvl=notice; [ $r -ne 0 ] && lvl=error && rc=1
-            echo "::$lvl title=$t-attempt-$attempt (rc=$r)::$(sed 's/\\x1b\\[[0-9;]*m//g' /tmp/$t-$attempt.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\\r/%0D/g;s/\\n/%0A/g')"
+            echo "::$lvl title=$t-attempt-$attempt (rc=$r)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/$t-$attempt.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
           done
           exit $rc
       # Opposite multi-organization batches must acquire audit advisory locks in one global order.
