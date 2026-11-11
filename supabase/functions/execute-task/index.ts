@@ -263,22 +263,22 @@ Deno.serve(async (req: Request) => {
   // cancelled/failed/completed/expired mission cascades its live tasks to terminal in the database, so a mismatch means the
   // database has already withdrawn authority. We stop WITHOUT writing to the task or mission (the database terminal state is
   // the truth, and the handler must not overwrite it). Returns a Response to send when authority is gone, or null to proceed.
-  const revalidateAuthority = async (stage: string, onLost?: () => Promise<void>): Promise<Response | null> => {
+  const revalidateAuthority = async (stage: string, onLost?: () => Promise<void>, toolExecuted = false): Promise<Response | null> => {
     const [taskRead, missionRead] = await Promise.all([
       admin.from("aios_tasks").select("status").eq("id", task.id).maybeSingle(),
       admin.from("aios_missions").select("status").eq("id", task.mission_id).maybeSingle(),
     ]);
     const readError = taskRead.error ?? missionRead.error;
     if (readError) {
-      await failClaimed(`${stage}_revalidation`, readError.message, { tool_executed: false });
-      return json({ error: "Execution authority could not be re-validated", detail: readError.message, stage, tool_executed: false }, 500);
+      await failClaimed(`${stage}_revalidation`, readError.message, { tool_executed: toolExecuted, tool_reexecuted: false, tool_result_preserved: toolExecuted });
+      return json({ error: "Execution authority could not be re-validated", detail: readError.message, stage, tool_executed: toolExecuted, tool_reexecuted: false, tool_result_preserved: toolExecuted }, 500);
     }
     const taskStatus = taskRead.data?.status ?? "missing";
     const missionStatus = missionRead.data?.status ?? "missing";
     if (taskStatus === "running" && missionStatus === "running") return null;
     console.error(`[execute-task] execution authority lost at ${stage} for task ${task.id}: task=${taskStatus} mission=${missionStatus}`);
     if (onLost) await onLost();
-    return json({ error: "Execution authority was withdrawn; processing stopped", stage, task_status: taskStatus, mission_status: missionStatus, task_id: task.id, tool_executed: false }, 409);
+    return json({ error: "Execution authority was withdrawn; processing stopped", stage, task_status: taskStatus, mission_status: missionStatus, task_id: task.id, tool_executed: toolExecuted, tool_reexecuted: false, tool_result_preserved: toolExecuted }, 409);
   };
 
   // The conditional queued -> running update only counts if it touched a row. Zero rows is fine ONLY when the mission is
@@ -441,16 +441,33 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Failed to seal invocation result", detail: invSuccessError.message, invocation_id: invocation.id }, 500);
   }
 
+  // The tool result is now durably sealed. If cancellation/reaping won during the tool call, stop before spending another model call.
+  // The invocation remains succeeded and is the durable record of the side effect.
+  {
+    const lost = await revalidateAuthority("after_tool_execution", undefined, true);
+    if (lost) return lost;
+  }
+
   const finalPrompt = `You are ${agent.name}, an AiOS ${agent.role}. Analyze ONLY the verified tool result below. Task: ${task.title}. Return ONLY JSON with keys summary (string) and findings (array of exactly five objects with category, count, problem). Do not invent categories or counts. Tool result: ${JSON.stringify(toolResult)}`;
   let final: Awaited<ReturnType<typeof callClaude>>;
   try {
     final = await callClaude(anthropicKey, model, finalPrompt, 1200);
   } catch (e) {
-    // The tool already succeeded and its result is sealed on the invocation. Record the stage and never re-run the tool.
+    // The tool already succeeded and its result is sealed on the invocation. If authority was withdrawn while final analysis ran,
+    // preserve the canceller's terminal state and report the lost authority instead of recording an ordinary failure.
+    const lost = await revalidateAuthority("final_analysis_error", undefined, true);
+    if (lost) return lost;
     await failClaimed("final_analysis", e, { invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false, tool_result_preserved: true });
     return json({ error: "Final analysis failed after the tool succeeded; the tool result is preserved and the tool was not re-executed", detail: String(e), invocation_id: invocation.id }, 502);
   }
   await bestEffort("model_runs:task_analysis", admin.from("aios_model_runs").insert({ organization_id: task.organization_id, agent_id: agent.id, task_id: task.id, provider: "anthropic", model, input_hash: await sha256(finalPrompt), output_hash: await sha256(final.text), prompt_reference: "kernel.task_analysis.v2.registry", input_tokens: final.input_tokens, output_tokens: final.output_tokens, latency_ms: final.latency_ms, status: "succeeded", outcome: "task_analysis" }));
+
+  // Re-check after final analysis too. The task completion CAS below remains the final fence for a cancellation that wins
+  // after this read but before the UPDATE obtains its row lock.
+  {
+    const lost = await revalidateAuthority("after_final_analysis", undefined, true);
+    if (lost) return lost;
+  }
 
   let finalOutput: any;
   try { finalOutput = parseJsonObject(final.text); } catch { finalOutput = { summary: final.text, findings: [] }; }
