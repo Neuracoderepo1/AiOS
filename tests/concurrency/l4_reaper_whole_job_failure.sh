@@ -111,7 +111,7 @@ check "unrelated organization task recovered while first org lock remains held" 
 check "unrelated organization mission reached terminal failed state" "$([ "$(q "select status from public.aios_missions where id='$M5'")" = failed ] && echo true || echo false)"
 wait "$LOCK_PID" || { echo "audit lock holder failed"; fail=1; }
 rm -f "$LOCK_LOG"
-check "both organization audit chains remain valid" "$([ "$(q "select (private.verify_audit_chain('$ORG'))->>'valid'")" = true ] && [ "$(q "select (private.verify_audit_chain('$ORG2'))->>'valid'")" = true ] && echo true || echo false)"
+check "both organization audit chains remain valid" "$([ "$(q "select set_config('request.jwt.claims','{\\\"role\\\":\\\"service_role\\\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && [ "$(q "select set_config('request.jwt.claims','{\\\"role\\\":\\\"service_role\\\"}',false); select (private.verify_audit_chain('$ORG2'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
 
 echo
 echo "== F-2 per-record isolation: $([ "$fail" = 0 ] && echo ALL PASS || echo FAILURES)"
