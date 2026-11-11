@@ -247,7 +247,7 @@ Deno.test("execute-task: reconciliation read failure leaves durable queue work p
   };
   const r=await call("execute-task",{task_id:"task-1"});
   eq(r.status,202,"completed task is acknowledged while durable reconciliation is pending");
-  eq(r.json.task_completed,undefined,"normal completed response shape is preserved");
+  eq(r.json.status,"completed","task completion is explicit in the response");
   eq(r.json.mission_status,"running","actual persisted status is reported, not fabricated");
   eq(r.json.mission_reconciliation_pending,true,"failed reconciliation is explicitly pending");
   eq(world.tables.aios_tasks[0].status,"completed","task completion remains committed");
