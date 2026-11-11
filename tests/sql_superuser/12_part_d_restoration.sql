@@ -140,10 +140,10 @@ rollback to s_member;
 savepoint s_unapproved_member;
 create role mx_unapproved_login login;
 grant aios_restorer to mx_unapproved_login;
-select mx.rec('D07.21','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_login%',
+select mx.rec('D07.26','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_login%',
   'unapproved non-application login detected');
 set session authorization mx_unapproved_login;
-select mx.rec('D07.22','authz',mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
+select mx.rec('D07.27','authz',mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
   'unapproved non-application login cannot restore');
 reset session authorization;
 rollback to s_unapproved_member;
@@ -151,13 +151,13 @@ rollback to s_unapproved_member;
 savepoint s_unapproved_admin_option;
 create role mx_unapproved_admin login;
 grant aios_restorer to mx_unapproved_admin with admin option;
-select mx.rec('D07.23','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_admin%',
+select mx.rec('D07.28','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_admin%',
   'unapproved ADMIN OPTION holder detected');
-select mx.rec('D07.24','authz',exists(select 1 from pg_auth_members m join pg_roles r on r.oid=m.member
+select mx.rec('D07.29','authz',exists(select 1 from pg_auth_members m join pg_roles r on r.oid=m.member
   where m.roleid='aios_restorer'::regrole and r.rolname='mx_unapproved_admin' and m.admin_option),
   'negative fixture actually has ADMIN OPTION');
 set session authorization mx_unapproved_admin;
-select mx.rec('D07.25','authz',
+select mx.rec('D07.30','authz',
   mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
   'unapproved ADMIN OPTION holder cannot exercise restoration');
 reset session authorization;
