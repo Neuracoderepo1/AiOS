@@ -23,6 +23,7 @@ declare
   v_ids uuid[] := '{}'::uuid[];
   v_failed_missions uuid[] := '{}'::uuid[];
   v_failed_tasks uuid[] := '{}'::uuid[];
+  v_failed_orgs uuid[] := '{}'::uuid[];
   v_quarantined_tasks uuid[] := '{}'::uuid[];
   v_orgs uuid[] := '{}'::uuid[];
   inv record;
@@ -116,8 +117,42 @@ begin
     end;
   end loop;
 
-  -- Audit locks are always last. No later row-lock acquisition is permitted.
-  perform private.aios_prelock_audit_organizations(v_orgs);
+  -- Audit locks are always last. Acquire them in UUID order with per-organization
+  -- savepoints. If one org's audit lock is unavailable, defer that org's candidates;
+  -- never let it abort unrelated organizations.
+  for r in select x.organization_id from unnest(v_orgs) as x(organization_id)
+           where x.organization_id is not null order by x.organization_id
+  loop
+    begin
+      perform pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended(coalesce(r.organization_id::text,''),0)
+      );
+    exception when others then
+      if private.aios_is_lock_conflict(sqlstate) then
+        v_failed_orgs := array_append(v_failed_orgs,r.organization_id);
+        v_lock_sqlstate := sqlstate;
+        v_lock_error := sqlerrm;
+      else
+        raise;
+      end if;
+    end;
+  end loop;
+
+  -- Audit-lock failures are transient. Queue every candidate in that organization
+  -- using the private queue (which has no audit trigger), then skip public writes.
+  for r in select t.id from public.aios_tasks t
+           where t.id=any(v_ids) and t.organization_id=any(v_failed_orgs)
+           order by t.id
+  loop
+    insert into private.aios_task_reaper_deferred(task_id,attempts,next_attempt_at,last_sqlstate,last_error,updated_at)
+    values (r.id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),
+      coalesce(v_lock_error,'organization audit lock unavailable'),clock_timestamp())
+    on conflict(task_id) do update set
+      attempts=private.aios_task_reaper_deferred.attempts+1,
+      next_attempt_at=clock_timestamp()+make_interval(secs=>least(300,power(2,least(private.aios_task_reaper_deferred.attempts+1,8))::integer)),
+      last_sqlstate=excluded.last_sqlstate,last_error=excluded.last_error,updated_at=clock_timestamp();
+    v_deferred:=v_deferred+1;
+  end loop;
 
   -- Phase 1 dispositions are persisted only after all row locks have been attempted.
   foreach v_task_id in array v_failed_tasks loop
@@ -147,6 +182,7 @@ begin
 
   foreach v_task_id in array v_quarantined_tasks loop
     select t.organization_id into v_org_id from public.aios_tasks t where t.id=v_task_id;
+    if v_org_id = any(v_failed_orgs) then continue; end if;
     insert into public.aios_backlog_dispositions
       (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
     values (v_org_id,'task',v_task_id,'needs_owner_review','manual_review',
@@ -164,6 +200,7 @@ begin
     where t.id = any(v_ids)
       and t.status='running'
       and t.updated_at < clock_timestamp()-p_max_age
+      and not (t.organization_id = any(v_failed_orgs))
       and (t.mission_id is null or not (t.mission_id = any(v_failed_missions)))
       and not (t.id = any(v_failed_tasks))
       and not (t.id = any(v_quarantined_tasks))
