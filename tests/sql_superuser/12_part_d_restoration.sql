@@ -42,6 +42,38 @@ select mx.rec('D07.1', 'roles', (select not rolcanlogin and not rolsuper and not
 select mx.rec('D07.2', 'roles', private.aios_restorer_boundary_violations() = '[]'::jsonb, private.aios_restorer_boundary_violations()::text);
 select mx.rec('D07.3', 'roles', not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member where m.roleid = 'aios_restorer'::regrole and r.rolname in ('anon','authenticated','service_role','authenticator')), 'no application role holds aios_restorer');
 select mx.rec('D07.4', 'roles', not exists (select 1 from pg_auth_members where member = 'aios_restorer'::regrole), 'aios_restorer is a member of nothing');
+-- Reverse membership boundaries: neither direct nor transitive app/service membership is accepted.
+savepoint s_reverse_membership;
+create role mx_bridge nologin;
+grant aios_restorer to mx_bridge;
+grant mx_bridge to service_role;
+select mx.rec('D07.4a', 'roles', pg_has_role('service_role', 'aios_restorer', 'MEMBER')
+  and private.aios_restorer_boundary_violations()::text like '%app_role_is_member:service_role%',
+  'transitive application membership is detected');
+rollback to s_reverse_membership;
+
+savepoint s_restorer_parent;
+create role mx_parent nologin;
+grant mx_parent to aios_restorer;
+select mx.rec('D07.4b', 'roles', private.aios_restorer_boundary_violations()::text like '%restorer_is_member_of_other_roles%',
+  'restorer membership in another role is detected');
+rollback to s_restorer_parent;
+
+select mx.rec('D07.4c', 'roles',
+  (select not rolcanlogin and not rolinherit and not rolsuper and not rolcreatedb
+          and not rolcreaterole and not rolreplication and not rolbypassrls
+   from pg_catalog.pg_roles where rolname = 'aios_restorer'),
+  'all seven restrictive role attributes are verified');
+savepoint s_unsafe_existing_role;
+alter role aios_restorer login inherit;
+select mx.rec('D07.4d', 'roles',
+  private.aios_restorer_boundary_violations()::text like '%restorer_can_login%'
+  and private.aios_restorer_boundary_violations()::text like '%restorer_inherits_roles%'
+  and (select rolcanlogin and rolinherit from pg_catalog.pg_roles where rolname = 'aios_restorer'),
+  'unsafe pre-existing attributes are detected and remain unrepaired');
+rollback to s_unsafe_existing_role;
+
+
 
 -- application roles: no EXECUTE, no table access (every restoration entry point and every table)
 select mx.rec('D07.5.' || r.rn || '.' || f.fn, 'authz', mx.try_as(r.rn, f.call) like '42501:%', mx.try_as(r.rn, f.call))
