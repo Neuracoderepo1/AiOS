@@ -26,6 +26,9 @@ create function mx.enabled(p_t text, p_trg text) returns text language sql as $$
 create function mx.drift_kinds() returns text language sql as $$ select coalesce(string_agg(distinct f ->> 'kind', ','), '') from jsonb_array_elements(private.aios_guard_drift() -> 'findings') f $$;
 grant usage on schema mx to public;
 
+select 'D00_FINAL_VERIFY' as diagnostic, private.aios_final_verify(false) as result;
+select 'D00_GUARD_DRIFT' as diagnostic, private.aios_guard_drift() as result;
+select 'D00_SCHEDULE_CHECK' as diagnostic, private.aios_schedule_check() as result;
 select mx.rec('D00', 'precondition',
   (private.aios_final_verify(false) ->> 'overall') = 'VERIFIED'
     and (select status from private.aios_restoration_state) = 'closed',
