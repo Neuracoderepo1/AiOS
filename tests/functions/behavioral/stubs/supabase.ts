@@ -115,7 +115,7 @@ export function createClient(_url: string, _key: string, opts?: { global?: { hea
     },
     rpc: async (name: string, args: unknown) => {
       world.rpcs.push({ name, args });
-      return { data: name === "aios_is_org_member" ? world.isMember : null, error: null };
+      return { data: name === "aios_is_org_member" ? world.isMember : name === "aios_kernel_authorize_invocation" ? { status: "executing" } : name === "aios_record_evaluation" ? { id: "eval-1" } : null, error: null };
     },
     from: (table: string) => new Query(client, table),
   };
