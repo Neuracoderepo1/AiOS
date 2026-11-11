@@ -118,6 +118,13 @@ jobs:
             echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Run restoration role and authorization SQL regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/12_part_d_restoration.sql 2>&1 | tee /tmp/restoration-role-sql.txt
+          test "${PIPESTATUS[0]}" -eq 0
       # Canonical matrix: 45 SQL cases (tests/sql/05) + G4 eight-way concurrency, verified against tests/matrix/manifest.json.
       # Runs even if the generic SQL step failed so one failure never hides the other; G4 commits fixtures, so this is its only run.
       - name: Canonical test matrix (46 cases)
@@ -172,7 +179,7 @@ jobs:
             /tmp/expiry-race.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
-            /tmp/start.txt\n            /tmp/restoration-runner.txt
+            /tmp/start.txt\n            /tmp/restoration-runner.txt\n            /tmp/restoration-role-sql.txt
           if-no-files-found: warn
           retention-days: 90
       - name: Stop
