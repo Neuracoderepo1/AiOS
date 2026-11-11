@@ -54,11 +54,30 @@ check "T4 has durable retry state" "$([ "$(q "select count(*) from private.aios_
 check "T4 has no permanent disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T4'")" = 0 ] && echo true || echo false)"
 check "return value reports deferred and quarantined records" "$([ "$(q "select ('$R'::jsonb->>'deferred')::int")" -ge 1 ] && [ "$(q "select ('$R'::jsonb->>'quarantined')::int")" -ge 1 ] && echo true || echo false)"
 
+
+echo "== run 1b: unresolved quarantine is excluded from the next reaper run"
+DISPOSITION_BEFORE=$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and disposition='manual_review'")
+AUDIT_BEFORE=$(audits)
+R1B=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "quarantine repeat raised"; exit 1; }
+check "quarantined T2 remains untouched on repeat run" "$([ "$(status "$T2")" = running ] && echo true || echo false)"
+check "quarantine marker remains active" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is null")" = 1 ] && echo true || echo false)"
+check "repeat run does not duplicate T2 disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and disposition='manual_review'")" = "$DISPOSITION_BEFORE" ] && echo true || echo false)"
+check "repeat run produces no T2 audit transition" "$([ "$(audits)" = "$AUDIT_BEFORE" ] && echo true || echo false)"
+
+echo "== owner resolution: authorized org owner releases quarantine"
+q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';
+   select set_config('request.jwt.claim.sub','$REQ',false);
+   select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"authenticated\"}',false);
+   select public.aios_resolve_task_reaper_quarantine('$T2','Owner inspected the invariant failure and approved reprocessing.');" >/dev/null
+check "owner resolution is durably recorded" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is not null and resolved_by='$REQ' and length(resolution_note)>=12")" = 1 ] && echo true || echo false)"
+check "owner decision is present in append-only history" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and classification='owner_decision' and disposition='owner_decision_retain'")" = 1 ] && echo true || echo false)"
+
 echo "== run 2: transient failure removed; retry is made eligible immediately"
 q "drop trigger l4_wj_test_trg on public.aios_tasks;
    update private.aios_task_reaper_deferred set next_attempt_at=now() where task_id='$T4';" >/dev/null
 R2=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "retry raised"; exit 1; }
 check "T4 converged to failed on retry" "$([ "$(status "$T4")" = failed ] && echo true || echo false)"
+check "owner-released T2 becomes eligible and converges after invariant is repaired" "$([ "$(status "$T2")" = failed ] && [ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is not null")" = 1 ] && echo true || echo false)"
 check "successful retry cleared deferred state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4'")" = 0 ] && echo true || echo false)"
 check "repeated run did not duplicate T1 disposition or recovery" "$([ "$(q "select count(*) from public.aios_tasks where id='$T1' and status='failed'")" = 1 ] && echo true || echo false)"
 check "audit chain remains valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
