@@ -129,7 +129,15 @@ ch=(); W=(); for k in $(seq 1 $PAIRS); do c=$(new_chain l3$k); ch+=("$c"); read 
 gate_run l3 "${W[@]}"; cc=$(cancelled_count "${ch[@]}"); bi=$(bad_invocations "${ch[@]}")
 errs=$(cat "$EVID"/workers/l3_*.err "$EVID"/workers/l3_*.out | grep -c 'ERROR'); echo "  deadlocks=$DEAD errors=$errs cancels_committed=$cc/$PAIRS inconsistent=$bi"
 check "no deadlock between the expiry job and mission cancel" "$([ "$DEAD" = 0 ] && echo true || echo false)"
-check "every mission cancellation committed" "$([ "$cc" = $PAIRS ] && echo true || echo false)"
+# L3 oracle (evidence-based): expiry legitimately fails a mission whose only task expired. A cancel that arrives AFTER that is rejected by the mission state guard
+# (P0001 'failed -> cancelled'). That is a correct outcome, NOT a lost kill switch. What must hold: every mission ends in EXACTLY ONE terminal state
+# (cancelled or failed), cancels either committed or were rejected by that guard (no other error class, in particular no 40P01/55P03/40001), and children are consistent.
+term=0; for c in "${ch[@]}"; do read M _ <<<"$c"; case "$(q "select status from public.aios_missions where id='$M'")" in cancelled|failed) term=$((term+1));; esac; done
+other_err=$(cat "$EVID"/workers/l3_*.err "$EVID"/workers/l3_*.out | grep -E 'ERROR' | grep -vc 'invalid mission state transition: failed -> cancelled')
+guard_err=$(cat "$EVID"/workers/l3_*.err "$EVID"/workers/l3_*.out | grep -c 'invalid mission state transition: failed -> cancelled')
+echo "  terminal=$term/$PAIRS cancelled=$cc rejected_by_state_guard=$guard_err other_errors=$other_err"
+check "every mission reached exactly one terminal state (cancelled or failed)" "$([ "$term" = $PAIRS ] && echo true || echo false)"
+check "cancels either committed or were rejected only by the terminal-state guard (no other error class)" "$([ "$other_err" = 0 ] && [ $((cc + guard_err)) = $PAIRS ] && echo true || echo false)"
 check "no live invocation left under a cancelled mission" "$([ "$bi" = 0 ] && echo true || echo false)"
 
 echo "== L4: stale-task reaper vs mission cancellation ($PAIRS pairs)"
