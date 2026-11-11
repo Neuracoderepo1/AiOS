@@ -17,6 +17,7 @@ Deno.test("import map resolves every external import in every Edge Function", as
   assert(dirs.includes("execute-task") && dirs.includes("launch-mission"), `execute-task and launch-mission present (found ${dirs.join(",")})`);
   for (const d of dirs.sort()) {
     const source = await Deno.readTextFile(new URL(`${d}/index.ts`, base));
+    // A function may import only local modules (audit-anchor does); that is valid and means no import-map entries are needed.
     const allSpecs = importSpecifiers(source);
     assert(allSpecs.length > 0, d + ": scanner found no static imports (scanner broken?)");
     const external = allSpecs.filter((s) => !s.startsWith(".") && !s.startsWith("/"));
