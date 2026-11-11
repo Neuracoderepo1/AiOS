@@ -197,7 +197,9 @@ jobs:
             /tmp/expiry-race.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
-            /tmp/start.txt\n            /tmp/restoration-runner.txt\n            /tmp/restoration-role-sql.txt
+            /tmp/start.txt
+            /tmp/restoration-runner.txt
+            /tmp/restoration-role-sql.txt
           if-no-files-found: warn
           retention-days: 90
       - name: Stop
