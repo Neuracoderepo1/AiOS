@@ -32,8 +32,9 @@ declare
   v_skipped int := 0;
   v_deferred int := 0;
   v_quarantined int := 0;
-  v_lock_sqlstate text;
-  v_lock_error text;
+  -- Per-task diagnostics: task UUID -> {sqlstate,error}. Never reuse a shared
+  -- last-error variable across independent lock attempts.
+  v_deferred_diag jsonb := '{}'::jsonb;
   v_stage text;
   v_note text;
   v_outcome text;
@@ -84,8 +85,13 @@ begin
     exception when others then
       if private.aios_is_lock_conflict(sqlstate) then
         v_failed_missions := array_append(v_failed_missions, r.mission_id);
-        v_lock_sqlstate := sqlstate;
-        v_lock_error := sqlerrm;
+        for v_task_id in
+          select t.id from public.aios_tasks t
+          where t.id = any(v_ids) and t.mission_id = r.mission_id
+        loop
+          v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
+            jsonb_build_object('sqlstate',sqlstate,'error',sqlerrm));
+        end loop;
       else
         -- A structural failure in a subtree is not safe to retry forever as a
         -- transient lock. Quarantine every candidate in that subtree.
@@ -105,12 +111,11 @@ begin
   loop
     begin
       perform 1 from public.aios_tasks t where t.id = r.id for update;
-      if not found then v_failed_tasks := array_append(v_failed_tasks,r.id); end if;
     exception when others then
       if private.aios_is_lock_conflict(sqlstate) then
         v_failed_tasks := array_append(v_failed_tasks,r.id);
-        v_lock_sqlstate := sqlstate;
-        v_lock_error := sqlerrm;
+        v_deferred_diag := v_deferred_diag || jsonb_build_object(r.id::text,
+          jsonb_build_object('sqlstate',sqlstate,'error',sqlerrm));
       else
         v_quarantined_tasks := array_append(v_quarantined_tasks,r.id);
       end if;
@@ -124,40 +129,53 @@ begin
            where x.organization_id is not null order by x.organization_id
   loop
     begin
-      perform pg_catalog.pg_advisory_xact_lock(
+      -- Match private.aios_audit_append() exactly, but never wait behind another
+      -- organization's audit writer. A false result is a transient 55P03-style
+      -- lock-unavailable condition, not a SQL exception.
+      if not pg_catalog.pg_try_advisory_xact_lock(
         pg_catalog.hashtextextended(coalesce(r.organization_id::text,''),0)
-      );
+      ) then
+        v_failed_orgs := array_append(v_failed_orgs,r.organization_id);
+        for v_task_id in
+          select t.id from public.aios_tasks t
+          where t.id = any(v_ids) and t.organization_id = r.organization_id
+        loop
+          if not (v_deferred_diag ? v_task_id::text) then
+            v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
+              jsonb_build_object('sqlstate','55P03','error',
+                'organization audit advisory lock unavailable (pg_try_advisory_xact_lock returned false)'));
+          end if;
+        end loop;
+      end if;
     exception when others then
       if private.aios_is_lock_conflict(sqlstate) then
         v_failed_orgs := array_append(v_failed_orgs,r.organization_id);
-        v_lock_sqlstate := sqlstate;
-        v_lock_error := sqlerrm;
+        for v_task_id in
+          select t.id from public.aios_tasks t
+          where t.id = any(v_ids) and t.organization_id = r.organization_id
+        loop
+          if not (v_deferred_diag ? v_task_id::text) then
+            v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
+              jsonb_build_object('sqlstate',sqlstate,'error',sqlerrm));
+          end if;
+        end loop;
       else
         raise;
       end if;
     end;
   end loop;
 
-  -- Audit-lock failures are transient. Queue every candidate in that organization
-  -- using the private queue (which has no audit trigger), then skip public writes.
-  for r in select t.id from public.aios_tasks t
-           where t.id=any(v_ids) and t.organization_id=any(v_failed_orgs)
-           order by t.id
+  -- Persist each transient failure with its own SQLSTATE and message. This private
+  -- queue has no public audit/task/mission triggers; orgs without the audit lock
+  -- are excluded from every public transition below.
+  for r in
+    select d.key::uuid as task_id,d.value as diagnostic
+    from jsonb_each(v_deferred_diag) d
+    order by d.key
   loop
     insert into private.aios_task_reaper_deferred(task_id,attempts,next_attempt_at,last_sqlstate,last_error,updated_at)
-    values (r.id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),
-      coalesce(v_lock_error,'organization audit lock unavailable'),clock_timestamp())
-    on conflict(task_id) do update set
-      attempts=private.aios_task_reaper_deferred.attempts+1,
-      next_attempt_at=clock_timestamp()+make_interval(secs=>least(300,power(2,least(private.aios_task_reaper_deferred.attempts+1,8))::integer)),
-      last_sqlstate=excluded.last_sqlstate,last_error=excluded.last_error,updated_at=clock_timestamp();
-    v_deferred:=v_deferred+1;
-  end loop;
-
-  -- Phase 1 dispositions are persisted only after all row locks have been attempted.
-  foreach v_task_id in array v_failed_tasks loop
-    insert into private.aios_task_reaper_deferred(task_id,attempts,next_attempt_at,last_sqlstate,last_error,updated_at)
-    values (v_task_id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),coalesce(v_lock_error,'task row lock unavailable'),clock_timestamp())
+    values (r.task_id,1,clock_timestamp()+interval '2 seconds',
+      r.diagnostic->>'sqlstate',r.diagnostic->>'error',clock_timestamp())
     on conflict(task_id) do update set
       attempts=private.aios_task_reaper_deferred.attempts+1,
       next_attempt_at=clock_timestamp()+make_interval(secs=>least(300,power(2,least(private.aios_task_reaper_deferred.attempts+1,8))::integer)),
@@ -165,20 +183,7 @@ begin
     v_deferred := v_deferred+1;
   end loop;
 
-  foreach v_mission_id in array v_failed_missions loop
-    for r in
-      select t.id from public.aios_tasks t
-      where t.id = any(v_ids) and t.mission_id = v_mission_id
-    loop
-      insert into private.aios_task_reaper_deferred(task_id,attempts,next_attempt_at,last_sqlstate,last_error,updated_at)
-      values (r.id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),coalesce(v_lock_error,'mission subtree lock unavailable'),clock_timestamp())
-      on conflict(task_id) do update set
-        attempts=private.aios_task_reaper_deferred.attempts+1,
-        next_attempt_at=clock_timestamp()+make_interval(secs=>least(300,power(2,least(private.aios_task_reaper_deferred.attempts+1,8))::integer)),
-        last_sqlstate=excluded.last_sqlstate,last_error=excluded.last_error,updated_at=clock_timestamp();
-      v_deferred := v_deferred+1;
-    end loop;
-  end loop;
+  -- Phase 1 dispositions are persisted only after all row locks have been attempted.
 
   foreach v_task_id in array v_quarantined_tasks loop
     select t.organization_id into v_org_id from public.aios_tasks t where t.id=v_task_id;
