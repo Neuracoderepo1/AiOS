@@ -26,11 +26,26 @@ create function mx.enabled(p_t text, p_trg text) returns text language sql as $$
 create function mx.drift_kinds() returns text language sql as $$ select coalesce(string_agg(distinct f ->> 'kind', ','), '') from jsonb_array_elements(private.aios_guard_drift() -> 'findings') f $$;
 grant usage on schema mx to public;
 
-select mx.rec('D00', 'precondition', (private.aios_final_verify(false) ->> 'overall') = 'VERIFIED' and (select status from private.aios_restoration_state) = 'closed', 'PRECONDITION: the suite needs a freshly replayed database (baseline verifier VERIFIED, no committed unanchored audit events). Got: ' || (private.aios_final_verify(false) ->> 'overall'));
+select 'D00_FINAL_VERIFY' as diagnostic, private.aios_final_verify(false) as result;
+select 'D00_GUARD_DRIFT' as diagnostic, private.aios_guard_drift() as result;
+select 'D00_SCHEDULE_CHECK' as diagnostic, private.aios_schedule_check() as result;
+select mx.rec('D00', 'precondition',
+  (private.aios_final_verify(false) ->> 'overall') = 'VERIFIED'
+    and (select status from private.aios_restoration_state) = 'closed',
+  'PRECONDITION: freshly replayed baseline must be VERIFIED. Full verifier diagnostics: '
+    || private.aios_final_verify(false)::text);
 create temp table mx_g0 as select generation as g from private.aios_restoration_state;   -- the suite must not assume generation 0 (races may have advanced it)
 grant all on mx_g0 to public;
 create role mx_owner login; create role mx_app login;
 grant aios_restorer to mx_owner;
+insert into private.aios_restorer_member_allowlist
+  (member_oid,member_name,approval_reason,admin_option,set_option,inherit_option)
+select r.oid,r.rolname,'isolated Part D test owner',m.admin_option,m.set_option,m.inherit_option
+from pg_catalog.pg_auth_members m join pg_catalog.pg_roles r on r.oid=m.member
+where m.roleid='aios_restorer'::regrole and r.rolname='mx_owner'
+on conflict (member_oid) do update set member_name=excluded.member_name,
+  approval_reason=excluded.approval_reason,admin_option=excluded.admin_option,
+  set_option=excluded.set_option,inherit_option=excluded.inherit_option;
 grant all on all functions in schema mx to public;
 
 \set C1 '''c1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'''
@@ -40,6 +55,12 @@ grant all on all functions in schema mx to public;
 -- ================================================================== D07 roles and authorization
 select mx.rec('D07.1', 'roles', (select not rolcanlogin and not rolsuper and not rolinherit and not rolcreaterole and not rolcreatedb and not rolreplication and not rolbypassrls from pg_roles where rolname = 'aios_restorer'), 'aios_restorer is NOLOGIN, NOINHERIT, no extra attributes');
 select mx.rec('D07.2', 'roles', private.aios_restorer_boundary_violations() = '[]'::jsonb, private.aios_restorer_boundary_violations()::text);
+-- Superuser authority is inherent; no synthetic pg_auth_members row is expected.
+do $superuser_assert$
+begin
+  perform private.aios_assert_restorer();
+end
+$superuser_assert$;
 select mx.rec('D07.3', 'roles', not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member where m.roleid = 'aios_restorer'::regrole and r.rolname in ('anon','authenticated','service_role','authenticator')), 'no application role holds aios_restorer');
 select mx.rec('D07.4', 'roles', not exists (select 1 from pg_auth_members where member = 'aios_restorer'::regrole), 'aios_restorer is a member of nothing');
 -- Reverse membership boundaries: neither direct nor transitive app/service membership is accepted.
@@ -98,8 +119,8 @@ savepoint s_exec_public;
 grant usage on schema private to public;
 grant execute on function private.aios_restoration_open(text, text, interval), private.aios_restoration_install_credential(text) to public;
 set session authorization mx_app;
-select mx.rec('D07.7', 'authz', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$) like '42501:restoration requires owner membership%', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$));
-select mx.rec('D07.8', 'authz', mx.try($$select private.aios_restoration_install_credential(repeat('z', 40))$$) like '42501:restoration requires owner membership%');
+select mx.rec('D07.7', 'authz', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$) like '42501:restoration requires an explicitly approved session login%', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$));
+select mx.rec('D07.8', 'authz', mx.try($$select private.aios_restoration_install_credential(repeat('z', 40))$$) like '42501:restoration requires an explicitly approved session login%');
 reset session authorization;
 rollback to s_exec_public;
 
@@ -121,6 +142,33 @@ set session authorization mx_owner;
 select mx.rec('D07.11', 'authz', mx.try($$select private.aios_restoration_install_credential(repeat('q', 40))$$) like '42501:restorer role boundary violated%', mx.try($$select private.aios_restoration_install_credential(repeat('q', 40))$$));
 reset session authorization;
 rollback to s_member;
+
+-- Complete membership allowlist rejects unknown non-app logins and unapproved ADMIN OPTION holders.
+savepoint s_unapproved_member;
+create role mx_unapproved_login login;
+grant aios_restorer to mx_unapproved_login;
+select mx.rec('D07.26','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_login%',
+  'unapproved non-application login detected');
+set session authorization mx_unapproved_login;
+select mx.rec('D07.27','authz',mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
+  'unapproved non-application login cannot restore');
+reset session authorization;
+rollback to s_unapproved_member;
+
+savepoint s_unapproved_admin_option;
+create role mx_unapproved_admin login;
+grant aios_restorer to mx_unapproved_admin with admin option;
+select mx.rec('D07.28','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_admin%',
+  'unapproved ADMIN OPTION holder detected');
+select mx.rec('D07.29','authz',exists(select 1 from pg_auth_members m join pg_roles r on r.oid=m.member
+  where m.roleid='aios_restorer'::regrole and r.rolname='mx_unapproved_admin' and m.admin_option),
+  'negative fixture actually has ADMIN OPTION');
+set session authorization mx_unapproved_admin;
+select mx.rec('D07.30','authz',
+  mx.try($sql$select private.aios_restoration_install_credential(repeat('x',40))$sql$) like '42501:%',
+  'unapproved ADMIN OPTION holder cannot exercise restoration');
+reset session authorization;
+rollback to s_unapproved_admin_option;
 
 -- application roles cannot grant themselves membership
 select mx.rec('D07.12', 'authz', mx.try_as('service_role', 'grant aios_restorer to service_role') like '42501:%');
@@ -302,6 +350,14 @@ select mx.rec('D06.13', 'drift', mx.try_as('service_role', $$select private.aios
 select mx.rec('D05.1', 'schedule', (select count(*) from cron.job where jobname in ('aios-restoration-watchdog', 'aios-audit-verify-hourly')) = 2, 'both new jobs are registered in cron.job');
 select mx.rec('D05.2', 'schedule', (select schedule from cron.job where jobname = 'aios-restoration-watchdog') = '*/5 * * * *' and (select schedule from cron.job where jobname = 'aios-audit-verify-hourly') = '7 * * * *');
 select mx.rec('D05.3', 'schedule', (private.aios_schedule_check() ->> 'problem_count')::int = 0, private.aios_schedule_check()::text);
+select mx.rec('D05.8', 'schedule',
+  exists(select 1 from cron.job where jobname='aios-reconcile-mission-completions'
+    and schedule='* * * * *'
+    and btrim(command)='select private.aios_process_mission_reconciliation_queue(100)'),
+  'mission reconciliation worker is registered with the exact required schedule and command');
+select mx.rec('D05.9', 'guard',
+  (private.aios_guard_drift() ->> 'drift_count')::int = 0,
+  'mission completion enqueue trigger is registered and restoration guard has no drift');
 set session authorization postgres;   -- cron.job is keyed by (jobname, username): re-register as the same user that migrated
 select cron.schedule('aios-restoration-watchdog', '*/5 * * * *', $$select private.aios_restoration_watchdog()$$);
 select cron.schedule('aios-audit-verify-hourly', '7 * * * *', $$select private.aios_scheduled_verify()$$);
@@ -326,14 +382,127 @@ savepoint wk2; create or replace function private.aios_guard_drift() returns jso
 select mx.rec('D01.5', 'verifier', (private.aios_scheduled_verify() ->> 'reason') = 'verifier_pin_mismatch', 'weakened drift check is caught by the pin check'); rollback to wk2;
 
 -- ================================================================== registry cannot be modified by application/service roles; log append-only
-select mx.rec('D07.14', 'log', mx.try($$update private.aios_restoration_log set event = 'x'$$) like '42501:%UPDATE%append-only%', 'restoration log UPDATE blocked even for a superuser');
-select mx.rec('D07.15', 'log', mx.try($$delete from private.aios_restoration_log$$) like '42501:%DELETE%append-only%');
-select mx.rec('D07.16', 'log', mx.try($$truncate private.aios_restoration_log$$) like '42501:%TRUNCATE%append-only%');
+select mx.rec('D07.21', 'log', mx.try($$update private.aios_restoration_log set event = 'x'$$) like '42501:%UPDATE%append-only%', 'restoration log UPDATE blocked even for a superuser');
+select mx.rec('D07.22', 'log', mx.try($$delete from private.aios_restoration_log$$) like '42501:%DELETE%append-only%');
+select mx.rec('D07.23', 'log', mx.try($$truncate private.aios_restoration_log$$) like '42501:%TRUNCATE%append-only%');
 set session_replication_role = replica;
-select mx.rec('D07.17', 'log', mx.try($$delete from private.aios_restoration_log$$) like '42501:%', 'append-only guard is ENABLE ALWAYS (not bypassed by session_replication_role=replica)');
+select mx.rec('D07.24', 'log', mx.try($$delete from private.aios_restoration_log$$) like '42501:%', 'append-only guard is ENABLE ALWAYS (not bypassed by session_replication_role=replica)');
 reset session_replication_role;
 select mx.rec('D07.19', 'audit', mx.enabled('public.aios_audit_events', 'trg_aios_audit_immutable_update') = 'A', 'existing audit triggers hardened to ENABLE ALWAYS by this migration');
 select mx.rec('D07.20', 'audit', not has_table_privilege('service_role', 'public.aios_audit_events', 'UPDATE') and not has_table_privilege('service_role', 'public.aios_audit_events', 'DELETE') and not has_table_privilege('service_role', 'public.aios_audit_events', 'TRUNCATE') and not has_table_privilege('service_role', 'public.aios_audit_events', 'TRIGGER') and has_table_privilege('service_role', 'public.aios_audit_events', 'INSERT') and has_table_privilege('service_role', 'public.aios_audit_events', 'SELECT'), 'service_role keeps SELECT/INSERT only');
+
+-- Complete membership inventory evidence: every direct member and all PostgreSQL membership options.
+do $inventory$
+declare v jsonb;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'member',pr.rolname,
+    'admin_option',am.admin_option,
+    'set_option',am.set_option,
+    'inherit_option',am.inherit_option,
+    'allowlisted_exactly',(
+      al.member_oid is not null and al.member_name=pr.rolname
+      and al.admin_option=am.admin_option and al.set_option=am.set_option
+      and al.inherit_option=am.inherit_option
+    )
+  ) order by pr.rolname),'[]'::jsonb)
+  into v
+  from pg_catalog.pg_auth_members am
+  join pg_catalog.pg_roles pr on pr.oid=am.member
+  join pg_catalog.pg_roles rr on rr.oid=am.roleid and rr.rolname='aios_restorer'
+  left join private.aios_restorer_member_allowlist al on al.member_oid=am.member;
+  raise notice 'RESTORER_MEMBER_INVENTORY|%',v;
+end
+$inventory$;
+
+-- Durable mission completion reconciliation acceptance (same disposable transaction).
+do $mission_reconcile$
+declare
+  v_org uuid; v_mission uuid; v_task uuid; v_terminal_mission uuid;
+  v_retry_mission uuid; v_retry_task uuid; v_attempts integer; v_last_error text;
+  v_status text; v_count bigint;
+begin
+  if not has_function_privilege('service_role','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
+    raise exception 'service_role cannot invoke public mission reconciler';
+  end if;
+  if has_function_privilege('anon','public.aios_reconcile_mission_completion(uuid)','EXECUTE')
+     or has_function_privilege('authenticated','public.aios_reconcile_mission_completion(uuid)','EXECUTE') then
+    raise exception 'untrusted role can invoke public mission reconciler';
+  end if;
+
+  insert into public.aios_organizations(name) values('mission-reconcile-test') returning id into v_org;
+  insert into public.aios_missions(organization_id,title,objective,status)
+    values(v_org,'mission-reconcile-test','durable queue regression','running') returning id into v_mission;
+  insert into public.aios_tasks(organization_id,mission_id,title,instructions,status)
+    values(v_org,v_mission,'task-reconcile-test','fixture','running') returning id into v_task;
+
+  -- Test the enqueue trigger independently of the task guard's succeeded-invocation invariant.
+  -- Only that one guard is disabled in this rolled-back superuser fixture; audit and queue triggers remain active.
+  alter table public.aios_tasks disable trigger trg_aios_task_status_guard;
+  update public.aios_tasks set status='completed' where id=v_task and status='running';
+  alter table public.aios_tasks enable trigger trg_aios_task_status_guard;
+
+  select count(*) into v_count from private.aios_mission_reconciliation_queue where mission_id=v_mission;
+  if v_count<>1 then raise exception 'task completion did not durably enqueue mission'; end if;
+  select private.aios_reconcile_mission_completion(v_mission) into v_status;
+  if v_status<>'completed' then raise exception 'expected completed mission, got %',v_status; end if;
+
+  insert into public.aios_missions(organization_id,title,objective,status)
+    values(v_org,'terminal-mission-test','must remain cancelled','cancelled') returning id into v_terminal_mission;
+  insert into private.aios_mission_reconciliation_queue(mission_id) values(v_terminal_mission);
+  select private.aios_reconcile_mission_completion(v_terminal_mission) into v_status;
+  if v_status<>'cancelled' then raise exception 'terminal mission overwritten: %',v_status; end if;
+
+  if not exists(select 1 from cron.job where jobname='aios-reconcile-mission-completions') then
+    raise exception 'mission reconciliation cron job is not registered';
+  end if;
+  perform private.aios_process_mission_reconciliation_queue(100);
+  select count(*) into v_count from private.aios_mission_reconciliation_queue
+    where mission_id in(v_mission,v_terminal_mission);
+  if v_count<>0 then raise exception 'mission reconciliation queue did not drain'; end if;
+  select status into v_status from public.aios_missions where id=v_terminal_mission;
+  if v_status<>'cancelled' then raise exception 'queue retry changed terminal mission to %',v_status; end if;
+
+  -- Inject a transient write failure and prove the queue records it, retains work, then retries successfully.
+    insert into public.aios_missions(organization_id,title,objective,status)
+      values(v_org,'retry-mission-test','durable retry fixture','running') returning id into v_retry_mission;
+    insert into public.aios_tasks(organization_id,mission_id,title,instructions,status)
+      values(v_org,v_retry_mission,'retry-task-test','fixture','running') returning id into v_retry_task;
+    alter table public.aios_tasks disable trigger trg_aios_task_status_guard;
+    update public.aios_tasks set status='completed' where id=v_retry_task and status='running';
+    alter table public.aios_tasks enable trigger trg_aios_task_status_guard;
+
+    perform set_config('test.retry_mission',v_retry_mission::text,true);
+    create function pg_temp.reject_reconciliation_once() returns trigger
+      language plpgsql as $fail$
+      begin
+        if new.id=current_setting('test.retry_mission')::uuid and new.status='completed' then
+          raise exception 'injected transient reconciliation failure';
+        end if;
+        return new;
+      end
+      $fail$;
+    create trigger aios_test_reconciliation_failure
+      before update of status on public.aios_missions
+      for each row execute function pg_temp.reject_reconciliation_once();
+
+    perform private.aios_process_mission_reconciliation_queue(100);
+    select attempts,last_error into v_attempts,v_last_error
+      from private.aios_mission_reconciliation_queue where mission_id=v_retry_mission;
+    if v_attempts<>1 then raise exception 'failed reconciliation was not retained with one attempt: %',v_attempts; end if;
+    if v_last_error not like '%injected transient reconciliation failure%' then
+      raise exception 'failed reconciliation diagnostic missing: %',v_last_error;
+    end if;
+
+    drop trigger aios_test_reconciliation_failure on public.aios_missions;
+    drop function pg_temp.reject_reconciliation_once();
+    perform private.aios_process_mission_reconciliation_queue(100);
+    select status into v_status from public.aios_missions where id=v_retry_mission;
+    if v_status<>'completed' then raise exception 'reconciliation retry did not converge: %',v_status; end if;
+    select count(*) into v_count from private.aios_mission_reconciliation_queue where mission_id=v_retry_mission;
+    if v_count<>0 then raise exception 'successful retry did not drain queue'; end if;
+end
+$mission_reconcile$;
 
 -- ================================================================== report
 select 'MXTOTAL|' || last_value || '|checks executed (each emitted a MXRES notice; any failure aborted the script)' from mx.cnt;

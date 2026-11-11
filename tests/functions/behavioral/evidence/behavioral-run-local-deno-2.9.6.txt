@@ -1,0 +1,144 @@
+AiOS edge-function behavioral evidence - LOCAL SUPPLEMENTAL RUN (NOT the GitHub Actions run; does not replace it)
+run date (UTC)       : 2026-11-06T22:46:03Z
+tested commit        : 7463c6d643d100e4340875a797ae9b73c61c7369   (local commit on top of test/edge-function-behavioral @ 7876643)
+functions tree hash  : 1bc9b0f230609ab0bd2d716add6fbe6044b6a7a5   (base 7876643: 1bc9b0f230609ab0bd2d716add6fbe6044b6a7a5)
+working tree clean   : yes (checked before this log was created)
+runtime              : deno 2.9.6 (stable, release, x86_64-unknown-linux-gnu)  <-- repo pins 2.9.8 (ci.yml DENO_VERSION); 2.9.8 is not available on the npm registry here (latest 2.9.6).
+                       Same Deno 2.x line as CI, NOT the pinned version. The CI run on 2.9.8 remains the required evidence.
+
+================ 1. behavioral suite (Deno) ================
+execute-task: missing Authorization -> 401, nothing touched ... ok (33ms)
+execute-task: authentication happens BEFORE API-key validation (invalid session + no key -> 401, not 503) ... ok (752µs)
+execute-task: org authorization happens BEFORE API-key validation (non-member + no key -> 403, not 503) ... ok (865µs)
+execute-task: request/resource validation happens BEFORE API-key validation ... ok (2ms)
+execute-task: suspended agent -> 403 before API-key validation, no writes ... ok (565µs)
+execute-task: valid caller, executable task, no API key -> 503 with the task left untouched ... ok (674µs)
+execute-task: idempotent replay of a succeeded invocation works WITHOUT an API key, read-only ... ok (628µs)
+execute-task: replay of a requires_approval invocation -> 202 without a key, read-only ... ok (352µs)
+execute-task: replay of an executing invocation -> 202 without a key, read-only ... ok (389µs)
+execute-task: replay of a failed invocation -> 409 with its recorded error code, read-only ... ok (279µs)
+execute-task: a key bound to a DIFFERENT task is not replayed (plain 409, no idempotent_replay) ... ok (309µs)
+execute-task: a replay key from another organization is not honoured ... ok (200µs)
+execute-task: non-executable task WITHOUT an idempotency key -> plain 409, never replayed ... ok (181µs)
+execute-task: the task is claimed BEFORE the mission is started, and both happen before any model call ... ok (2ms)
+execute-task: the claim is a compare-and-set on the status that was read ... ok (694µs)
+execute-task: a LOST claim -> 409, mission untouched, no model call, winner's task is not failed ... ok (458µs)
+execute-task: a claim DB error -> 500, mission untouched, no model call ... ok (356µs)
+execute-task: an already-running mission keeps its original started_at ... ok (676µs)
+execute-task: mission-start failure -> 500, task FAILED with stage + error, no model call ... ok (520µs)
+execute-task: model failure after the claim -> task AND mission end 'failed' with stage model_proposal ... ok (599µs)
+execute-task: invalid tool proposal after the claim -> 422, task and mission end 'failed' ... ok (563µs)
+import map resolves every external import in every Edge Function ... ok (2ms)
+every import map target exists on disk ... ok (411µs)
+execute-task and launch-mission load under the import map and register a handler ... ok (29ms)
+launch-mission: missing Authorization -> 401, nothing touched ... ok (49ms)
+launch-mission: authentication happens BEFORE API-key validation (invalid session + no key -> 401, not 503) ... ok (969µs)
+launch-mission: org authorization happens BEFORE API-key validation (non-member + no key -> 403, not 503) ... ok (816µs)
+launch-mission: agent eligibility is checked BEFORE API-key validation (no agent + no key -> 422, not 503) ... ok (1ms)
+launch-mission: valid caller but no API key on an AI-planned objective -> 503 with zero writes ... ok (1ms)
+launch-mission: deterministic support objective needs no API key and creates the mission ... ok (1ms)
+launch-mission: no database writes when planning fails: model network failure -> 502 ... ok (2ms)
+launch-mission: no database writes when planning fails: model HTTP 500 -> 502 ... ok (916µs)
+launch-mission: no database writes when planning fails: model returns non-JSON text -> 422 ... ok (1ms)
+launch-mission: no database writes when planning fails: model returns empty array (0 tasks) -> 422 ... ok (835µs)
+launch-mission: no database writes when planning fails: model returns 4 tasks (over the limit) -> 422 ... ok (450µs)
+launch-mission: no database writes when planning fails: model returns blank title -> 422 ... ok (460µs)
+launch-mission: no database writes when planning fails: model returns non-string instructions -> 422 ... ok (515µs)
+launch-mission: no database writes when planning fails: model returns oversized title -> 422 ... ok (489µs)
+launch-mission: no database writes when planning fails: second task has an invalid risk level (first is fine) -> 422 ... ok (388µs)
+launch-mission: success writes in the documented order (mission, tasks, model run, audit) ... ok (1ms)
+launch-mission: invalid model risk_level "critical" -> HTTP 422 and nothing written ... ok (498µs)
+launch-mission: invalid model risk_level "HIGH" -> HTTP 422 and nothing written ... ok (334µs)
+launch-mission: invalid model risk_level "Low" -> HTTP 422 and nothing written ... ok (298µs)
+launch-mission: invalid model risk_level "" -> HTTP 422 and nothing written ... ok (390µs)
+launch-mission: invalid model risk_level " low" -> HTTP 422 and nothing written ... ok (299µs)
+launch-mission: invalid model risk_level "none" -> HTTP 422 and nothing written ... ok (399µs)
+launch-mission: invalid model risk_level null -> HTTP 422 and nothing written ... ok (275µs)
+launch-mission: invalid model risk_level 3 -> HTTP 422 and nothing written ... ok (280µs)
+launch-mission: invalid model risk_level ["low"] -> HTTP 422 and nothing written ... ok (327µs)
+launch-mission: invalid model risk_level {"level":"low"} -> HTTP 422 and nothing written ... ok (242µs)
+launch-mission: missing risk_level -> 422 (not defaulted) ... ok (411µs)
+launch-mission: valid risk levels are persisted verbatim, never rewritten ... ok (808µs)
+launch-mission: all tasks go in ONE insert statement (all-or-nothing) ... ok (750µs)
+launch-mission: task insert failure -> 500, mission compensated to 'cancelled' (not deleted), no orphan tasks ... ok (850µs)
+launch-mission: compensation only touches a mission that is still 'queued' (guarded update) ... ok (636µs)
+launch-mission: mission insert failure -> 500 and no tasks are attempted ... ok (435µs)
+launch-mission: mission_creation_failed audit event records stage, reason and compensated=true ... ok (2ms)
+launch-mission: compensation failure is reported, not hidden (mission stays queued, audit says compensated=false) ... ok (614µs)
+launch-mission: audit write failure during compensation is logged and the 500 response still carries the mission id ... ok (685µs)
+launch-mission: failure reason is truncated to 500 characters in mission metadata and audit ... ok (668µs)
+execute-task: task already 'completed' without an idempotency key -> 409, no writes, no model call ... ok (31ms)
+execute-task: task already 'failed' without an idempotency key -> 409, no writes, no model call ... ok (824µs)
+execute-task: task already 'cancelled' without an idempotency key -> 409, no writes, no model call ... ok (314µs)
+execute-task: task already 'expired' without an idempotency key -> 409, no writes, no model call ... ok (303µs)
+execute-task: task already 'running' without an idempotency key -> 409, no writes, no model call ... ok (310µs)
+execute-task: task already 'blocked_pending_approval' without an idempotency key -> 409, no writes, no model call ... ok (504µs)
+execute-task: task CANCELLED between read and claim -> 409, stays cancelled, mission untouched, no model call ... ok (687µs)
+execute-task: task cancelled WHILE running is never overwritten to 'failed' by this execution ... ok (2ms)
+execute-task: a 'completed' mission row is never modified by an execution (no resurrection, no overwrite) ... ok (1ms)
+execute-task: a 'failed' mission row is never modified by an execution (no resurrection, no overwrite) ... ok (721µs)
+execute-task: a 'cancelled' mission row is never modified by an execution (no resurrection, no overwrite) ... ok (415µs)
+execute-task: a 'expired' mission row is never modified by an execution (no resurrection, no overwrite) ... ok (360µs)
+execute-task: mission CANCELLED between task claim and mission start is not resurrected to 'running' ... ok (402µs)
+execute-task: mission CANCELLED while the task runs is not overwritten to 'failed' when the task fails ... ok (375µs)
+launch-mission: mission CANCELLED concurrently before compensation keeps the canceller's metadata ... ok (1ms)
+execute-task: 'completed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable ... ok (600µs)
+execute-task: 'completed' mission row is untouched on the mission-start database error path and the task failure stays diagnosable ... ok (285µs)
+execute-task: 'failed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable ... ok (343µs)
+execute-task: 'failed' mission row is untouched on the mission-start database error path and the task failure stays diagnosable ... ok (190µs)
+execute-task: 'cancelled' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable ... ok (234µs)
+execute-task: 'cancelled' mission row is untouched on the mission-start database error path and the task failure stays diagnosable ... ok (316µs)
+execute-task: 'expired' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable ... ok (267µs)
+execute-task: 'expired' mission row is untouched on the mission-start database error path and the task failure stays diagnosable ... ok (213µs)
+execute-task: a task cancelled while running keeps the canceller's result, timestamps and error byte-for-byte ... ok (452µs)
+execute-task: mission CANCELLED at the exact moment of mission-failure recording keeps the canceller's row ... ok (1ms)
+execute-task: task CANCELLED while the mission-start failure is being recorded is not overwritten to 'failed' ... ok (371µs)
+launch-mission: concurrent cancellation + task-insert failure: failure is audited with its reason, no stray rows, status and metadata are the canceller's ... ok (645µs)
+ok | 87 passed | 0 failed (428ms)
+exit=0
+
+================ 2. same suite with --no-remote ================
+ok | 87 passed | 0 failed (385ms)
+exit=0
+
+================ 3. mutation checks ================
+CONTROL (unmodified copy via FUNCTIONS_DIR): PASS  exit=0 failed=0
+LM1  DETECTED         12 test(s) failed  | invalid model risk level is coerced to 'low' instead of rejected
+LM2  DETECTED         26 test(s) failed  | mission row is written BEFORE planning/validation
+LM3  DETECTED          1 test(s) failed  | failed task insert no longer compensates the mission to 'cancelled'
+LM4  DETECTED          4 test(s) failed  | mission_creation_failed audit drops the failure reason
+LM5  DETECTED          1 test(s) failed  | compensation_error is omitted from the audit when compensation fails
+LM6  DETECTED          1 test(s) failed  | compensation failure is swallowed silently (no console.error)
+LM7  DETECTED          2 test(s) failed  | tasks inserted one-by-one instead of one atomic statement
+LM8  DETECTED          1 test(s) failed  | session validation removed (authentication no longer precedes the API-key check)
+LM9  DETECTED          3 test(s) failed  | API-key check hoisted above organization authorization
+ET1  DETECTED         11 test(s) failed  | API-key check hoisted above authentication
+ET2  DETECTED          8 test(s) failed  | API-key check hoisted above the idempotent-replay path
+ET3  DETECTED          6 test(s) failed  | mission is started BEFORE the task is claimed
+ET4  DETECTED          3 test(s) failed  | task claim is no longer a compare-and-set on status
+ET5  DETECTED          5 test(s) failed  | mission-start failure no longer fails the claimed task
+ET6  DETECTED         13 test(s) failed  | failed stage / last_error diagnostics dropped from failed tasks
+ET7  DETECTED          2 test(s) failed  | a lost task claim is ignored and execution continues
+ET8  DETECTED          4 test(s) failed  | task failure no longer fails the mission
+ET9  DETECTED         11 test(s) failed  | task failure overwrites the mission without the status = running guard (cancelled/terminal missions rewritten)
+ET10 DETECTED         10 test(s) failed  | mission start loses its status = queued guard (cancelled/terminal missions resurrected to running)
+ET11 DETECTED          3 test(s) failed  | task failure recording loses its status = running guard (a cancelled task is overwritten to failed)
+LM10 DETECTED          3 test(s) failed  | mission compensation loses its status = queued guard (a concurrent cancellation is overwritten)
+ET12 DETECTED          9 test(s) failed  | terminal task statuses (completed/failed/cancelled/expired) become executable (terminal guard removed)
+ET13 DETECTED          1 test(s) failed  | a task-claim database error is no longer reported as a 500 (falls through to the lost-claim path)
+
+23/23 mutants detected; control passes: True
+exit=0
+
+================ 4. invariant guard ================
+ok: edge function invariants O1-O7
+exit=0
+
+================ 5. gap probes (informational; MUST fail today) ================
+GAP: execute-task makes NO model call when its mission is cancelled between task claim and mission start ... FAILED (40ms)
+GAP: execute-task must refuse a queued task whose mission is 'completed' (no claim, no model call) ... FAILED (37ms)
+GAP: execute-task must refuse a queued task whose mission is 'failed' (no claim, no model call) ... FAILED (1ms)
+GAP: execute-task must refuse a queued task whose mission is 'cancelled' (no claim, no model call) ... FAILED (1ms)
+GAP: execute-task must refuse a queued task whose mission is 'expired' (no claim, no model call) ... FAILED (822µs)
+FAILED | 0 passed | 5 failed (156ms)
+exit=1 (non-zero is the expected, visible state)

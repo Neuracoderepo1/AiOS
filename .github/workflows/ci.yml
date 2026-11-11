@@ -51,6 +51,58 @@ jobs:
             exit 1
           fi
 
+  functions-behavioral:
+    runs-on: ubuntu-latest
+    env:
+      DENO_RUN: "deno test --import-map=tests/functions/behavioral/import_map.json --allow-env --allow-read"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+      - name: Record identity of what is under test
+        run: |
+          {
+            echo "commit: $GITHUB_SHA"
+            echo "checked-out HEAD: $(git rev-parse HEAD)"
+            echo "pull-request head (the commit that was pushed): ${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "functions tree: $(git rev-parse HEAD:supabase/functions)"
+            deno --version
+          } | tee identity.txt
+      - name: Behavioral suite (Deno)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/ 2>&1 | tee behavioral.txt
+      - name: Dependency resolution - no remote imports, no network (Deno --no-remote)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN --no-remote tests/functions/behavioral/ 2>&1 | tee noremote.txt
+      - name: Invariant checks (O1-O7)
+        run: |
+          set -o pipefail
+          python3 tests/functions/check_function_invariants.py 2>&1 | tee invariants.txt
+      - name: Mutation (negative) checks under Deno
+        run: |
+          set -o pipefail
+          NO_COLOR=1 python3 tests/functions/behavioral/run_mutants.py --runner "$DENO_RUN tests/functions/behavioral/" --json mutants.json 2>&1 | tee mutation.txt
+      - name: Terminal-mission and mission-start race closure probes (required)
+        run: |
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt
+      - name: Upload behavioral evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-evidence
+          path: |
+            identity.txt
+            behavioral.txt
+            noremote.txt
+            invariants.txt
+            mutation.txt
+            mutants.json
+            gaps.txt
+
   migrations-and-sql-tests:
     needs: evidence-integrity   # integrity must pass before the matrix is accepted
     runs-on: ubuntu-latest
@@ -137,6 +189,32 @@ jobs:
           grant aios_ci_child_probe to aios_ci_recipient_probe;
           rollback;
           SQL
+      - name: Run restoration role and authorization SQL regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/12_part_d_restoration.sql 2>&1 | tee /tmp/restoration-role-sql.txt
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: Run Part E audit anchoring SQL regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          set -o pipefail
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/13_part_e_audit_anchoring.sql 2>&1 | tee /tmp/audit-anchoring-sql.txt
+      - name: Run Part E external verifier end-to-end fixture
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          set -o pipefail
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          bash tests/external/e2e.sh "$SUPER_URL" 2>&1 | tee /tmp/audit-anchoring-e2e.txt
+      - name: Run Part E RPC tooling regression
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          set -o pipefail
+          python3 -m unittest -v tests.external.test_rpc_tools 2>&1 | tee /tmp/audit-rpc-tools.txt
       - name: Run SQL regression and invariant tests
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
@@ -148,13 +226,6 @@ jobs:
             echo "::error title=sql-tests::$(tail -c 3500 /tmp/sql.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
-      - name: Run restoration role and authorization SQL regression
-        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
-        run: |
-          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
-          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/12_part_d_restoration.sql 2>&1 | tee /tmp/restoration-role-sql.txt
-          test "${PIPESTATUS[0]}" -eq 0
       - name: Prove unsafe pre-existing restorer role aborts migration without repair
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
@@ -204,6 +275,67 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
+      # Real-PostgreSQL mission/task authority races (event barriers, no sleeps as proof). Commits fixtures: throwaway CI database only.
+      - name: Mission/task authority races (lock order, terminal cascade)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/mission_task_races.sh "$DB_URL" 2>&1 | tee /tmp/mission-task-races.txt; exit ${PIPESTATUS[0]}
+      # Approval resolution / expiry job / reaper against the authorizer and mission cancel (global lock order, real PostgreSQL).
+      - name: Approval-path lock-order races
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          export AOLO_EVIDENCE_DIR=/tmp/approval-lock-order-evidence
+          bash tests/concurrency/approval_lock_order.sh "$DB_URL" > /tmp/approval-lock-order.txt 2>&1; rc=$?
+          cat /tmp/approval-lock-order.txt
+          # Raw logs are not retrievable from every environment; surface the result as an annotation as well.
+          lvl=notice; [ $rc -ne 0 ] && lvl=error
+          echo "::$lvl title=approval-lock-order (rc=$rc)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/approval-lock-order.txt | { if [ $rc -ne 0 ]; then grep -nE '^(==|  (PASS|FAIL|barrier|deadlocks|worker exit codes))' /tmp/approval-lock-order.txt | head -c 1700; echo ' ## DIAGNOSTICS TAIL ##'; tail -c 1700 /tmp/approval-lock-order.txt; else head -c 3500 /tmp/approval-lock-order.txt; fi; } | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+          exit $rc
+      # Reverse-linked approval rows must resolve to their actual mission before approval/reaper pre-lock ordering.
+      - name: Reverse-linked approval and stale-reaper pre-lock interleaving
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set -o pipefail
+          bash tests/concurrency/reverse_linked_approval_prelock.sh "$DB_URL" 2>&1 | tee /tmp/reverse-linked-approval-prelock.txt
+      - name: Reverse-linked approval lock-order static and mutation controls
+        run: python3 -m unittest -v tests.security.test_reverse_linked_approval_prelock
+
+      # Equal created_at reverse links must resolve identically in phase-one and phase-two.
+      - name: Tied reverse-link approval resolver regression (real PostgreSQL)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          set -o pipefail
+          bash tests/concurrency/approval_resolver_tie_break.sh "$SUPER_URL" 2>&1 | tee /tmp/approval-resolver-tie-break.txt
+      - name: Shared approval resolver static and mutation controls
+        run: python3 -m unittest -v tests.security.test_shared_approval_invocation_resolver
+
+      # Deterministic (event-barrier) forced interleavings: the audit advisory lock must never be held while waiting for a row lock (expiry job, reaper),
+      # and a lock conflict inside the per-record handler must be deferred, never recorded as a permanent manual_review disposition. Throwaway CI database only.
+      - name: Audit-lock order forced interleavings + lock-conflict deferral
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e; rc=0
+          for t in l3_audit_lock_forced l4_reaper_audit_lock_forced l3_lock_conflict_deferral l3_audit_lock_subtree_levels l4_reaper_whole_job_failure; do
+            L3F_EVIDENCE_DIR=/tmp/forced-evidence/$t L3S_EVIDENCE_DIR=/tmp/forced-evidence/$t bash tests/concurrency/$t.sh "$DB_URL" > /tmp/$t.txt 2>&1; r=$?; cat /tmp/$t.txt
+            lvl=notice; [ $r -ne 0 ] && lvl=error && rc=1
+            echo "::$lvl title=$t (rc=$r)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/$t.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+          done
+          exit $rc
+      # Opposite multi-organization batches must acquire audit advisory locks in one global order.
+      - name: Cross-organization audit advisory lock ordering
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set -o pipefail
+          bash tests/concurrency/cross_org_audit_lock_order.sh "$DB_URL" 2>&1 | tee /tmp/cross-org-audit-lock-order.txt
+
       # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
@@ -216,6 +348,15 @@ jobs:
           echo "selftest connects as: $(psql "$SUPER_URL" -X -A -t -c "select current_user || ' rolsuper=' || rolsuper from pg_roles where rolname = current_user")"
           bash scripts/smoke/selftest.sh "$SUPER_URL" 2>&1 | tee /tmp/smoke-selftest.txt
           test "${PIPESTATUS[0]}" -eq 0
+      # Forced post-lock approval binding mutation while the lock worker waits on the original mission.
+      - name: Approval-chain post-lock binding revalidation
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          set -o pipefail
+          bash tests/concurrency/approval_chain_binding_revalidation.sh "$SUPER_URL" 2>&1 | tee /tmp/approval-chain-binding-revalidation.txt
+
       - name: Upload test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -225,12 +366,28 @@ jobs:
             /tmp/matrix-out
             /tmp/matrix-run.txt
             /tmp/expiry-race.txt
-            /tmp/sql.txt
-            /tmp/smoke-selftest.txt
-            /tmp/start.txt
+            /tmp/mission-task-races.txt
+            /tmp/approval-lock-order.txt
+            /tmp/approval-lock-order-evidence
+            /tmp/reverse-linked-approval-prelock.txt
+            /tmp/approval-resolver-tie-break.txt
+            /tmp/cross-org-audit-lock-order.txt
+            /tmp/approval-chain-binding-revalidation.txt
+            /tmp/forced-evidence
+            /tmp/l3_audit_lock_forced.txt
+            /tmp/l4_reaper_audit_lock_forced.txt
+            /tmp/l3_lock_conflict_deferral.txt
+            /tmp/l3_audit_lock_subtree_levels.txt
+            /tmp/l4_reaper_whole_job_failure.txt
             /tmp/restoration-runner.txt
             /tmp/restoration-role-sql.txt
             /tmp/restoration-unsafe-role.txt
+            /tmp/audit-anchoring-sql.txt
+            /tmp/audit-anchoring-e2e.txt
+            /tmp/audit-rpc-tools.txt
+            /tmp/sql.txt
+            /tmp/smoke-selftest.txt
+            /tmp/start.txt
           if-no-files-found: warn
           retention-days: 90
       - name: Stop

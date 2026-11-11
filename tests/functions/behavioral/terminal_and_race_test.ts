@@ -1,0 +1,267 @@
+// Terminal-state and cancellation-race behavior. Terminal statuses (per the DB status-guard triggers): completed, failed,
+// cancelled, expired. A terminal row must never be resurrected or overwritten by a handler that lost a race.
+//
+// Races are simulated with world.onOp, which mutates the fake database "between" the handler's read and its next write.
+// The stub is not PostgreSQL: these tests prove the handlers' write GUARDS (compare-and-set filters, error handling), not the
+// database's own transition triggers.
+import { assert, call, eq, executeTables, fresh, LAUNCH_BODY, launchTables, model, okTask, planJson, world, writeLog } from "./harness.ts";
+
+const BODY = { task_id: "task-1" };
+const task = () => world.tables.aios_tasks.find((t) => t.id === "task-1");
+const mission = () => world.tables.aios_missions.find((m) => m.id === "mission-1");
+const TERMINAL = ["completed", "failed", "cancelled", "expired"];
+
+// ---- execute-task: task already terminal / in flight --------------------------------------------------------------------
+
+for (const status of [...TERMINAL, "running", "blocked_pending_approval"]) {
+  Deno.test(`execute-task: task already '${status}' without an idempotency key -> 409, no writes, no model call`, async () => {
+    fresh(executeTables({ task: { status } }));
+    const r = await call("execute-task", BODY);
+    eq(r.status, 409, "status");
+    eq(writeLog(), [], "no writes");
+    eq(model.calls, 0, "no model call");
+    eq(task().status, status, "task status unchanged");
+  });
+}
+
+// ---- execute-task: cancellation while the model request is in flight -------------------------------------------------
+Deno.test("execute-task: cancellation during model planning is observed before proposal processing or invocation creation", async () => {
+  fresh(executeTables());
+  model.text = JSON.stringify({ tool_key: "support.search_tickets", arguments: { limit: 2 } });
+  let cancelled = false;
+  model.onCall = () => {
+    if (cancelled) return;
+    cancelled = true;
+    Object.assign(task(), CANCELLER);
+    Object.assign(mission(), { status: "cancelled", metadata: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z" });
+  };
+  const r = await call("execute-task", BODY);
+  eq(model.calls, 1, "the in-flight planning request was made once");
+  eq(r.status, 409, "lost authority after model response is rejected");
+  eq(task().status, "cancelled", "task cancellation is preserved");
+  eq(mission().status, "cancelled", "mission cancellation is preserved");
+  eq(world.ops.filter((o) => o.table === "aios_tool_invocations" && o.mode !== "select").length, 0, "no invocation is created after cancellation");
+  eq(world.ops.filter((o) => o.table === "aios_tasks" && o.mode === "update" && o.patch?.status === "completed").length, 0, "task is never completed");
+});
+
+// ---- execute-task: cancellation races on the task ------------------------------------------------------------------------
+
+Deno.test("execute-task: task CANCELLED between read and claim -> 409, stays cancelled, mission untouched, no model call", async () => {
+  fresh(executeTables());
+  world.onOp = (op) => {
+    if (op.table === "aios_tasks" && op.mode === "update" && op.patch?.status === "running") task().status = "cancelled";
+  };
+  const r = await call("execute-task", BODY);
+  eq(r.status, 409, "status");
+  eq(task().status, "cancelled", "the cancellation is not overwritten by 'running'");
+  assert(!world.ops.some((o) => o.table === "aios_missions" && o.mode !== "select"), "no mission writes occur after task claim is lost");
+  eq(model.calls, 0, "no model call");
+});
+
+Deno.test("execute-task: task cancelled WHILE running is never overwritten to 'failed' by this execution", async () => {
+  fresh(executeTables());
+  model.text = "not a json object"; // forces the failure path after the claim
+  world.onOp = (op) => {
+    if (op.table === "aios_missions" && op.mode === "update" && op.patch?.status === "running") task().status = "cancelled";
+  };
+  await call("execute-task", BODY);
+  eq(task().status, "cancelled", "failure recording is guarded by status = running");
+});
+
+// ---- execute-task: terminal / cancelled missions -------------------------------------------------------------------------
+
+for (const status of TERMINAL) {
+  Deno.test(`execute-task: a '${status}' mission row is never modified by an execution (no resurrection, no overwrite)`, async () => {
+    fresh(executeTables({ mission: { status, started_at: "2026-01-01T00:00:00Z", completed_at: "2026-01-02T00:00:00Z" } }));
+    model.text = "not a json object";
+    const before = structuredClone(mission());
+    await call("execute-task", BODY);
+    eq(mission(), before, `${status} mission row is byte-for-byte unchanged`);
+  });
+}
+
+Deno.test("execute-task: mission CANCELLED between task claim and mission start is not resurrected to 'running'", async () => {
+  fresh(executeTables());
+  model.text = "not a json object";
+  world.onOp = (op) => {
+    if (op.table === "aios_missions" && op.mode === "update" && op.patch?.status === "running") mission().status = "cancelled";
+  };
+  await call("execute-task", BODY);
+  eq(mission().status, "cancelled", "mission stays cancelled");
+  assert(mission().started_at === undefined, "no started_at written onto a cancelled mission");
+});
+
+Deno.test("execute-task: mission CANCELLED while the task runs is not overwritten to 'failed' when the task fails", async () => {
+  fresh(executeTables());
+  model.text = "not a json object";
+  world.onOp = (op) => {
+    if (op.table === "aios_tasks" && op.mode === "update" && op.patch?.status === "failed") mission().status = "cancelled";
+  };
+  await call("execute-task", BODY);
+  eq(task().status, "failed", "the task failure is still recorded and diagnosable");
+  eq(task().failed_stage, "proposal_validation", "failed_stage recorded");
+  eq(mission().status, "cancelled", "the cancellation wins; mission is not rewritten to 'failed'");
+});
+
+// ---- launch-mission: cancellation race during compensation ---------------------------------------------------------------
+
+Deno.test("launch-mission: mission CANCELLED concurrently before compensation keeps the canceller's metadata", async () => {
+  fresh(launchTables());
+  model.text = planJson([okTask("low"), okTask("high")]);
+  world.fail["aios_tasks:insert"] = "boom";
+  world.onOp = (op) => {
+    if (op.table === "aios_tasks" && op.mode === "insert") {
+      const m = world.tables.aios_missions[0];
+      m.status = "cancelled";
+      m.metadata = { cancelled_by: "ops" };
+    }
+  };
+  const r = await call("launch-mission", LAUNCH_BODY);
+  eq(r.status, 500, "status");
+  const m = world.tables.aios_missions[0];
+  eq(m.status, "cancelled", "still cancelled");
+  eq(m.metadata, { cancelled_by: "ops" }, "compensation (guarded by status = queued) did not overwrite the canceller's metadata");
+  assert((world.tables.aios_audit_events ?? []).some((a) => a.event_type === "mission_creation_failed"), "the failure is still audited");
+  assert(!(world.tables.aios_tasks ?? []).length, "no task rows");
+});
+
+// =====================================================================================================================
+// Added by the terminal-state / cancellation-race expansion (Agent 004 directive). Everything above this line is unchanged.
+// =====================================================================================================================
+
+const inserts = (...tables: string[]) => world.ops.filter((o) => o.mode === "insert" && tables.includes(o.table));
+const assertNoRecordCreation = () => eq(inserts("aios_tasks", "aios_missions").length, 0, "no task or mission rows were created");
+const CANCELLER = { status: "cancelled", result: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z", last_error: "cancelled by ops" };
+
+// ---- execute-task: terminal parent missions are rejected before claim/model execution -------------------------------
+// Exercise both downstream failure configurations, while asserting neither can be reached for a terminal parent mission.
+const FAILURE_PATHS: Array<{ label: string; arm: () => void }> = [
+  { label: "model HTTP failure configured", arm: () => { model.status = 500; } },
+  { label: "mission-start database error configured", arm: () => { world.fail["aios_missions:update"] = "db down"; } },
+];
+for (const status of TERMINAL) {
+  for (const p of FAILURE_PATHS) {
+    Deno.test(`execute-task: terminal '${status}' mission is rejected before ${p.label}`, async () => {
+      fresh(executeTables({ mission: { status, started_at: "2026-01-01T00:00:00Z", completed_at: "2026-01-02T00:00:00Z", metadata: { closed_by: "ops" } } }));
+      const before = structuredClone(mission());
+      p.arm();
+      const r = await call("execute-task", BODY);
+      eq(r.status, 409, "terminal mission rejection");
+      eq(model.calls, 0, "model is never called");
+      eq(writeLog(), [], "no database writes");
+      eq(task().status, "queued", "task remains queued");
+      eq(mission(), before, "terminal mission row remains byte-for-byte unchanged");
+      assertNoRecordCreation();
+    });
+  }
+}
+
+// ---- execute-task: a canceller's task row is preserved, not just its status ------------------------------------------------
+
+Deno.test("execute-task: a task cancelled while running keeps the canceller's result, timestamps and error byte-for-byte", async () => {
+  fresh(executeTables());
+  model.text = "not a json object";
+  let snapshot: unknown;
+  world.onOp = (op) => {
+    if (op.table === "aios_missions" && op.mode === "update" && op.patch?.status === "running" && !snapshot) {
+      Object.assign(task(), CANCELLER);
+      snapshot = structuredClone(task());
+    }
+  };
+  await call("execute-task", BODY);
+  assert(snapshot, "the race fired");
+  eq(task(), snapshot, "failure recording (guarded by status = running) did not touch the cancelled task row");
+  assertNoRecordCreation();
+});
+
+// ---- execute-task: model failure races with cancellation (exercise failure-write CAS guards) ---------------------------
+Deno.test("execute-task: mission cancellation during a model failure is preserved byte-for-byte", async () => {
+  fresh(executeTables());
+  model.throwNetwork = true;
+  let snapshot: unknown;
+  model.onCall = () => {
+    Object.assign(mission(), { status: "cancelled", metadata: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z" });
+    snapshot = structuredClone(mission());
+  };
+  const r = await call("execute-task", BODY);
+  eq(r.status, 502, "model failure response remains visible");
+  assert(snapshot, "cancellation barrier fired");
+  eq(mission(), snapshot, "failure recording cannot overwrite the canceller's mission row");
+});
+
+Deno.test("execute-task: task cancellation during a model failure is preserved byte-for-byte", async () => {
+  fresh(executeTables());
+  model.throwNetwork = true;
+  let snapshot: unknown;
+  model.onCall = () => {
+    Object.assign(task(), CANCELLER);
+    snapshot = structuredClone(task());
+  };
+  const r = await call("execute-task", BODY);
+  eq(r.status, 502, "model failure response remains visible");
+  assert(snapshot, "cancellation barrier fired");
+  eq(task(), snapshot, "failure recording cannot overwrite the canceller's task row");
+});
+
+// ---- execute-task: cancellation at the exact boundary of each failure write -------------------------------------------------
+
+Deno.test("execute-task: mission CANCELLED at the exact moment of mission-failure recording keeps the canceller's row", async () => {
+  fresh(executeTables());
+  model.text = "not a json object";
+  let snapshot: unknown;
+  world.onOp = (op) => {
+    if (op.table === "aios_missions" && op.mode === "update" && op.patch?.status === "failed") {
+      Object.assign(mission(), { status: "cancelled", metadata: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z" });
+      snapshot = structuredClone(mission());
+    }
+  };
+  await call("execute-task", BODY);
+  assert(snapshot, "the race fired");
+  eq(mission(), snapshot, "the guarded mission-failure write matched no row; status, metadata and completed_at are the canceller's");
+  eq(task().status, "failed", "the task failure is still recorded");
+  eq(task().failed_stage, "proposal_validation", "failure diagnostics remain available");
+  assertNoRecordCreation();
+});
+
+Deno.test("execute-task: task CANCELLED while the mission-start failure is being recorded is not overwritten to 'failed'", async () => {
+  fresh(executeTables());
+  world.fail["aios_missions:update"] = "db down";
+  let snapshot: unknown;
+  world.onOp = (op) => {
+    if (op.table === "aios_missions" && op.mode === "update" && !snapshot) {
+      Object.assign(task(), CANCELLER);
+      snapshot = structuredClone(task());
+    }
+  };
+  const r = await call("execute-task", BODY);
+  eq(r.status, 500, "mission-start failure is still reported");
+  eq(model.calls, 0, "no model call");
+  assert(snapshot, "the race fired");
+  eq(task(), snapshot, "task failure recording is guarded by status = running; the cancelled task row is untouched");
+  assertNoRecordCreation();
+});
+
+// ---- launch-mission: compensation vs a concurrent cancellation ---------------------------------------------------------------
+
+Deno.test("launch-mission: concurrent cancellation + task-insert failure: failure is audited with its reason, no stray rows, status and metadata are the canceller's", async () => {
+  fresh(launchTables());
+  model.text = planJson([okTask("low"), okTask("high")]);
+  world.fail["aios_tasks:insert"] = "boom";
+  let snapshot: unknown;
+  world.onOp = (op) => {
+    if (op.table === "aios_tasks" && op.mode === "insert") {
+      Object.assign(world.tables.aios_missions[0], { status: "cancelled", metadata: { cancelled_by: "ops" }, completed_at: "2026-01-02T00:00:00Z" });
+      snapshot = structuredClone(world.tables.aios_missions[0]);
+    }
+  };
+  const r = await call("launch-mission", LAUNCH_BODY);
+  eq(r.status, 500, "status");
+  assert(snapshot, "the race fired");
+  eq(world.tables.aios_missions.length, 1, "exactly one mission row");
+  eq(world.tables.aios_missions[0], snapshot, "compensation did not overwrite status, metadata or completed_at");
+  eq((world.tables.aios_tasks ?? []).length, 0, "no task rows");
+  const audits = (world.tables.aios_audit_events ?? []).filter((a) => a.event_type === "mission_creation_failed");
+  eq(audits.length, 1, "exactly one failure audit event");
+  eq(audits[0].metadata.reason, "boom", "the original failure reason is preserved in the audit");
+  eq(audits[0].mission_id, snapshot && (snapshot as { id: string }).id, "audit references the cancelled mission");
+});

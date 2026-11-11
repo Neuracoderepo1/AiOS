@@ -74,3 +74,41 @@ No hosted migration, bootstrap, rollback, credential operation, membership grant
 ## Production safety boundary
 
 Do not run the restoration flow until the database owner has separately approved the maintenance window, credential custody, owner-login membership, backup validation, restore source, and post-restore verification. Keep the restoration window closed outside that approved operation. This runbook and a green CI result are readiness evidence only, not production certification.
+
+
+## Complete restoration membership allowlist
+
+The database boundary inventories every direct member of `aios_restorer`, not only named application roles. The private table `private.aios_restorer_member_allowlist` records the approved role OID/name and exact PostgreSQL `ADMIN OPTION`, `SET`, and `INHERIT` flags. The verifier fails closed for an unlisted member, changed membership option, or stale allowlist row. Restoration authorization requires the session login itself to match an approved row.
+
+On a fresh install, the migration records only the migration executor's implicit creator membership, when present. A database superuser is separately authorized by PostgreSQL's inherent superuser authority and is not required to have a membership row. The boundary still rejects every unapproved catalog membership, including a superuser's membership if one exists. It never auto-approves other existing members. A separately approved database-owner login must be granted membership and added to the allowlist by the database owner as one explicit administrative operation. The OID, role name and all three membership flags must match. This is not an application RPC or service-role capability. An unapproved login, including one holding `ADMIN OPTION`, is rejected.
+
+The migration fails closed if the complete catalog membership inventory contains any member not represented by the approved allowlist. It does not repair, revoke, or silently adopt membership drift.
+
+## Mission completion reconciliation
+
+A task transition to `completed` atomically enqueues its mission in a private durable reconciliation queue. The Edge Function invokes an idempotent reconciler and always reads the mission's persisted status before responding. If immediate reconciliation or the status read fails, the handler reports pending/unavailable rather than inventing `running`. A scheduled `pg_cron` worker retries queued missions; failed attempts remain queued with diagnostics. Terminal mission states are never overwritten by completion reconciliation.
+
+
+Approved owner-login membership operation (perform only as the database owner, after separate approval):
+
+```sql
+begin;
+grant aios_restorer to approved_owner_login;
+insert into private.aios_restorer_member_allowlist
+  (member_oid, member_name, approval_reason, admin_option, set_option, inherit_option)
+select r.oid, r.rolname, 'separately approved database-owner login',
+       m.admin_option, m.set_option, m.inherit_option
+from pg_catalog.pg_auth_members m
+join pg_catalog.pg_roles r on r.oid=m.member
+where m.roleid='aios_restorer'::regrole
+  and r.rolname='approved_owner_login'
+on conflict (member_oid) do update set
+  member_name=excluded.member_name,
+  approval_reason=excluded.approval_reason,
+  admin_option=excluded.admin_option,
+  set_option=excluded.set_option,
+  inherit_option=excluded.inherit_option;
+commit;
+```
+
+Replace the placeholder with the exact owner-approved login. Verify the resulting complete membership inventory and `private.aios_restorer_boundary_violations() = '[]'::jsonb` before any restoration operation. Never run this procedure for an application, service, authenticator, or Edge Function identity.

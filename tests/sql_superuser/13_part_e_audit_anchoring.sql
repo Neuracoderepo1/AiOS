@@ -91,7 +91,8 @@ savepoint s_tz;
 select mx.org(:C);
 select mx.ev(:C, 'tokyo.append', '{}', '2026-02-01 00:00:00+00');
 reset timezone;
-select mx.rec('E02.8', 'golden', (private.aios_audit_verify_chain_v2(:C) ->> 'valid')::boolean is false and (private.aios_audit_verify_chain_v2(:C) ->> 'reason') = 'event_hash_mismatch', 'FINDING: an event appended under a non-UTC session TimeZone hashes differently and verifies as chain_mismatch (fail-closed)');
+select mx.rec('E02.8', 'golden', (private.aios_audit_verify_chain_v2(:C) ->> 'valid')::boolean and (private.aios_audit_verify_chain_v2(:C) ->> 'reason') is null, 'audit append under Asia/Tokyo remains verifiable because the trigger pins UTC');
+select mx.rec('E02.8a', 'golden', exists (select 1 from pg_proc p, unnest(coalesce(p.proconfig, '{}'::text[])) setting where p.oid = 'private.aios_audit_append()'::regprocedure and lower(setting) = 'timezone=utc'), 'audit trigger function pins timezone=UTC');
 rollback to s_tz;
 reset timezone;   -- the savepoint was taken while TimeZone was Asia/Tokyo; restore UTC for the rest of the suite
 select mx.org(:C), mx.ev(:C, 'single.event');
@@ -106,6 +107,9 @@ select mx.rec('E02.11', 'golden', (private.aios_audit_verify_chain_v2(:A) ->> 'h
 -- ================================================================== E01 coverage: an empty anchor table can NEVER yield a verified organization
 select mx.rec('E01.1', 'coverage', not exists (select 1 from private.aios_audit_anchors where organization_id = :A), 'precondition: no anchors for A');
 select mx.rec('E01.2', 'coverage', mx.st(:A) = 'valid_unanchored' and mx.st(:B) = 'valid_unanchored', 'valid chain without an anchor is valid_unanchored, not verified');
+select 'E01_GLOBAL_FINAL_VERIFY' as diagnostic, private.aios_final_verify(false) as result;
+select 'E01_GUARD_DRIFT' as diagnostic, private.aios_guard_drift() as result;
+select 'E01_SCHEDULE_CHECK' as diagnostic, private.aios_schedule_check() as result;
 select mx.rec('E01.3', 'coverage', (private.aios_final_verify(false) ->> 'ok')::boolean is false and (private.aios_final_verify(false) ->> 'overall') = 'INCOMPLETE', 'global ok=false / INCOMPLETE with unanchored organizations');
 select mx.rec('E01.4', 'coverage', (private.aios_final_verify(false) ->> 'certification_grade')::boolean is false and (private.aios_final_verify(false) ->> 'partial')::boolean is false and private.aios_final_verify(false) ->> 'external_attestation_trust' = 'service_role_asserted', 'DB result is never certification grade; partial verification does not exist');
 
