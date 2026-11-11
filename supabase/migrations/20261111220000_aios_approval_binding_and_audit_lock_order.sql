@@ -128,6 +128,54 @@ $f$;
 revoke all on function private.aios_lock_approval_chain(uuid) from public, anon, authenticated;
 grant execute on function private.aios_lock_approval_chain(uuid) to service_role;
 
+-- Phase-one pre-lock must never run the phase-two organization validator on an
+-- already-invalid legacy chain. Invalid bindings are classified and left untouched
+-- in phase two. Here we only acquire the same row-lock order without asserting tenant
+-- consistency; the phase-two classifier decides whether the row may transition.
+create or replace function private.aios_prelock_approvals_batch(p_ids uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $f$
+declare
+  r record;
+  v_last_mission uuid := null;
+begin
+  for r in
+    select ap.id as approval_id, i.id as invocation_id, i.task_id, t.mission_id
+    from public.aios_approvals ap
+    left join lateral (
+      select candidate.id, candidate.task_id
+      from public.aios_tool_invocations candidate
+      where candidate.id = private.aios_resolve_approval_invocation(ap.id)
+    ) i on true
+    left join public.aios_tasks t on t.id = i.task_id
+    where ap.id = any(p_ids)
+    order by t.mission_id nulls last, t.id nulls last, i.id nulls last, ap.id
+  loop
+    if r.mission_id is not null then
+      if r.mission_id is distinct from v_last_mission then
+        perform private.aios_lock_mission_subtree(r.mission_id);
+        v_last_mission := r.mission_id;
+      end if;
+    else
+      -- A task without a mission, a taskless invocation, or an orphan approval
+      -- has no mission subtree. Preserve the suffix of the global row-lock order.
+      if r.task_id is not null then
+        perform 1 from public.aios_tasks where id = r.task_id for no key update;
+      end if;
+      if r.invocation_id is not null then
+        perform 1 from public.aios_tool_invocations where id = r.invocation_id for update;
+      end if;
+      perform 1 from public.aios_approvals where id = r.approval_id for update;
+    end if;
+  end loop;
+end
+$f$;
+revoke all on function private.aios_prelock_approvals_batch(uuid[]) from public, anon, authenticated;
+grant execute on function private.aios_prelock_approvals_batch(uuid[]) to service_role;
+
 -- The audit trigger takes this same advisory key. Acquire every organization key
 -- in a single global order only after all row locks have been acquired.
 create or replace function private.aios_prelock_audit_organizations(p_organization_ids uuid[])
