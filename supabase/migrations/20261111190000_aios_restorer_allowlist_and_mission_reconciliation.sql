@@ -137,8 +137,10 @@ returns jsonb language plpgsql security definer set search_path = '' as $fn$
 declare q record; v_status text; v_done integer:=0; v_failed integer:=0;
 begin
   if p_batch_size<1 or p_batch_size>1000 then raise exception 'batch size must be between 1 and 1000' using errcode='22023'; end if;
+  -- Avoid locking queue rows before mission rows. Concurrent workers may see the same id;
+  -- the mission row lock serializes the idempotent reconciler without queue->mission lock inversion.
   for q in select mission_id from private.aios_mission_reconciliation_queue order by requested_at,mission_id
-    limit p_batch_size for update skip locked
+    limit p_batch_size
   loop
     begin
       v_status:=private.aios_reconcile_mission_completion(q.mission_id);
