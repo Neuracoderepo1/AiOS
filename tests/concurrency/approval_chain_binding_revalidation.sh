@@ -53,7 +53,7 @@ APPROVAL=$(q "select approval_id from public.aios_tool_invocations where id='$IN
 # B owns the original mission row. The lock-chain worker will read the old binding,
 # then wait here before it can acquire the mission/task/invocation/approval chain.
 (
-  psql "$DB" -X -q -v ON_ERROR_STOP=1 >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
+  psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
 begin;
 select 1 from public.aios_missions where id='$M1' for no key update;
 select pg_sleep(3);
@@ -69,7 +69,7 @@ until [ "$(q "select count(*) from pg_stat_activity where query like '%pg_sleep(
 done
 
 (
-  psql "$DB" -X -q -v ON_ERROR_STOP=1 >"$D/worker.out" 2>"$D/worker.err" -c "select private.aios_lock_approval_chain('$APPROVAL');"
+  psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/worker.out" 2>"$D/worker.err" -c "select private.aios_lock_approval_chain('$APPROVAL');"
   echo $? >"$D/worker.rc"
 ) &
 WORKER=$!
