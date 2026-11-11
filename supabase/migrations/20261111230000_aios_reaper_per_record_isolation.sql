@@ -241,7 +241,7 @@ begin
     select t.organization_id into v_org_id from public.aios_tasks t where t.id=v_task_id;
     if v_org_id = any(v_failed_orgs) then continue; end if;
     insert into private.aios_task_reaper_quarantine(task_id,organization_id,reason,sqlstate)
-    values (v_task_id,v_org,'Structural failure acquiring stale-task mission/task lock subtree',null)
+    values (v_task_id,v_org_id,'Structural failure acquiring stale-task mission/task lock subtree',null)
     on conflict(task_id) do update set organization_id=excluded.organization_id,reason=excluded.reason,
       sqlstate=excluded.sqlstate,created_at=clock_timestamp(),resolved_at=null,resolved_by=null,resolution_note=null;
     insert into public.aios_backlog_dispositions
