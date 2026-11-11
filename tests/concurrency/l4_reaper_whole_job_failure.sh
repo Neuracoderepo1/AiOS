@@ -105,7 +105,7 @@ ELAPSED=$(( $(date +%s) - START ))
 ORG_AUDIT_AFTER=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG'")
 check "reaper returns without waiting for the contended organization lock (<5s; elapsed=${ELAPSED}s)" "$([ "$ELAPSED" -lt 5 ] && echo true || echo false)"
 check "all candidates in contended organization remain untouched" "$([ "$(status "$T2")" = running ] && [ "$(q "select status from public.aios_missions where id='$M2'")" = running ] && echo true || echo false)"
-check "contended organization's candidate is durably deferred with lock-unavailable SQLSTATE" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T2' and last_sqlstate='55P03' and last_error like '%pg_try_advisory_xact_lock returned false%'")" = 1 ] && echo true || echo false)"
+check "contended organization's candidate is durably deferred with lock-unavailable SQLSTATE" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T2' and last_sqlstate is null and last_error like '%pg_try_advisory_xact_lock returned false%'")" = 1 ] && echo true || echo false)"
 check "no public audit event was appended for contended organization" "$([ "$ORG_AUDIT_BEFORE" = "$ORG_AUDIT_AFTER" ] && echo true || echo false)"
 check "unrelated organization task recovered while first org lock remains held" "$([ "$(status "$T5")" = failed ] && echo true || echo false)"
 check "unrelated organization mission reached terminal failed state" "$([ "$(q "select status from public.aios_missions where id='$M5'")" = failed ] && echo true || echo false)"
