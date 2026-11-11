@@ -41,7 +41,7 @@ new_chain() {
        insert into public.aios_tool_invocations
          (organization_id,agent_id,task_id,tool_name,tool_key,arguments,risk_level,requested_by,request_id,idempotency_key)
        select '$ORG','$AGT',id,'support.export_customer_data','support.export_customer_data',
-         jsonb_build_object('scope','$1','format','csv'),'low','$REQ',gen_random_uuid(),'tie-$1-'||gen_random_uuid() from t
+         jsonb_build_object('scope',case when '$1'='one' then 'a' else 'b' end,'format','csv'),'low','$REQ',gen_random_uuid(),'tie-$1-'||gen_random_uuid() from t
        returning id,approval_id
      )
      select (select id from i)||'|'||(select approval_id from i)"
