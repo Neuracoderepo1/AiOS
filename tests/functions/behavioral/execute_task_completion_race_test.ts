@@ -194,3 +194,40 @@ Deno.test("execute-task: cancellation after tool result sealing prevents task co
   eq(world.ops.filter((op) => op.table === "aios_tasks" && op.mode === "update" && op.patch?.status === "completed").length, 0, "completion CAS is not attempted after authority loss");
   eq(world.rpcs.some((rpc) => rpc.name === "aios_record_evaluation"), false, "no evaluation is recorded for a cancelled task");
 });
+
+
+Deno.test("execute-task: mission status reflects a concurrent terminal transition", async () => {
+  const tables = executeTables();
+  tables.aios_tools = [{ id:"tool-1",tool_key:"support.search_tickets",name:"Search",version:1,risk_level:"low",input_schema:{type:"object"},output_schema:{type:"object"},handler:"support.search_tickets",status:"active",is_enabled:true,requires_approval:false,idempotency_required:false,timeout_ms:5000 }];
+  tables.aios_demo_support_tickets = [{ id:"ticket-1",organization_id:"org-1",category:"billing",issue_summary:"fixture",created_at:"2026-01-01T00:00:00Z" }];
+  fresh(tables);
+  model.onCall=()=>{model.text=model.calls===1?JSON.stringify({tool_key:"support.search_tickets",arguments:{limit:2}}):JSON.stringify({summary:"done",findings:[]});};
+  world.onOp=(op)=>{
+    if(op.table==="aios_tool_invocations"&&op.mode==="insert"&&op.rows?.[0]) op.rows[0].status="executing";
+    if(op.table==="aios_tasks"&&op.mode==="update"&&op.patch?.status==="completed") world.tables.aios_missions[0].status="cancelled";
+  };
+  const r=await call("execute-task",{task_id:"task-1"});
+  eq(r.status,200,"task response succeeds");
+  eq(r.json.mission_status,"cancelled","actual terminal mission status returned");
+  eq(world.tables.aios_missions[0].status,"cancelled","terminal state is not overwritten");
+  eq(world.rpcs.some(x=>x.name==="aios_reconcile_mission_completion"),true,"durable reconciler invoked");
+});
+
+Deno.test("execute-task: failed mission read is surfaced, never replaced by running", async () => {
+  const tables = executeTables();
+  tables.aios_tools = [{ id:"tool-1",tool_key:"support.search_tickets",name:"Search",version:1,risk_level:"low",input_schema:{type:"object"},output_schema:{type:"object"},handler:"support.search_tickets",status:"active",is_enabled:true,requires_approval:false,idempotency_required:false,timeout_ms:5000 }];
+  tables.aios_demo_support_tickets = [{ id:"ticket-1",organization_id:"org-1",category:"billing",issue_summary:"fixture",created_at:"2026-01-01T00:00:00Z" }];
+  fresh(tables);
+  model.onCall=()=>{model.text=model.calls===1?JSON.stringify({tool_key:"support.search_tickets",arguments:{limit:2}}):JSON.stringify({summary:"done",findings:[]});};
+  world.onOp=(op)=>{
+    if(op.table==="aios_tool_invocations"&&op.mode==="insert"&&op.rows?.[0]) op.rows[0].status="executing";
+    if(op.table==="aios_tasks"&&op.mode==="update"&&op.patch?.status==="completed") world.fail["aios_missions:select"]="temporary mission read failure";
+  };
+  const r=await call("execute-task",{task_id:"task-1"});
+  eq(r.status,503,"read failure surfaced after task completion");
+  eq(r.json.task_completed,true,"task remains completed");
+  eq(r.json.mission_status,null,"no fabricated status");
+  eq(r.json.mission_reconciliation_pending,true,"durable retry declared");
+  eq(world.tables.aios_tasks[0].status,"completed","task completion preserved");
+  eq(world.rpcs.some(x=>x.name==="aios_reconcile_mission_completion"),true,"reconciler invoked");
+});

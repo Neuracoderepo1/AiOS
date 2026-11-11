@@ -74,3 +74,16 @@ No hosted migration, bootstrap, rollback, credential operation, membership grant
 ## Production safety boundary
 
 Do not run the restoration flow until the database owner has separately approved the maintenance window, credential custody, owner-login membership, backup validation, restore source, and post-restore verification. Keep the restoration window closed outside that approved operation. This runbook and a green CI result are readiness evidence only, not production certification.
+
+
+## Complete restoration membership allowlist
+
+The database boundary inventories every direct member of `aios_restorer`, not only named application roles. The private table `private.aios_restorer_member_allowlist` records the approved role OID/name and exact PostgreSQL `ADMIN OPTION`, `SET`, and `INHERIT` flags. The verifier fails closed for an unlisted member, changed membership option, or stale allowlist row. Restoration authorization requires the session login itself to match an approved row.
+
+On a fresh install, the migration records only the migration executor's implicit creator membership, when present. It never auto-approves other existing members. A separately approved database-owner login must be granted membership and added to the allowlist by the database owner as one explicit administrative operation. The OID, role name and all three membership flags must match. This is not an application RPC or service-role capability. An unapproved login, including one holding `ADMIN OPTION`, is rejected.
+
+The migration fails closed if the complete catalog membership inventory contains any member not represented by the approved allowlist. It does not repair, revoke, or silently adopt membership drift.
+
+## Mission completion reconciliation
+
+A task transition to `completed` atomically enqueues its mission in a private durable reconciliation queue. The Edge Function invokes an idempotent reconciler and always reads the mission's persisted status before responding. If immediate reconciliation or the status read fails, the handler reports pending/unavailable rather than inventing `running`. A scheduled `pg_cron` worker retries queued missions; failed attempts remain queued with diagnostics. Terminal mission states are never overwritten by completion reconciliation.

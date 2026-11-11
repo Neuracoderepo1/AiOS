@@ -496,22 +496,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Task is no longer running; completion was not recorded", task_id: task.id, task_status: currentTask?.status ?? "missing", invocation_id: invocation.id, tool_executed: true, tool_reexecuted: false, tool_result_preserved: true }, 409);
   }
 
-  // The task is now durably completed. Settle the mission and episodic memory BEFORE the evaluation record, so a failed
-  // evaluation write can never leave the mission stuck 'running' or drop memory of a completed task.
-  const { data: remaining } = await admin.from("aios_tasks").select("status").eq("mission_id", task.mission_id);
-  const missionDone = (remaining ?? []).length > 0 && (remaining ?? []).every((x) => x.status === "completed");
-  // Report the mission's real status, not an assumption: the conditional update only counts if it touched a row.
-  let missionStatus = "running";
-  if (missionDone) {
-    const { data: missionDoneRows, error: missionDoneError } = await admin.from("aios_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", task.mission_id).eq("status", "running").select("id");
-    if (missionDoneError) console.error(`[execute-task] failed to complete mission ${task.mission_id}: ${missionDoneError.message}`);
-    if (!missionDoneError && missionDoneRows && missionDoneRows.length === 1) {
-      missionStatus = "completed";
-    } else {
-      const { data: currentMission } = await admin.from("aios_missions").select("status").eq("id", task.mission_id).maybeSingle();
-      missionStatus = currentMission?.status ?? "unknown";
-    }
-  }
+  // The task CAS and its database trigger durably enqueue mission reconciliation together.
+  const { error: reconciliationError } = await admin.rpc("aios_reconcile_mission_completion", { p_mission_id: task.mission_id });
+  if (reconciliationError) console.error(`[execute-task] mission reconciliation deferred for ${task.mission_id}: ${reconciliationError.message}`);
+
+  // Always read persisted state, regardless of sibling state or reconciliation outcome.
+  const { data: currentMission, error: missionReadError } = await admin.from("aios_missions").select("status").eq("id", task.mission_id).maybeSingle();
+  const missionStatus: string | null = currentMission?.status ?? null;
 
   await bestEffort("memory:episodic", admin.from("aios_memory").insert({ organization_id: task.organization_id, agent_id: agent.id, scope: "episodic", content: JSON.stringify({ task_objective: task.instructions, tool_used: tool.tool_key, registry_version: tool.version, important_findings: expected, result_summary: finalOutput.summary ?? null, success: true, evaluation_score: score, timestamp: new Date().toISOString() }), metadata: { task_id: task.id, mission_id: task.mission_id, invocation_id: invocation.id, memory_type: "task_execution" } }));
 
@@ -521,5 +512,10 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Evaluation failed", detail: evaluationError.message, task_id: task.id, task_completed: true, mission_status: missionStatus }, 500);
   }
 
-  return json({ task_id: task.id, invocation_id: invocation.id, status: "completed", tool_key: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_latency_ms: toolLatency, result: taskResult, evaluation, mission_status: missionStatus }, 200);
+  if (missionReadError || missionStatus === null) {
+    console.error(`[execute-task] mission status read failed for ${task.mission_id}: ${missionReadError?.message ?? "mission row missing"}; durable reconciliation remains queued`);
+    return json({ error: "Task completed; mission status is temporarily unavailable", task_id: task.id, task_completed: true, mission_status: null, mission_reconciliation_pending: true, detail: missionReadError?.message ?? "mission row missing" }, 503);
+  }
+  const response = { task_id: task.id, invocation_id: invocation.id, status: "completed", tool_key: tool.tool_key, registry_version: tool.version, handler: tool.handler, tool_latency_ms: toolLatency, result: taskResult, evaluation, mission_status: missionStatus, mission_reconciliation_pending: !!reconciliationError };
+  return json(response, reconciliationError ? 202 : 200);
 });

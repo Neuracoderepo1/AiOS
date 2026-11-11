@@ -31,6 +31,14 @@ create temp table mx_g0 as select generation as g from private.aios_restoration_
 grant all on mx_g0 to public;
 create role mx_owner login; create role mx_app login;
 grant aios_restorer to mx_owner;
+insert into private.aios_restorer_member_allowlist
+  (member_oid,member_name,approval_reason,admin_option,set_option,inherit_option)
+select r.oid,r.rolname,'isolated Part D test owner',m.admin_option,m.set_option,m.inherit_option
+from pg_catalog.pg_auth_members m join pg_catalog.pg_roles r on r.oid=m.member
+where m.roleid='aios_restorer'::regrole and r.rolname='mx_owner'
+on conflict (member_oid) do update set member_name=excluded.member_name,
+  approval_reason=excluded.approval_reason,admin_option=excluded.admin_option,
+  set_option=excluded.set_option,inherit_option=excluded.inherit_option;
 grant all on all functions in schema mx to public;
 
 \set C1 '''c1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'''
@@ -121,6 +129,28 @@ set session authorization mx_owner;
 select mx.rec('D07.11', 'authz', mx.try($$select private.aios_restoration_install_credential(repeat('q', 40))$$) like '42501:restorer role boundary violated%', mx.try($$select private.aios_restoration_install_credential(repeat('q', 40))$$));
 reset session authorization;
 rollback to s_member;
+
+-- Complete membership allowlist rejects unknown non-app logins and unapproved ADMIN OPTION holders.
+savepoint s_unapproved_member;
+create role mx_unapproved_login login;
+grant aios_restorer to mx_unapproved_login;
+select mx.rec('D07.14','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_login%',
+  'unapproved non-application login detected');
+set session authorization mx_unapproved_login;
+select mx.rec('D07.15','authz',mx.try($select private.aios_restoration_install_credential(repeat('x',40))$) like '42501:%',
+  'unapproved non-application login cannot restore');
+reset session authorization;
+rollback to s_unapproved_member;
+
+savepoint s_unapproved_admin_option;
+create role mx_unapproved_admin login;
+grant aios_restorer to mx_unapproved_admin with admin option;
+select mx.rec('D07.16','authz',private.aios_restorer_boundary_violations()::text like '%unapproved_member:mx_unapproved_admin%',
+  'unapproved ADMIN OPTION holder detected');
+select mx.rec('D07.17','authz',exists(select 1 from pg_auth_members m join pg_roles r on r.oid=m.member
+  where m.roleid='aios_restorer'::regrole and r.rolname='mx_unapproved_admin' and m.admin_option),
+  'negative fixture actually has ADMIN OPTION');
+rollback to s_unapproved_admin_option;
 
 -- application roles cannot grant themselves membership
 select mx.rec('D07.12', 'authz', mx.try_as('service_role', 'grant aios_restorer to service_role') like '42501:%');
