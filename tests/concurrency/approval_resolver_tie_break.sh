@@ -16,6 +16,7 @@ cleanup() {
      delete from public.aios_tool_invocations where organization_id='$ORG';
      delete from public.aios_tasks where organization_id='$ORG';
      delete from public.aios_missions where organization_id='$ORG';
+     delete from public.aios_contracts where agent_id='$AGT';
      delete from public.aios_agents where id='$AGT';
      delete from public.aios_organization_members where organization_id='$ORG';
      delete from public.aios_organizations where id='$ORG';
