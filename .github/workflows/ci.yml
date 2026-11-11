@@ -149,10 +149,10 @@ jobs:
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           set +e
           psql "$DB_URL" -X -v ON_ERROR_STOP=0 <<'SQL' 2>&1 | tee /tmp/restoration-unsafe-role.txt
-          \\set VERBOSITY verbose
+          \set VERBOSITY verbose
           begin;
           alter role aios_restorer login;
-          \\i supabase/migrations/20261109120000_aios_restoration_part_d.sql
+          \i supabase/migrations/20261109120000_aios_restoration_part_d.sql
           rollback;
           SQL
           rc=${PIPESTATUS[0]}
