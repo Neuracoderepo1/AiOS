@@ -51,9 +51,6 @@ jobs:
             exit 1
           fi
 
-  # Behavioral tests: run the real execute-task / launch-mission handlers against a fake Supabase client + fake Anthropic
-  # endpoint, then prove the suite can fail by running it against deliberately broken copies (mutants). Test double only:
-  # this does NOT establish PostgreSQL atomicity, triggers, RLS or concurrency (see tests/functions/behavioral/README.md).
   functions-behavioral:
     runs-on: ubuntu-latest
     env:
