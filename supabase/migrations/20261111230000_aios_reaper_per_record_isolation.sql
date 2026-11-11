@@ -36,6 +36,10 @@ declare
   v_stage text;
   v_note text;
   v_outcome text;
+  v_task_id uuid;
+  v_mission_id uuid;
+  v_has_inv boolean;
+  v_task_updated boolean;
 begin
   if p_max_age is null or p_max_age < interval '0' then
     raise exception 'max age must be non-negative' using errcode = '22023';
@@ -115,9 +119,9 @@ begin
   perform private.aios_prelock_audit_organizations(v_orgs);
 
   -- Phase 1 dispositions are persisted only after all row locks have been attempted.
-  foreach r.id in array v_failed_tasks loop
+  foreach v_task_id in array v_failed_tasks loop
     insert into private.aios_task_reaper_deferred(task_id,attempts,next_attempt_at,last_sqlstate,last_error,updated_at)
-    values (r.id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),coalesce(v_lock_error,'task row lock unavailable'),clock_timestamp())
+    values (v_task_id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),coalesce(v_lock_error,'task row lock unavailable'),clock_timestamp())
     on conflict(task_id) do update set
       attempts=private.aios_task_reaper_deferred.attempts+1,
       next_attempt_at=clock_timestamp()+make_interval(secs=>least(300,power(2,least(private.aios_task_reaper_deferred.attempts+1,8))::integer)),
@@ -125,10 +129,10 @@ begin
     v_deferred := v_deferred+1;
   end loop;
 
-  foreach r.id in array v_failed_missions loop
+  foreach v_mission_id in array v_failed_missions loop
     for r in
       select t.id from public.aios_tasks t
-      where t.id = any(v_ids) and t.mission_id = r.id
+      where t.id = any(v_ids) and t.mission_id = v_mission_id
     loop
       insert into private.aios_task_reaper_deferred(task_id,attempts,next_attempt_at,last_sqlstate,last_error,updated_at)
       values (r.id,1,clock_timestamp()+interval '2 seconds',coalesce(v_lock_sqlstate,'55P03'),coalesce(v_lock_error,'mission subtree lock unavailable'),clock_timestamp())
@@ -140,11 +144,11 @@ begin
     end loop;
   end loop;
 
-  foreach r.id in array v_quarantined_tasks loop
-    select t.organization_id into r.organization_id from public.aios_tasks t where t.id=r.id;
+  foreach v_task_id in array v_quarantined_tasks loop
+    select t.organization_id into v_orgs[1] from public.aios_tasks t where t.id=v_task_id;
     insert into public.aios_backlog_dispositions
       (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
-    values (r.organization_id,'task',r.id,'needs_owner_review','manual_review',
+    values (v_orgs[1],'task',v_task_id,'needs_owner_review','manual_review',
       'Stale-task reaper could not safely acquire the task or mission lock subtree; task left unchanged for owner review.',
       'job:aios_reap_stale_tasks')
     on conflict do nothing;
@@ -170,8 +174,9 @@ begin
       from public.aios_tool_invocations i
       where i.task_id=r.id and i.organization_id=r.organization_id
       order by i.created_at desc,i.id desc limit 1;
+      v_has_inv := found;
 
-      if found and inv.status='requires_approval' then
+      if v_has_inv and inv.status='requires_approval' then
         update public.aios_tasks set status='blocked_pending_approval'
           where id=r.id and status='running';
         if r.mission_id is not null then
@@ -180,11 +185,11 @@ begin
         end if;
         v_blocked:=v_blocked+1;
         v_outcome:='blocked';
-      elsif found and inv.status not in ('succeeded','failed','denied') then
+      elsif v_has_inv and inv.status not in ('succeeded','failed','denied') then
         v_skipped:=v_skipped+1;
         v_outcome:='skipped';
       else
-        if not found then
+        if not v_has_inv then
           v_stage:='before_invocation';
           v_note:='Task stalled before any tool invocation was recorded (model proposal stage). No tool was executed.';
         elsif inv.status='succeeded' then
@@ -199,10 +204,11 @@ begin
         set status='failed',failed_stage=v_stage,last_error=v_note,
             result=coalesce(result,'{}'::jsonb)||jsonb_build_object(
               'error','stale_task_reaped','failed_stage',v_stage,
-              'invocation_id',case when found then inv.id else null end,'note',v_note)
+              'invocation_id',case when v_has_inv then inv.id else null end,'note',v_note)
         where id=r.id and status='running';
+        v_task_updated := found;
 
-        if found then
+        if v_task_updated and r.mission_id is not null then
           update public.aios_missions m set status='failed',completed_at=now()
           where m.id=r.mission_id and m.status='running'
             and not exists(select 1 from public.aios_tasks s where s.mission_id=m.id
@@ -228,7 +234,7 @@ begin
       else
         insert into public.aios_backlog_dispositions
           (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
-        values (r.organization_id,'task',''||r.id,'needs_owner_review','manual_review',
+        values (r.organization_id,'task',r.id,'needs_owner_review','manual_review',
           'Stale-task recovery failed safely with SQLSTATE '||sqlstate||'; task transition rolled back and requires owner review. '||left(sqlerrm,500),
           'job:aios_reap_stale_tasks')
         on conflict do nothing;
