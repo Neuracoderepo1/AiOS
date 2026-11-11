@@ -42,7 +42,7 @@ begin
   if not found then raise exception 'active task quarantine not found' using errcode = 'P0002'; end if;
   if not exists (select 1 from public.aios_organization_members m
     where m.organization_id=v_org and m.user_id=v_actor
-      and lower(m.role) in ('owner','admin','administrator')) then
+      and m.role::text in ('owner','admin','administrator')) then
     raise exception 'organization owner/admin authorization required' using errcode = '42501';
   end if;
   update private.aios_task_reaper_quarantine set resolved_at=clock_timestamp(),
