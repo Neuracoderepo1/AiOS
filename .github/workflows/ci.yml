@@ -143,6 +143,24 @@ jobs:
           SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
           psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f tests/sql_superuser/12_part_d_restoration.sql 2>&1 | tee /tmp/restoration-role-sql.txt
           test "${PIPESTATUS[0]}" -eq 0
+      - name: Prove unsafe pre-existing restorer role aborts migration without repair
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          psql "$DB_URL" -X -v ON_ERROR_STOP=0 <<'SQL' 2>&1 | tee /tmp/restoration-unsafe-role.txt
+          \\set VERBOSITY verbose
+          begin;
+          alter role aios_restorer login;
+          \\i supabase/migrations/20261109120000_aios_restoration_part_d.sql
+          rollback;
+          SQL
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -q '42501' /tmp/restoration-unsafe-role.txt
+          grep -q 'unsafe role attributes; refusing repair' /tmp/restoration-unsafe-role.txt
+          test "$(psql "$DB_URL" -X -A -t -c "select rolcanlogin from pg_roles where rolname = 'aios_restorer'")" = "f"
+          echo "PASS: migration rejects unsafe pre-existing role with SQLSTATE 42501 and leaves it unchanged (rollback verified)"
       # Canonical matrix: 45 SQL cases (tests/sql/05) + G4 eight-way concurrency, verified against tests/matrix/manifest.json.
       # Runs even if the generic SQL step failed so one failure never hides the other; G4 commits fixtures, so this is its only run.
       - name: Canonical test matrix (46 cases)
@@ -200,6 +218,7 @@ jobs:
             /tmp/start.txt
             /tmp/restoration-runner.txt
             /tmp/restoration-role-sql.txt
+            /tmp/restoration-unsafe-role.txt
           if-no-files-found: warn
           retention-days: 90
       - name: Stop
