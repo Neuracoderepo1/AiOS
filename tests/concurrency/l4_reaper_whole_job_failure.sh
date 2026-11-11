@@ -64,6 +64,11 @@ check "quarantine marker remains active" "$([ "$(q "select count(*) from private
 check "repeat run does not duplicate T2 disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and disposition='manual_review'")" = "$DISPOSITION_BEFORE" ] && echo true || echo false)"
 check "repeat run produces no T2 audit transition" "$([ "$(audits)" = "$AUDIT_BEFORE" ] && echo true || echo false)"
 
+echo "== owner resolution: ordinary member is denied"
+MEMBER_DENIAL=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -c "select set_config('request.jwt.claim.sub','$REQ',false); select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"authenticated\"}',false); select public.aios_resolve_task_reaper_quarantine('$T2','Member must not release an owner quarantine.');" 2>&1)
+MEMBER_RC=$?
+check "ordinary member cannot resolve quarantine" "$([ "$MEMBER_RC" -ne 0 ] && echo "$MEMBER_DENIAL" | grep -q 'organization owner/admin authorization required' && echo true || echo false)"
+
 echo "== owner resolution: authorized org owner releases quarantine"
 q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';
    select set_config('request.jwt.claim.sub','$REQ',false);
