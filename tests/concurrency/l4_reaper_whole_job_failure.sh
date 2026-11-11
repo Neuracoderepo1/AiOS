@@ -81,8 +81,9 @@ q "update public.aios_missions set status='running' where id='$M5';
    update public.aios_tasks set status='running' where id='$T5';
    begin; set local session_replication_role=replica;
    update public.aios_tasks set updated_at=now()-interval '60 minutes' where id='$T5'; commit;" >/dev/null
-# Make the previously deferred organization-1 candidate eligible for this controlled retry.
-q "update private.aios_task_reaper_deferred set next_attempt_at=now() where task_id='$T2';" >/dev/null
+# Add a fresh organization-1 candidate dedicated to the cross-organization lock test.
+read M6 T6 <<<"$(new_stale auditlock 60)"
+need_ids "$M6" "$T6"
 ORG_AUDIT_BEFORE=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG'")
 ORG_DISPOSITION_BEFORE=$(q "select count(*) from public.aios_backlog_dispositions where organization_id='$ORG'")
 LOCK_LOG=$(mktemp)
@@ -108,8 +109,8 @@ ELAPSED=$(( $(date +%s) - START ))
 ORG_AUDIT_AFTER=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG'")
 ORG_DISPOSITION_AFTER=$(q "select count(*) from public.aios_backlog_dispositions where organization_id='$ORG'")
 check "reaper returns without waiting for the contended organization lock (<5s; elapsed=${ELAPSED}s)" "$([ "$ELAPSED" -lt 5 ] && echo true || echo false)"
-check "all candidates in contended organization remain untouched" "$([ "$(status "$T2")" = running ] && [ "$(q "select status from public.aios_missions where id='$M2'")" = running ] && echo true || echo false)"
-check "contended organization's candidate is durably deferred with lock-unavailable SQLSTATE" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T2' and last_sqlstate is null and last_error like '%pg_try_advisory_xact_lock returned false%'")" = 1 ] && echo true || echo false)"
+check "all candidates in contended organization remain untouched" "$([ "$(status "$T6")" = running ] && [ "$(q "select status from public.aios_missions where id='$M6'")" = running ] && echo true || echo false)"
+check "contended organization's candidate is durably deferred with lock-unavailable SQLSTATE" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T6' and last_sqlstate is null and last_error like '%pg_try_advisory_xact_lock returned false%'")" = 1 ] && echo true || echo false)"
 check "no public audit event was appended for contended organization" "$([ "$ORG_AUDIT_BEFORE" = "$ORG_AUDIT_AFTER" ] && echo true || echo false)"
 check "no public quarantine/disposition was appended for contended organization" "$([ "$ORG_DISPOSITION_BEFORE" = "$ORG_DISPOSITION_AFTER" ] && echo true || echo false)"
 check "unrelated organization task recovered while first org lock remains held" "$([ "$(status "$T5")" = failed ] && echo true || echo false)"
