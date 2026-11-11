@@ -50,3 +50,10 @@ correctly left cancelled; whether `compensated` should instead be false is a pro
 The original handler gap is addressed on the execution-authority stack: the handler reads the parent mission before task claim, the database claim gate rejects a task whose mission became terminal after that read, and the handler checks the affected-row result of the mission-start compare-and-set. A lost mission-start update triggers task + mission authority revalidation and stops before model use. The handler also revalidates after model planning and immediately before kernel authorization.
 
 Closure evidence is still conditional on the required PR #32 CI run: terminal mission and mission-start race probes must pass; the behavioral suite and mutation controls must remain green; and the real-Postgres mission/task race job must pass on the same PR-head SHA. This note is an implementation status update, not Agent 003 certification.
+
+
+## Post-tool authority revalidation closure update (2026-11-11)
+
+Review of the registered-tool completion path found that the handler sealed a successful invocation result and then proceeded directly to final model analysis without revalidating task/mission authority. A cancellation during tool execution could therefore cause an unnecessary final model call after the result was already sealed. The handler now revalidates immediately after sealing the invocation and again after final analysis, before the task-completion CAS. Both revalidation responses report `tool_executed=true`, `tool_reexecuted=false`, and `tool_result_preserved=true` when authority has been withdrawn. The final task update remains a conditional `status='running'` CAS; a zero-row result returns 409 and preserves the invocation result.
+
+Deterministic behavioral tests now cover cancellation immediately after tool-result sealing, cancellation during final analysis, cancellation at the final task-completion CAS, and the normal registered-tool success/evaluation path. Full-stack CI on the final PR head is required before Agent 003 certification. This remains an implementation/evidence update, not a certification.
