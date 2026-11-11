@@ -40,6 +40,7 @@ declare
   v_mission_id uuid;
   v_has_inv boolean;
   v_task_updated boolean;
+  v_org_id uuid;
 begin
   if p_max_age is null or p_max_age < interval '0' then
     raise exception 'max age must be non-negative' using errcode = '22023';
@@ -145,10 +146,10 @@ begin
   end loop;
 
   foreach v_task_id in array v_quarantined_tasks loop
-    select t.organization_id into v_orgs[1] from public.aios_tasks t where t.id=v_task_id;
+    select t.organization_id into v_org_id from public.aios_tasks t where t.id=v_task_id;
     insert into public.aios_backlog_dispositions
       (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
-    values (v_orgs[1],'task',v_task_id,'needs_owner_review','manual_review',
+    values (v_org_id,'task',v_task_id,'needs_owner_review','manual_review',
       'Stale-task reaper could not safely acquire the task or mission lock subtree; task left unchanged for owner review.',
       'job:aios_reap_stale_tasks')
     on conflict do nothing;
