@@ -48,6 +48,12 @@ grant all on all functions in schema mx to public;
 -- ================================================================== D07 roles and authorization
 select mx.rec('D07.1', 'roles', (select not rolcanlogin and not rolsuper and not rolinherit and not rolcreaterole and not rolcreatedb and not rolreplication and not rolbypassrls from pg_roles where rolname = 'aios_restorer'), 'aios_restorer is NOLOGIN, NOINHERIT, no extra attributes');
 select mx.rec('D07.2', 'roles', private.aios_restorer_boundary_violations() = '[]'::jsonb, private.aios_restorer_boundary_violations()::text);
+-- Superuser authority is inherent; no synthetic pg_auth_members row is expected.
+do $superuser_assert$
+begin
+  perform private.aios_assert_restorer();
+end
+$superuser_assert$;
 select mx.rec('D07.3', 'roles', not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member where m.roleid = 'aios_restorer'::regrole and r.rolname in ('anon','authenticated','service_role','authenticator')), 'no application role holds aios_restorer');
 select mx.rec('D07.4', 'roles', not exists (select 1 from pg_auth_members where member = 'aios_restorer'::regrole), 'aios_restorer is a member of nothing');
 -- Reverse membership boundaries: neither direct nor transitive app/service membership is accepted.

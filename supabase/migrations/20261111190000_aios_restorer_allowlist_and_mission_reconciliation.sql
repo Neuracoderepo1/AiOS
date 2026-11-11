@@ -55,12 +55,14 @@ $fn$;
 
 create or replace function private.aios_assert_restorer() returns void
 language plpgsql stable security definer set search_path = '' as $fn$
-declare v jsonb;
+declare v jsonb; v_is_superuser boolean;
 begin
   if session_user in('anon','authenticated','service_role','authenticator','supabase_auth_admin','supabase_storage_admin','supabase_functions_admin') then
     raise exception 'restoration is not available to application roles' using errcode='42501';
   end if;
-  if not exists(
+  select rolsuper into v_is_superuser from pg_catalog.pg_roles where rolname=session_user;
+  -- A superuser's authority is inherent and is not represented by a pg_auth_members row.
+  if not coalesce(v_is_superuser,false) and not exists(
     select 1 from pg_catalog.pg_roles pr
     join pg_catalog.pg_auth_members am on am.member=pr.oid
     join private.aios_restorer_member_allowlist al on al.member_oid=am.member and al.member_name=pr.rolname
@@ -150,8 +152,7 @@ begin
   return jsonb_build_object('processed',v_done,'failed',v_failed);
 end
 $fn$;
-revoke all on function private.aios_reconcile_mission_completion(uuid),private.aios_process_mission_reconciliation_queue(integer) from public,anon,authenticated;
-grant execute on function private.aios_reconcile_mission_completion(uuid) to service_role;
+revoke all on function private.aios_reconcile_mission_completion(uuid),private.aios_process_mission_reconciliation_queue(integer) from public,anon,authenticated,service_role;
 comment on function private.aios_reconcile_mission_completion(uuid) is 'Idempotently reconciles one mission from persisted task states; terminal states are never overwritten.';
 comment on function private.aios_process_mission_reconciliation_queue(integer) is 'Retries durable mission completion work; failures remain queued with diagnostics.';
 select cron.schedule('aios-reconcile-mission-completions','* * * * *',$$select private.aios_process_mission_reconciliation_queue(100)$$);
