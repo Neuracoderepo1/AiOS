@@ -3,7 +3,7 @@ name: AiOS CI
 on:
   pull_request:
   push:
-    branches: [main, 'agent004/p0-p1-integrated-candidate']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
