@@ -179,6 +179,7 @@ APP_RC=$(cat "$D/approval.rc" 2>/dev/null || echo 99)
 TASK_RC=$(cat "$D/task.rc" 2>/dev/null || echo 99)
 check "reverse-linked approval helper completed" "$([ "$APP_RC" = 0 ] && echo true || echo false)"
 check "stale-task helper completed" "$([ "$TASK_RC" = 0 ] && echo true || echo false)"
+check "first-to-second mission blocker completed" "$([ "$(cat "$D/blocker.rc" 2>/dev/null || echo 99)" = 0 ] && echo true || echo false)"
 check "no deadlock (40P01)" "$([ "$DEAD" = 0 ] && echo true || echo false)"
 check "no worker held an advisory audit lock while waiting for mission row" "$([ "$WAITING_AUDIT" = 0 ] && echo true || echo false)"
 [ "$APP_RC" = 0 ] || { cat "$D/approval.err"; }
