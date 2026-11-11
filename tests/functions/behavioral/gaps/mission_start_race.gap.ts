@@ -1,13 +1,11 @@
-// GAP PROBE (not part of the certified suite; deliberately not named *_test.ts so `deno test <dir>` does not collect it).
+// Mission-start race closure regression. Kept as a separate required CI probe for explicit evidence.
 //
 // Desired invariant: if the parent mission is cancelled in the window between this execution's task claim and its mission
 // start, the execution must STOP: no model call (token spend) and no tool path.
 //
-// Why this is a probe: execute-task requests `.select("id")` on the guarded mission-start update (queued -> running) but only
-// inspects the error; the returned row set (empty when the mission is no longer 'queued') is never examined, so execution
-// proceeds to the model call and, on a valid proposal, to tool execution under a cancelled mission. The certified test
-// "mission CANCELLED between task claim and mission start is not resurrected" proves only that the mission ROW is protected,
-// not that the stale execution stops. That is the finding.
+// The handler checks the affected-row result. If the queued -> running CAS loses, it revalidates task + mission authority
+// and returns 409 before model use. The fake DB models the interleaving; real lock/cascade semantics are separately tested
+// against PostgreSQL in the migration CI job.
 // Run with:  deno test --import-map=tests/functions/behavioral/import_map.json --allow-env --allow-read tests/functions/behavioral/gaps/mission_start_race.gap.ts
 import { call, eq, executeTables, fresh, model, world } from "../harness.ts";
 
@@ -23,10 +21,11 @@ function arm() {
 
 Deno.test("GAP: execute-task makes NO model call when its mission is cancelled between task claim and mission start", async () => {
   arm();
-  await call("execute-task", { task_id: "task-1" });
+  const r = await call("execute-task", { task_id: "task-1" });
+  eq(r.status, 409, "lost mission-start authority is rejected");
+  eq(world.tables.aios_missions[0].status, "cancelled", "mission remains cancelled");
   eq(model.calls, 0, "model calls after the mission was cancelled");
 });
 
-// NOT probed here: whether the claimed task is stranded 'running' after a lost mission start. That depends on the registered-tool
-// path, which the stub does not model (see README, "What this does NOT establish"); a probe there would be decided by the stub, not
-// by the handler. It belongs in a database-backed test (see the finding's remediation section).
+// The fake client does not implement the PostgreSQL terminal cascade; the real-Postgres mission/task race suite verifies
+// that the live task is terminalized when the mission cancellation wins.
