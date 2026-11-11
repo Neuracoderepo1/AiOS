@@ -59,15 +59,15 @@ begin
     left join lateral (
       select candidate.id, candidate.task_id
       from (
-        select i0.id, i0.task_id, 0 as link_priority
+        select i0.id, i0.task_id, i0.created_at, 0 as link_priority
         from public.aios_tool_invocations i0
         where i0.id = ap.invocation_id
         union all
-        select i1.id, i1.task_id, 1 as link_priority
+        select i1.id, i1.task_id, i1.created_at, 1 as link_priority
         from public.aios_tool_invocations i1
         where ap.invocation_id is null and i1.approval_id = ap.id
       ) candidate
-      order by candidate.link_priority, candidate.id
+      order by candidate.link_priority, candidate.created_at desc, candidate.id desc
       limit 1
     ) i on true
     left join public.aios_tasks t on t.id = i.task_id
