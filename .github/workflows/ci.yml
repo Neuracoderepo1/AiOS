@@ -142,8 +142,8 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           set +e; rc=0
-          for t in l3_audit_lock_forced l4_reaper_audit_lock_forced l3_lock_conflict_deferral; do
-            L3F_EVIDENCE_DIR=/tmp/forced-evidence/$t bash tests/concurrency/$t.sh "$DB_URL" > /tmp/$t.txt 2>&1; r=$?; cat /tmp/$t.txt
+          for t in l3_audit_lock_forced l4_reaper_audit_lock_forced l3_lock_conflict_deferral l3_audit_lock_subtree_levels l4_reaper_whole_job_failure; do
+            L3F_EVIDENCE_DIR=/tmp/forced-evidence/$t L3S_EVIDENCE_DIR=/tmp/forced-evidence/$t bash tests/concurrency/$t.sh "$DB_URL" > /tmp/$t.txt 2>&1; r=$?; cat /tmp/$t.txt
             lvl=notice; [ $r -ne 0 ] && lvl=error && rc=1
             echo "::$lvl title=$t (rc=$r)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/$t.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
           done
@@ -176,6 +176,8 @@ jobs:
             /tmp/l3_audit_lock_forced.txt
             /tmp/l4_reaper_audit_lock_forced.txt
             /tmp/l3_lock_conflict_deferral.txt
+            /tmp/l3_audit_lock_subtree_levels.txt
+            /tmp/l4_reaper_whole_job_failure.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
             /tmp/start.txt

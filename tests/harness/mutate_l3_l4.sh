@@ -20,4 +20,11 @@ run "control: lock-conflict deferral"   pass ""  l3_lock_conflict_deferral.sh
 run "M1 expiry phase-1 pre-lock removed"   fail 's/^  perform private\.aios_prelock_approvals_batch(v_ids);/  null;/' l3_audit_lock_forced.sh
 run "M2 reaper phase-1 pre-lock removed"   fail 's/^  perform private\.aios_prelock_tasks_batch(v_ids);/  null;/'      l4_reaper_audit_lock_forced.sh
 run "M3 lock conflicts treated as errors again (swallow reintroduced)" fail "s/select p_sqlstate in (.*/select false/" l3_lock_conflict_deferral.sh
+run "control: subtree-level (task/invocation/approval holders)" pass "" l3_audit_lock_subtree_levels.sh
+run "control: reaper whole-job failure semantics" pass "" l4_reaper_whole_job_failure.sh
+run "M4 task-level subtree pre-lock removed"        fail 's/^  perform 1 from public\.aios_tasks where mission_id = p_mission_id order by id for no key update;/  null;/' l3_audit_lock_subtree_levels.sh
+run "M5 invocation-level subtree pre-lock removed"  fail 's/^  perform 1 from public\.aios_tool_invocations i where i\.task_id in .*/  null;/' l3_audit_lock_subtree_levels.sh
+run "M6 mission-level subtree pre-lock removed"     fail 's/^  perform 1 from public\.aios_missions where id = p_mission_id for no key update;/  null;/' l3_audit_lock_forced.sh
+# NOT a mutant this battery can kill (documented, PR28-AUDIT-LOCK-CLOSURE.md F-3): removing the APPROVAL-level subtree lock is observationally equivalent for
+# the audit-lock invariant, because expiry phase 2 takes the approval row with FOR UPDATE SKIP LOCKED (it skips instead of waiting).
 echo "mutation battery: $([ $bad = 0 ] && echo ALL KILLED + CONTROLS PASS || echo PROBLEMS)"; exit $bad
