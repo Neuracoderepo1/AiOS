@@ -95,6 +95,10 @@ def assert_final_approval_audit_contract(source: str) -> None:
         raise AssertionError("batch processors do not pre-acquire organization audit locks")
     if "set timezone = 'UTC'" not in audit_locks:
         raise AssertionError("audit append trigger does not pin UTC")
+    if "expected_function_fp = private.aios_function_fingerprint('private.aios_audit_append()'::regprocedure)" not in source:
+        raise AssertionError("guard registry fingerprint was not advanced for the intentional trigger-function change")
+    if "trigger_name = 'trg_aios_audit_hash'" not in source:
+        raise AssertionError("guard registry update is not scoped to the audit hash trigger")
 
 
 class FinalApprovalAuditClosureTests(unittest.TestCase):
@@ -126,6 +130,15 @@ class FinalApprovalAuditClosureTests(unittest.TestCase):
     def test_mutation_removing_utc_pin_is_detected(self):
         mutant = self.source.replace("set timezone = 'UTC'", "set timezone = 'Asia/Tokyo'", 1)
         with self.assertRaisesRegex(AssertionError, "pin UTC"):
+            assert_final_approval_audit_contract(mutant)
+
+    def test_mutation_omitting_guard_registry_advance_is_detected(self):
+        mutant = self.source.replace(
+            "expected_function_fp = private.aios_function_fingerprint('private.aios_audit_append()'::regprocedure)",
+            "expected_function_fp = 'stale'",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "guard registry fingerprint"):
             assert_final_approval_audit_contract(mutant)
 
 
