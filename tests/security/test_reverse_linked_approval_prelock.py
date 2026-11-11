@@ -18,7 +18,7 @@ def assert_reverse_link_contract(source: str) -> None:
     )
     missing = [fragment for fragment in required if fragment not in body]
     if missing:
-        raise AssertionError("approval pre-lock contract missing: " + ", ".join(missing))
+        raise AssertionError("approval pre-lock reverse link contract missing: " + ", ".join(missing))
 
     subtree_start = source.index("create or replace function private.aios_lock_mission_subtree")
     subtree_end = source.index("$f$;", subtree_start)
