@@ -12,6 +12,55 @@ create table if not exists private.aios_task_reaper_deferred (
 alter table private.aios_task_reaper_deferred enable row level security;
 revoke all on private.aios_task_reaper_deferred from public, anon, authenticated, service_role;
 
+-- Durable quarantine is separate from transient retry/backoff state.
+create table if not exists private.aios_task_reaper_quarantine (
+  task_id uuid primary key references public.aios_tasks(id) on delete cascade,
+  organization_id uuid not null,
+  reason text not null,
+  sqlstate text,
+  created_at timestamptz not null default clock_timestamp(),
+  resolved_at timestamptz,
+  resolved_by uuid references auth.users(id),
+  resolution_note text,
+  check ((resolved_at is null and resolved_by is null and resolution_note is null)
+      or (resolved_at is not null and resolved_by is not null and resolution_note is not null))
+);
+alter table private.aios_task_reaper_quarantine enable row level security;
+revoke all on private.aios_task_reaper_quarantine from public, anon, authenticated, service_role;
+
+create or replace function public.aios_resolve_task_reaper_quarantine(
+  p_task_id uuid, p_resolution_note text
+) returns jsonb language plpgsql security definer set search_path = '' as $resolve$
+declare v_org uuid; v_actor uuid := auth.uid(); v_rows integer;
+begin
+  if v_actor is null then raise exception 'authenticated owner identity required' using errcode = '42501'; end if;
+  if p_resolution_note is null or length(btrim(p_resolution_note)) < 12 then
+    raise exception 'resolution note must contain at least 12 characters' using errcode = '22023';
+  end if;
+  select q.organization_id into v_org from private.aios_task_reaper_quarantine q
+    where q.task_id=p_task_id and q.resolved_at is null for update;
+  if not found then raise exception 'active task quarantine not found' using errcode = 'P0002'; end if;
+  if not exists (select 1 from public.aios_organization_members m
+    where m.organization_id=v_org and m.user_id=v_actor
+      and lower(m.role) in ('owner','admin','administrator')) then
+    raise exception 'organization owner/admin authorization required' using errcode = '42501';
+  end if;
+  update private.aios_task_reaper_quarantine set resolved_at=clock_timestamp(),
+    resolved_by=v_actor,resolution_note=btrim(p_resolution_note)
+    where task_id=p_task_id and resolved_at is null;
+  get diagnostics v_rows=row_count;
+  if v_rows<>1 then raise exception 'quarantine changed concurrently' using errcode = '40001'; end if;
+  insert into public.aios_backlog_dispositions
+    (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
+  values (v_org,'task',p_task_id,'owner_decision','owner_decision_retain',
+    'Authorized owner/admin released stale-task quarantine. '||btrim(p_resolution_note),
+    'owner:'||v_actor::text) on conflict do nothing;
+  return jsonb_build_object('task_id',p_task_id,'quarantine_resolved',true,'resolved_by',v_actor);
+end
+$resolve$;
+revoke all on function public.aios_resolve_task_reaper_quarantine(uuid,text) from public, anon;
+grant execute on function public.aios_resolve_task_reaper_quarantine(uuid,text) to authenticated;
+
 create or replace function private.aios_reap_stale_tasks(p_max_age interval DEFAULT '00:10:00'::interval)
 returns jsonb
 language plpgsql
@@ -56,6 +105,7 @@ begin
     from public.aios_tasks t
     where t.status = 'running'
       and t.updated_at < clock_timestamp() - p_max_age
+      and not exists (select 1 from private.aios_task_reaper_quarantine q where q.task_id=t.id and q.resolved_at is null)
       and not exists (
         select 1 from private.aios_task_reaper_deferred d
         where d.task_id = t.id and d.next_attempt_at > clock_timestamp()
@@ -190,6 +240,10 @@ begin
   foreach v_task_id in array v_quarantined_tasks loop
     select t.organization_id into v_org_id from public.aios_tasks t where t.id=v_task_id;
     if v_org_id = any(v_failed_orgs) then continue; end if;
+    insert into private.aios_task_reaper_quarantine(task_id,organization_id,reason,sqlstate)
+    values (v_task_id,v_org,'Structural failure acquiring stale-task mission/task lock subtree',null)
+    on conflict(task_id) do update set organization_id=excluded.organization_id,reason=excluded.reason,
+      sqlstate=excluded.sqlstate,created_at=clock_timestamp(),resolved_at=null,resolved_by=null,resolution_note=null;
     insert into public.aios_backlog_dispositions
       (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
     values (v_org_id,'task',v_task_id,'needs_owner_review','manual_review',
@@ -277,6 +331,10 @@ begin
           last_sqlstate=excluded.last_sqlstate,last_error=excluded.last_error,updated_at=clock_timestamp();
         v_deferred:=v_deferred+1;
       else
+        insert into private.aios_task_reaper_quarantine(task_id,organization_id,reason,sqlstate)
+        values (r.id,r.organization_id,'Stale-task transition invariant failure: '||left(sqlerrm,500),sqlstate)
+        on conflict(task_id) do update set organization_id=excluded.organization_id,reason=excluded.reason,
+          sqlstate=excluded.sqlstate,created_at=clock_timestamp(),resolved_at=null,resolved_by=null,resolution_note=null;
         insert into public.aios_backlog_dispositions
           (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
         values (r.organization_id,'task',r.id,'needs_owner_review','manual_review',
@@ -296,5 +354,7 @@ $body$;
 
 comment on table private.aios_task_reaper_deferred is
   'Transient stale-task reaper lock failures; bounded exponential retry, never a permanent disposition.';
+comment on table private.aios_task_reaper_quarantine is
+  'Durable owner-review quarantine. Unresolved rows exclude tasks from stale-task reaper selection until an authenticated organization owner/admin resolves them.';
 comment on function private.aios_reap_stale_tasks(interval) is
   'Per-mission-subtree and per-task isolated stale-task recovery. Transient lock conflicts defer; invariant failures quarantine; audit locks are acquired after all row-lock attempts using non-blocking try-locks.';
