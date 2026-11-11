@@ -33,8 +33,7 @@ values ('$AGT','$ORG','binding-race-agent','binding-race','binding-race','idle',
  jsonb_build_object('risk_level','medium','allowed_tools',jsonb_build_array('support.export_customer_data'),'limits','{}'::jsonb))
 on conflict (id) do nothing;
 insert into public.aios_contracts(organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active)
-values ('$ORG','$AGT',1,'medium',jsonb_build_array('support.export_customer_data'),'{}'::jsonb,true)
-on conflict (agent_id,version) do update set is_active=true;
+values ('$ORG','$AGT',1,'medium',jsonb_build_array('support.export_customer_data'),'{}'::jsonb,true);
 insert into public.aios_missions(id,organization_id,title,objective,status)
 values ('$M1','$ORG','binding-race-one','binding-race','queued'),
        ('$M2','$ORG','binding-race-two','binding-race','queued');
