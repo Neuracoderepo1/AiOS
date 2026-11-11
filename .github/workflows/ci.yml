@@ -294,6 +294,16 @@ jobs:
           lvl=notice; [ $rc -ne 0 ] && lvl=error
           echo "::$lvl title=approval-lock-order (rc=$rc)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/approval-lock-order.txt | { if [ $rc -ne 0 ]; then grep -nE '^(==|  (PASS|FAIL|barrier|deadlocks|worker exit codes))' /tmp/approval-lock-order.txt | head -c 1700; echo ' ## DIAGNOSTICS TAIL ##'; tail -c 1700 /tmp/approval-lock-order.txt; else head -c 3500 /tmp/approval-lock-order.txt; fi; } | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
           exit $rc
+      # Reverse-linked approval rows must resolve to their actual mission before approval/reaper pre-lock ordering.
+      - name: Reverse-linked approval and stale-reaper pre-lock interleaving
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set -o pipefail
+          bash tests/concurrency/reverse_linked_approval_prelock.sh "$DB_URL" 2>&1 | tee /tmp/reverse-linked-approval-prelock.txt
+      - name: Reverse-linked approval lock-order static and mutation controls
+        run: python3 -m unittest -v tests.security.test_reverse_linked_approval_prelock
+
       # Deterministic (event-barrier) forced interleavings: the audit advisory lock must never be held while waiting for a row lock (expiry job, reaper),
       # and a lock conflict inside the per-record handler must be deferred, never recorded as a permanent manual_review disposition. Throwaway CI database only.
       - name: Audit-lock order forced interleavings + lock-conflict deferral
@@ -331,6 +341,7 @@ jobs:
             /tmp/mission-task-races.txt
             /tmp/approval-lock-order.txt
             /tmp/approval-lock-order-evidence
+            /tmp/reverse-linked-approval-prelock.txt
             /tmp/forced-evidence
             /tmp/l3_audit_lock_forced.txt
             /tmp/l4_reaper_audit_lock_forced.txt
