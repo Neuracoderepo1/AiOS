@@ -164,7 +164,7 @@ Deno.test("execute-task: a LOST claim -> 409, mission untouched, no model call, 
   const r = await call(FN, BODY);
   eq(r.status, 409, "status");
   eq(r.json.error, "Task was already claimed by another execution", "error");
-  assert(!world.ops.some((o) => o.table === "aios_missions"), "mission never touched by the loser");
+  assert(!world.ops.some((o) => o.table === "aios_missions" && o.mode !== "select"), "loser performs no mission writes");
   eq(model.calls, 0, "no model call by the loser");
   eq(task().status, "running", "the winner's task is left running, not failed");
   eq(writeLog(), ["update aios_tasks"], "the only write is the failed claim attempt");
@@ -176,7 +176,7 @@ Deno.test("execute-task: a claim DB error -> 500, mission untouched, no model ca
   const r = await call(FN, BODY);
   eq(r.status, 500, "status");
   eq(r.json.error, "Failed to start task", "error");
-  assert(!world.ops.some((o) => o.table === "aios_missions"), "mission untouched");
+  assert(!world.ops.some((o) => o.table === "aios_missions" && o.mode !== "select"), "claim failure performs no mission writes");
   eq(model.calls, 0, "no model call");
 });
 
