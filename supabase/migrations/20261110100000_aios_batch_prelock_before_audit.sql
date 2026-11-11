@@ -28,7 +28,19 @@ begin
   perform 1 from public.aios_missions where id = p_mission_id for no key update;
   perform 1 from public.aios_tasks where mission_id = p_mission_id order by id for no key update;
   perform 1 from public.aios_tool_invocations i where i.task_id in (select t.id from public.aios_tasks t where t.mission_id = p_mission_id) order by i.id for update;
-  perform 1 from public.aios_approvals a where a.invocation_id in (select i.id from public.aios_tool_invocations i join public.aios_tasks t on t.id = i.task_id where t.mission_id = p_mission_id) order by a.id for update;
+  -- Cover both supported approval bindings. Reverse-linked approvals have NULL invocation_id,
+  -- so filtering only on a.invocation_id would leave their approval rows unlocked in phase 1.
+  perform 1 from public.aios_approvals a
+    where a.invocation_id in (
+      select i.id from public.aios_tool_invocations i
+      join public.aios_tasks t on t.id = i.task_id where t.mission_id = p_mission_id
+    )
+    or a.id in (
+      select i.approval_id from public.aios_tool_invocations i
+      join public.aios_tasks t on t.id = i.task_id
+      where t.mission_id = p_mission_id and i.approval_id is not null
+    )
+    order by a.id for update;
 end $f$;
 revoke all on function private.aios_lock_mission_subtree(uuid) from public, anon, authenticated;
 grant execute on function private.aios_lock_mission_subtree(uuid) to service_role;
