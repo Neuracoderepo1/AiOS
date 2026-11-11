@@ -150,6 +150,11 @@ select mx.rec('D07.16','authz',private.aios_restorer_boundary_violations()::text
 select mx.rec('D07.17','authz',exists(select 1 from pg_auth_members m join pg_roles r on r.oid=m.member
   where m.roleid='aios_restorer'::regrole and r.rolname='mx_unapproved_admin' and m.admin_option),
   'negative fixture actually has ADMIN OPTION');
+set session authorization mx_unapproved_admin;
+select mx.rec('D07.18','authz',
+  mx.try($select private.aios_restoration_install_credential(repeat('x',40))$) like '42501:%',
+  'unapproved ADMIN OPTION holder cannot exercise restoration');
+reset session authorization;
 rollback to s_unapproved_admin_option;
 
 -- application roles cannot grant themselves membership

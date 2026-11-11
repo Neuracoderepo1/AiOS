@@ -115,6 +115,15 @@ export function createClient(_url: string, _key: string, opts?: { global?: { hea
     },
     rpc: async (name: string, args: unknown) => {
       world.rpcs.push({ name, args });
+      if (name === "aios_reconcile_mission_completion") {
+        const missionId = (args as { p_mission_id?: string })?.p_mission_id;
+        const mission = (world.tables.aios_missions ?? []).find((m) => m.id === missionId);
+        if (mission?.status === "running") {
+          const tasks = (world.tables.aios_tasks ?? []).filter((t) => t.mission_id === missionId);
+          if (tasks.length > 0 && tasks.every((t) => t.status === "completed")) mission.status = "completed";
+        }
+        return { data: mission?.status ?? "missing", error: null };
+      }
       return { data: name === "aios_is_org_member" ? world.isMember : name === "aios_kernel_authorize_invocation" ? { status: "executing" } : name === "aios_record_evaluation" ? { id: "eval-1" } : null, error: null };
     },
     from: (table: string) => new Query(client, table),
