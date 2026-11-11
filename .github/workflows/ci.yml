@@ -333,7 +333,8 @@ jobs:
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          bash tests/concurrency/cross_org_audit_lock_order.sh "$DB_URL"
+          set -o pipefail
+          bash tests/concurrency/cross_org_audit_lock_order.sh "$DB_URL" 2>&1 | tee /tmp/cross-org-audit-lock-order.txt
 
       # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
@@ -352,7 +353,9 @@ jobs:
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          bash tests/concurrency/approval_chain_binding_revalidation.sh "$DB_URL"
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          set -o pipefail
+          bash tests/concurrency/approval_chain_binding_revalidation.sh "$SUPER_URL" 2>&1 | tee /tmp/approval-chain-binding-revalidation.txt
 
       - name: Upload test evidence
         if: ${{ always() }}
@@ -368,6 +371,8 @@ jobs:
             /tmp/approval-lock-order-evidence
             /tmp/reverse-linked-approval-prelock.txt
             /tmp/approval-resolver-tie-break.txt
+            /tmp/cross-org-audit-lock-order.txt
+            /tmp/approval-chain-binding-revalidation.txt
             /tmp/forced-evidence
             /tmp/l3_audit_lock_forced.txt
             /tmp/l4_reaper_audit_lock_forced.txt
