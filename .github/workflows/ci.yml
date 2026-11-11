@@ -346,6 +346,13 @@ jobs:
           echo "selftest connects as: $(psql "$SUPER_URL" -X -A -t -c "select current_user || ' rolsuper=' || rolsuper from pg_roles where rolname = current_user")"
           bash scripts/smoke/selftest.sh "$SUPER_URL" 2>&1 | tee /tmp/smoke-selftest.txt
           test "${PIPESTATUS[0]}" -eq 0
+      # Forced post-lock approval binding mutation while the lock worker waits on the original mission.
+      - name: Approval-chain post-lock binding revalidation
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/approval_chain_binding_revalidation.sh "$DB_URL"
+
       - name: Upload test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
