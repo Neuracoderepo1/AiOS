@@ -92,7 +92,7 @@ select mx.org(:C);
 select mx.ev(:C, 'tokyo.append', '{}', '2026-02-01 00:00:00+00');
 reset timezone;
 select mx.rec('E02.8', 'golden', (private.aios_audit_verify_chain_v2(:C) ->> 'valid')::boolean and (private.aios_audit_verify_chain_v2(:C) ->> 'reason') is null, 'audit append under Asia/Tokyo remains verifiable because the trigger pins UTC');
-select mx.rec('E02.8a', 'golden', exists (select 1 from pg_proc p, unnest(coalesce(p.proconfig, '{}'::text[])) setting where p.oid = 'private.aios_audit_append()'::regprocedure and setting = 'timezone=UTC'), 'audit trigger function pins timezone=UTC');
+select mx.rec('E02.8a', 'golden', exists (select 1 from pg_proc p, unnest(coalesce(p.proconfig, '{}'::text[])) setting where p.oid = 'private.aios_audit_append()'::regprocedure and lower(setting) = 'timezone=utc'), 'audit trigger function pins timezone=UTC');
 rollback to s_tz;
 reset timezone;   -- the savepoint was taken while TimeZone was Asia/Tokyo; restore UTC for the rest of the suite
 select mx.org(:C), mx.ev(:C, 'single.event');
