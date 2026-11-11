@@ -76,6 +76,37 @@ jobs:
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Capture migration runner and restorer membership authority
+        if: steps.start.conclusion == 'success'
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -P pager=off -c "
+            select current_user as migration_runner,
+                   current_setting('server_version') as postgres_version,
+                   r.rolsuper, r.rolcreaterole, r.rolinherit, r.rolcanlogin,
+                   coalesce(m.admin_option, false) as creator_admin_option
+            from pg_roles r
+            left join pg_auth_members m
+              on m.roleid = (select oid from pg_roles where rolname = 'aios_restorer')
+             and m.member = r.oid
+            where r.rolname = current_user;
+          " | tee /tmp/restoration-runner.txt
+          # Exercise the exact membership grant in a disposable transaction and roll it back.
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c "
+            begin;
+            create role aios_ci_membership_probe nologin;
+            grant aios_restorer to aios_ci_membership_probe;
+            rollback;
+          "
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c "
+            do \\$assert\\$
+            begin
+              if exists (select 1 from pg_roles where rolname = 'aios_ci_membership_probe') then
+                raise exception 'membership probe role survived rollback';
+              end if;
+            end
+            \\$assert\\$;
+          "
       - name: Run SQL regression and invariant tests
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
@@ -141,7 +172,7 @@ jobs:
             /tmp/expiry-race.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
-            /tmp/start.txt
+            /tmp/start.txt\n            /tmp/restoration-runner.txt
           if-no-files-found: warn
           retention-days: 90
       - name: Stop
