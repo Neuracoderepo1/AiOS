@@ -37,9 +37,9 @@ Negative tests (deliberately break copies of the functions; the suite must notic
 | Terminal missions on the ordinary failure paths (model HTTP failure, mission-start DB error), canceller's rows preserved byte-for-byte | `terminal_and_race_test.ts` (second half, "Added by the terminal-state / cancellation-race expansion") |
 | Harness can detect regressions | `run_mutants.py` (23 mutants + unmodified control; JSON records each exact source transformation) |
 
-## Known gap (probe, not certified behavior)
+## Terminal-mission and mission-start race closure probes
 
-Two probes live in `gaps/` (`terminal_mission.gap.ts`, `mission_start_race.gap.ts`); both FAIL today by design. Full analysis and remediation boundary: `evidence/FINDING-terminal-mission-gap.md`.
+Two required regression probes live in `gaps/` (`terminal_mission.gap.ts`, `mission_start_race.gap.ts`). They verify early rejection of terminal parent missions and stopping when the mission-start compare-and-set loses to cancellation. The database claim trigger and terminal cascade remain authoritative; real-Postgres race evidence is required in addition to these handler tests.
 
 `gaps/terminal_mission.gap.ts` asserts the desired invariant that a task under a `completed`/`failed`/`cancelled`/`expired`
 mission is refused before any claim or model call. It FAILS against the current functions: `execute-task` guards its mission
@@ -50,7 +50,7 @@ mentions mission status. It is deliberately not named `*_test.ts` so the certifi
 ## CI
 
 `.github/workflows/ci.yml` job `functions-behavioral` runs, under the pinned Deno version: the suite, the suite again with `--no-remote`
-(proves no remote/network dependency), the O1-O7 invariant guard, the mutation checks, and the gap probes (informational, separate).
+(proves no remote/network dependency), the O1-O7 invariant guard, the mutation checks, and the terminal-mission / mission-start race closure probes as required checks.
 It uploads `behavioral-evidence` (identity incl. PR head SHA + functions tree + Deno version, behavioral.txt, noremote.txt,
 invariants.txt, mutation.txt, mutants.json, gaps.txt).
 
