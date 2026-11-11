@@ -43,18 +43,20 @@ export async function loadHandler(fn: string): Promise<Handler> {
 }
 
 // Anthropic stub: counts calls and returns whatever the test configures.
-export const model = { calls: 0, text: "[]", status: 200, throwNetwork: false };
+export const model: { calls: number; text: string; status: number; throwNetwork: boolean; onCall: (() => void) | null } = { calls: 0, text: "[]", status: 200, throwNetwork: false, onCall: null };
 export function resetModel() {
   model.calls = 0;
   model.text = "[]";
   model.status = 200;
   model.throwNetwork = false;
+  model.onCall = null;
 }
 const realFetch = globalThis.fetch;
 globalThis.fetch = ((input: any, init?: any) => {
   const url = typeof input === "string" ? input : input.url;
   if (url.includes("api.anthropic.com")) {
     model.calls++;
+    if (model.onCall) model.onCall();
     if (model.throwNetwork) return Promise.reject(new Error("network down"));
     return Promise.resolve(
       new Response(
