@@ -49,13 +49,18 @@ update public.aios_approvals set invocation_id=null where id =
 SQL
 APPROVAL=$(q "select approval_id from public.aios_tool_invocations where id='$INV'")
 [[ "$APPROVAL" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL fixture approval missing"; exit 2; }
+[[ "$(q "select count(*) from public.aios_missions where id='$M1'")" = 1 ]] || { echo "FAIL original mission fixture missing"; exit 2; }
+[[ "$(q "select count(*) from public.aios_tasks where id='$T1' and mission_id='$M1'")" = 1 ]] || { echo "FAIL original task/mission binding missing"; exit 2; }
+[[ "$(q "select task_id from public.aios_tool_invocations where id='$INV'")" = "$T1" ]] || { echo "FAIL invocation/task fixture binding missing"; exit 2; }
+[[ "$(q "select private.aios_resolve_approval_invocation('$APPROVAL')")" = "$INV" ]] || { echo "FAIL shared resolver did not select fixture invocation"; exit 2; }
 
-# B owns the original mission row. The lock-chain worker will read the old binding,
+# B owns the original mission and task rows. The lock-chain worker will read the old binding,
 # then wait here before it can acquire the mission/task/invocation/approval chain.
 (
   PGAPPNAME=aios-binding-blocker psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
 begin;
 select 1 from public.aios_missions where id='$M1' for no key update;
+select 1 from public.aios_tasks where id='$T1' for no key update;
 select pg_sleep(3);
 update public.aios_tool_invocations set task_id='$T2' where id='$INV';
 commit;
@@ -79,7 +84,7 @@ until [ "$(q "select count(*) from pg_stat_activity where application_name='aios
     echo "FAIL chain-lock worker did not block on the original mission"
     echo "approval=$APPROVAL resolver=$(q "select coalesce(private.aios_resolve_approval_invocation('$APPROVAL')::text,'NULL')")"
     q "select application_name,state,wait_event_type,wait_event,query from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" || true
-    cat "$D/blocker.err" "$D/worker.err" "$D/worker.out" 2>/dev/null || true
+    cat "$D/blocker.out" "$D/blocker.err" "$D/worker.err" "$D/worker.out" 2>/dev/null || true
     kill "$BLOCKER" "$WORKER" 2>/dev/null || true
     exit 2
   }; sleep 0.05
