@@ -98,15 +98,7 @@ jobs:
             grant aios_restorer to aios_ci_membership_probe;
             rollback;
           "
-          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c "
-            do \\$assert\\$
-            begin
-              if exists (select 1 from pg_roles where rolname = 'aios_ci_membership_probe') then
-                raise exception 'membership probe role survived rollback';
-              end if;
-            end
-            \\$assert\\$;
-          "
+          test "$(psql "$DB_URL" -X -A -t -c "select count(*) from pg_roles where rolname = 'aios_ci_membership_probe'")" = "0"
       - name: Run SQL regression and invariant tests
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
