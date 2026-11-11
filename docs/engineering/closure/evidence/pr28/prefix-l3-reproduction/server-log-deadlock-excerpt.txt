@@ -1,0 +1,13 @@
+2026-11-11 10:57:51.334 GMT [2859] WARNING:  25001: there is already a transaction in progress
+2026-11-11 10:57:51.334 GMT [2859] LOCATION:  BeginTransactionBlock, xact.c:3810
+2026-11-11 10:57:51.337 GMT [2859] WARNING:  25P01: there is no transaction in progress
+2026-11-11 10:57:51.337 GMT [2859] LOCATION:  EndTransactionBlock, xact.c:4008
+2026-11-11 10:57:53.214 GMT [2947] LOG:  00000: process 2947 detected deadlock while waiting for ShareLock on transaction 1124 after 1000.147 ms
+2026-11-11 10:57:53.214 GMT [2947] DETAIL:  Process holding the lock: 2940. Wait queue: .
+2026-11-11 10:57:53.214 GMT [2947] CONTEXT:  while locking tuple (0,6) in relation "aios_missions"
+	SQL statement "SELECT 1 from public.aios_missions where id = v_mission for no key update"
+	PL/pgSQL function private.aios_lock_approval_chain(uuid) line 13 at PERFORM
+	SQL statement "SELECT private.aios_lock_approval_chain(a.id)"
+	PL/pgSQL function private.aios_expire_stale_approvals() line 24 at PERFORM
+2026-11-11 10:57:53.214 GMT [2947] LOCATION:  ProcSleep, proc.c:1527
+2026-11-11 10:57:53.214 GMT [2947] STATEMENT:  select 'E_RESULT ' || private.aios_expire_stale_approvals()::text
