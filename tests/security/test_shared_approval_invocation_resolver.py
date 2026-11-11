@@ -79,6 +79,8 @@ def assert_final_approval_audit_contract(source: str) -> None:
         "for update",
         "v_current_inv is distinct from v_inv",
         "v_current_task is distinct from v_task",
+        "v_current_approval_inv is distinct from v_approval_inv_snapshot",
+        "v_current_inv_approval is distinct from v_inv_approval_snapshot",
         "v_current_approval_inv is not null",
         "v_current_inv_approval is distinct from p_approval_id",
         "v_current_task_org is distinct from v_task_org",
