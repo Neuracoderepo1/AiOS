@@ -6,6 +6,7 @@ ORG=ab020202-0000-4000-8000-000000000001
 AGT=ab020202-0000-4000-8000-000000000002
 REQ=ab020202-0000-4000-8000-000000000003
 ADM=ab020202-0000-4000-8000-000000000004
+TIED_AT='2026-11-01 00:00:00+00'
 q() { psql "$DB" -X -At -q -v ON_ERROR_STOP=1 -c "$1"; }
 cleanup() {
   q "begin; set local session_replication_role=replica;
@@ -39,9 +40,9 @@ new_chain() {
        select '$ORG',id,'$AGT','tie-$1','queued' from m returning id
      ), i as (
        insert into public.aios_tool_invocations
-         (organization_id,agent_id,task_id,tool_name,tool_key,arguments,risk_level,requested_by,request_id,idempotency_key)
+         (organization_id,agent_id,task_id,tool_name,tool_key,arguments,risk_level,requested_by,request_id,idempotency_key,created_at)
        select '$ORG','$AGT',id,'support.export_customer_data','support.export_customer_data',
-         jsonb_build_object('scope',case when '$1'='one' then 'a' else 'b' end,'format','csv'),'low','$REQ',gen_random_uuid(),'tie-$1-'||gen_random_uuid() from t
+         jsonb_build_object('scope',case when '$1'='one' then 'a' else 'b' end,'format','csv'),'low','$REQ',gen_random_uuid(),'tie-$1-'||gen_random_uuid(),'$TIED_AT'::timestamptz from t
        returning id,approval_id
      )
      select (select id from i)||'|'||(select approval_id from i)"
@@ -50,8 +51,7 @@ IFS='|' read -r I1 A1 <<<"$(new_chain one)"
 IFS='|' read -r I2 A2 <<<"$(new_chain two)"
 [[ "$I1" =~ ^[0-9a-f-]{36}$ && "$I2" =~ ^[0-9a-f-]{36}$ && "$A1" =~ ^[0-9a-f-]{36}$ && "$A2" =~ ^[0-9a-f-]{36}$ ]]
 [[ "$A1" != "$A2" ]]
-q "update public.aios_tool_invocations set approval_id='$A1',created_at='2026-11-01 00:00:00+00' where id='$I2';
-   update public.aios_tool_invocations set created_at='2026-11-01 00:00:00+00' where id='$I1';
+q "update public.aios_tool_invocations set approval_id='$A1' where id='$I2';
    update public.aios_approvals set invocation_id=null where id in ('$A1','$A2');
    delete from public.aios_approvals where id='$A2';" >/dev/null
 MISSIONS=$(q "select count(distinct t.mission_id) from public.aios_tool_invocations i join public.aios_tasks t on t.id=i.task_id where i.approval_id='$A1'")
