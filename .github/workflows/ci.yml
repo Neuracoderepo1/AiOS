@@ -88,9 +88,10 @@ jobs:
         run: |
           set -o pipefail
           NO_COLOR=1 python3 tests/functions/behavioral/run_mutants.py --runner "$DENO_RUN tests/functions/behavioral/" --json mutants.json 2>&1 | tee mutation.txt
-      - name: Known-gap probe (informational; expected to fail today, never fails the job)
+      - name: Terminal-mission and mission-start race closure probes (required)
         run: |
-          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt || true
+          set -o pipefail
+          NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt
       - name: Upload behavioral evidence
         if: always()
         uses: actions/upload-artifact@v4
