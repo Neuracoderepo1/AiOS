@@ -1,12 +1,10 @@
-// GAP PROBE (not part of the certified suite; deliberately not named *_test.ts so `deno test <dir>` does not collect it).
+// Terminal-mission closure regression. Kept as a separate required CI probe for explicit evidence.
 //
 // Desired invariant: a task whose mission is already TERMINAL (completed/failed/cancelled/expired) must not be claimed or
 // executed; no model call (token spend) and no tool invocation may happen on behalf of a cancelled mission.
 //
-// Why this is a probe and not a certification test: supabase/functions/execute-task only guards its mission UPDATES
-// (queued -> running, running -> failed) and never reads the mission's status before claiming the task and calling the model.
-// Neither the task status-guard trigger nor aios_kernel_authorize_invocation refers to mission status, and cancelling a mission
-// does not cascade to its tasks. These tests therefore FAIL against the current functions; that is the finding.
+// The handler performs an early read-only parent-mission check; the database claim trigger is the authoritative race fence.
+// This test verifies the handler's early rejection. PostgreSQL race enforcement is covered by the real-Postgres suite.
 // Run with:  node --no-warnings tests/functions/behavioral/node/run.mjs --gaps
 //       or:  deno test --import-map=tests/functions/behavioral/import_map.json --allow-env --allow-read tests/functions/behavioral/gaps/terminal_mission.gap.ts
 import { call, eq, executeTables, fresh, model, world, writeLog } from "../harness.ts";
