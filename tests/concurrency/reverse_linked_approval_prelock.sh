@@ -90,22 +90,37 @@ MAP=$(q "select count(distinct t.mission_id)||'|'||
          where ap.id in ('$A1','$A2') and ap.invocation_id is null")
 [ "$MAP" = "2|$(printf '%s\n%s\n' "$M1" "$M2" | sort | paste -sd, -)" ] || { echo "reverse-link mission mapping/order unexpected: $MAP"; exit 2; }
 
-# A blocker holds the first (lowest UUID) mission row. Both real pre-lock helpers must queue
-# behind the same first mission, not take different mission locks based on approval UUID order.
-FIRST=$(printf '%s\n%s\n' "$M1" "$M2" | sort | head -1)
+# A controller holds an advisory gate. The blocker takes the first mission row, waits
+# on the gate, then requests the second mission row. If approval pre-lock still takes
+# the reverse-linked second mission first, releasing the gate creates the exact cycle:
+# expiry holds second -> waits first; blocker holds first -> waits second.
+FIRST=$(printf '%s\\n%s\\n' "$M1" "$M2" | sort | head -1)
+SECOND=$(printf '%s\\n%s\\n' "$M1" "$M2" | sort | tail -1)
 GATE=942731
+exec 5> >(psql "$DB" -X -At -q >"$D/controller.out" 2>"$D/controller.err")
+printf 'select pg_advisory_lock(%s);\\nselect %s;\\n' "$GATE" "'CONTROLLER_HELD'" >&5
+i=0
+until grep -q CONTROLLER_HELD "$D/controller.out" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 400 ] && { echo "controller gate was not acquired"; exit 2; }; sleep 0.05; done
+
+# Blocker owns the first mission row and waits for the controller's gate before
+# requesting the second mission row. This is the deterministic deadlock tripwire.
 ( psql "$DB" -X -At -q -v ON_ERROR_STOP=1 <<SQL >"$D/blocker.out" 2>"$D/blocker.err"
 begin;
-select 'BLOCKER_HAS_MISSION' from public.aios_missions where id='$FIRST' for no key update;
-select pg_advisory_lock($GATE);
-select pg_advisory_unlock($GATE);
+select 'BLOCKER_HAS_FIRST' from public.aios_missions where id='$FIRST' for no key update;
+select pg_advisory_lock_shared($GATE);
+select pg_advisory_unlock_shared($GATE);
+select 'BLOCKER_HAS_SECOND' from public.aios_missions where id='$SECOND' for no key update;
 commit;
 select 'BLOCKER_DONE';
 SQL
 echo $? >"$D/blocker.rc" ) &
 BLOCK_PID=$!
 i=0
-until grep -q BLOCKER_HAS_MISSION "$D/blocker.out" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 400 ] && { echo "blocker did not acquire mission"; exit 2; }; sleep 0.05; done
+until grep -q BLOCKER_HAS_FIRST "$D/blocker.out" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 400 ] && { echo "blocker did not acquire first mission"; exit 2; }; sleep 0.05; done
+i=0
+until [ "$(q "select count(*) from pg_stat_activity where wait_event_type='Lock' and query like '%pg_advisory_lock_shared($GATE)%' and pid<>pg_backend_pid()")" = 1 ]; do
+  i=$((i+1)); [ "$i" -gt 400 ] && { echo "blocker did not park on controller gate"; exit 2; }; sleep 0.05
+done
 
 # Deliberately supply approvals in descending mission order. Correct implementation must
 # resolve reverse links and re-sort by actual mission/task/invocation/approval tuple.
@@ -114,9 +129,9 @@ APP_IDS=$(q "select array_agg(ap.id order by t.mission_id desc,t.id desc,i.id de
             join public.aios_tasks t on t.id=i.task_id
             where ap.id in ('$A1','$A2') and ap.invocation_id is null")
 TASK_IDS="{$S1,$S2}"
-( psql "$DB" -X -At -q -v ON_ERROR_STOP=1 -c "select 'APPROVAL_PRELOCK_DONE' from private.aios_prelock_approvals_batch('$APP_IDS'::uuid[])" >"$D/approval.out" 2>"$D/approval.err"; echo $? >"$D/approval.rc" ) &
+( psql "$DB" -X -At -q -v ON_ERROR_STOP=1 -c "select private.aios_prelock_approvals_batch('$APP_IDS'::uuid[])" >"$D/approval.out" 2>"$D/approval.err"; echo $? >"$D/approval.rc" ) &
 APP_PID=$!
-( psql "$DB" -X -At -q -v ON_ERROR_STOP=1 -c "select 'TASK_PRELOCK_DONE' from private.aios_prelock_tasks_batch('$TASK_IDS'::uuid[])" >"$D/task.out" 2>"$D/task.err"; echo $? >"$D/task.rc" ) &
+( psql "$DB" -X -At -q -v ON_ERROR_STOP=1 -c "select private.aios_prelock_tasks_batch('$TASK_IDS'::uuid[])" >"$D/task.out" 2>"$D/task.err"; echo $? >"$D/task.rc" ) &
 TASK_PID=$!
 
 i=0
@@ -126,14 +141,14 @@ done
 WAITING_AUDIT=$(q "select count(*) from pg_locks l join pg_stat_activity a on a.pid=l.pid
                   where l.locktype='advisory' and l.granted
                     and a.query like '%aios_prelock_%' and a.pid<>pg_backend_pid()")
-echo "  barrier: both helpers wait on the first mission row; granted advisory locks held by workers=$WAITING_AUDIT"
-# Release the blocker. Workers must finish in a common mission-first order without 40P01.
-psql "$DB" -X -At -q -c "select pg_advisory_unlock($GATE)" >/dev/null 2>&1 || true
-# The blocker owns the advisory lock in its own session, so release it via a second session is
-# not possible. Use pg_cancel_backend only after recording the wait barrier; its transaction
-# rolls back and releases the mission lock without modifying any fixture.
-BLOCK_PID_SQL=$(q "select pid from pg_stat_activity where query like '%pg_advisory_lock($GATE)%' and pid<>pg_backend_pid() order by pid desc limit 1")
-[ -n "$BLOCK_PID_SQL" ] && q "select pg_cancel_backend($BLOCK_PID_SQL)" >/dev/null
+echo "  barrier: both helpers are blocked on row locks; granted advisory locks held by workers=$WAITING_AUDIT"
+
+# Release the blocker to request the second mission row. Correct order completes; a
+# reverse-order approval helper forms a real PostgreSQL deadlock against this blocker.
+printf 'select pg_advisory_unlock(%s);\\nselect %s;\\n' "$GATE" "'CONTROLLER_OPEN'" >&5
+i=0
+until grep -q CONTROLLER_OPEN "$D/controller.out" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 400 ] && { echo "controller gate did not open"; exit 2; }; sleep 0.05; done
+exec 5>&-
 for f in approval task; do
   i=0; until [ -f "$D/$f.rc" ]; do i=$((i+1)); [ "$i" -gt 600 ] && { echo "$f pre-lock worker timed out"; fail=1; break; }; sleep 0.05; done
 done
