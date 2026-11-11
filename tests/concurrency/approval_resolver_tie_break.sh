@@ -56,7 +56,7 @@ q "update public.aios_tool_invocations set approval_id='$A1',created_at='2026-11
    delete from public.aios_approvals where id='$A2';" >/dev/null
 MISSIONS=$(q "select count(distinct t.mission_id) from public.aios_tool_invocations i join public.aios_tasks t on t.id=i.task_id where i.approval_id='$A1'")
 test "$MISSIONS" = 2
-EXPECTED=$(q "select max(id)::text from public.aios_tool_invocations where approval_id='$A1'")
+EXPECTED=$(q "select id::text from public.aios_tool_invocations where approval_id='$A1' order by id desc limit 1")
 ACTUAL=$(q "select private.aios_resolve_approval_invocation('$A1')")
 test "$ACTUAL" = "$EXPECTED"
 EXPECTED_MISSION=$(q "select t.mission_id from public.aios_tool_invocations i join public.aios_tasks t on t.id=i.task_id where i.id='$EXPECTED'")
