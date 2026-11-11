@@ -35,15 +35,18 @@ begin
   end if;
 
   select * into v_role from pg_catalog.pg_roles where rolname = 'aios_restorer';
-  if not found
-     or v_role.rolcanlogin
+  if not found then
+    raise exception 'aios_restorer was not created; refusing to continue'
+      using errcode = '42501';
+  end if;
+  if v_role.rolcanlogin
      or v_role.rolinherit
      or v_role.rolsuper
      or v_role.rolcreatedb
      or v_role.rolcreaterole
      or v_role.rolreplication
      or v_role.rolbypassrls then
-    raise exception 'aios_restorer is missing or has unsafe role attributes; refusing repair'
+    raise exception 'aios_restorer has unsafe role attributes; refusing repair'
       using errcode = '42501';
   end if;
 
@@ -190,6 +193,7 @@ begin
   select * into r from pg_roles where rolname = 'aios_restorer';
   if not found then return jsonb_build_array('role_missing'); end if;
   if r.rolcanlogin  then v := v || '"restorer_can_login"'::jsonb; end if;
+  if r.rolinherit   then v := v || '"restorer_inherits_roles"'::jsonb; end if;
   if r.rolsuper     then v := v || '"restorer_is_superuser"'::jsonb; end if;
   if r.rolcreaterole or r.rolcreatedb or r.rolreplication or r.rolbypassrls then v := v || '"restorer_has_extra_attributes"'::jsonb; end if;
   if exists (select 1 from pg_auth_members m where m.member = r.oid) then v := v || '"restorer_is_member_of_other_roles"'::jsonb; end if;
