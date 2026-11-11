@@ -112,8 +112,8 @@ savepoint s_exec_public;
 grant usage on schema private to public;
 grant execute on function private.aios_restoration_open(text, text, interval), private.aios_restoration_install_credential(text) to public;
 set session authorization mx_app;
-select mx.rec('D07.7', 'authz', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$) like '42501:restoration requires owner membership%', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$));
-select mx.rec('D07.8', 'authz', mx.try($$select private.aios_restoration_install_credential(repeat('z', 40))$$) like '42501:restoration requires owner membership%');
+select mx.rec('D07.7', 'authz', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$) like '42501:restoration requires an explicitly approved session login%', mx.try($$select private.aios_restoration_open(repeat('z', 40), 'a long enough reason')$$));
+select mx.rec('D07.8', 'authz', mx.try($$select private.aios_restoration_install_credential(repeat('z', 40))$$) like '42501:restoration requires an explicitly approved session login%');
 reset session authorization;
 rollback to s_exec_public;
 
