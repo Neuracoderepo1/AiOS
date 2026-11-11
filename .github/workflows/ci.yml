@@ -99,6 +99,32 @@ jobs:
             rollback;
           "
           test "$(psql "$DB_URL" -X -A -t -c "select count(*) from pg_roles where rolname = 'aios_ci_membership_probe'")" = "0"
+          # Verify PostgreSQL grants ADMIN OPTION to a CREATEROLE role that creates a child role.
+          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+          psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          begin;
+          create role aios_ci_creator_probe nologin createrole;
+          create role aios_ci_recipient_probe nologin;
+          set local role aios_ci_creator_probe;
+          create role aios_ci_child_probe nologin;
+          do $guard$
+          begin
+            if not exists (
+              select 1 from pg_auth_members m
+              join pg_roles creator on creator.oid = m.member
+              join pg_roles child on child.oid = m.roleid
+              where creator.rolname = 'aios_ci_creator_probe'
+                and child.rolname = 'aios_ci_child_probe'
+                and m.admin_option
+            ) then
+              raise exception 'CREATEROLE role creator did not receive ADMIN OPTION'
+                using errcode = '42501';
+            end if;
+          end
+          $guard$;
+          grant aios_ci_child_probe to aios_ci_recipient_probe;
+          rollback;
+          SQL
       - name: Run SQL regression and invariant tests
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
