@@ -327,6 +327,13 @@ jobs:
             echo "::$lvl title=$t (rc=$r)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/$t.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
           done
           exit $rc
+      # Opposite multi-organization batches must acquire audit advisory locks in one global order.
+      - name: Cross-organization audit advisory lock ordering
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/cross_org_audit_lock_order.sh "$DB_URL"
+
       # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
