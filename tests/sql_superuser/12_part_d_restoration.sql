@@ -26,7 +26,11 @@ create function mx.enabled(p_t text, p_trg text) returns text language sql as $$
 create function mx.drift_kinds() returns text language sql as $$ select coalesce(string_agg(distinct f ->> 'kind', ','), '') from jsonb_array_elements(private.aios_guard_drift() -> 'findings') f $$;
 grant usage on schema mx to public;
 
-select mx.rec('D00', 'precondition', (private.aios_final_verify(false) ->> 'overall') = 'VERIFIED' and (select status from private.aios_restoration_state) = 'closed', 'PRECONDITION: the suite needs a freshly replayed database (baseline verifier VERIFIED, no committed unanchored audit events). Got: ' || (private.aios_final_verify(false) ->> 'overall'));
+select mx.rec('D00', 'precondition',
+  (private.aios_final_verify(false) ->> 'overall') = 'VERIFIED'
+    and (select status from private.aios_restoration_state) = 'closed',
+  'PRECONDITION: freshly replayed baseline must be VERIFIED. Full verifier diagnostics: '
+    || private.aios_final_verify(false)::text);
 create temp table mx_g0 as select generation as g from private.aios_restoration_state;   -- the suite must not assume generation 0 (races may have advanced it)
 grant all on mx_g0 to public;
 create role mx_owner login; create role mx_app login;
