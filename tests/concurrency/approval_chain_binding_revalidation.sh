@@ -53,7 +53,7 @@ APPROVAL=$(q "select approval_id from public.aios_tool_invocations where id='$IN
 # B owns the original mission row. The lock-chain worker will read the old binding,
 # then wait here before it can acquire the mission/task/invocation/approval chain.
 (
-  psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
+  PGAPPNAME=aios-binding-blocker psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
 begin;
 select 1 from public.aios_missions where id='$M1' for no key update;
 select pg_sleep(3);
@@ -69,13 +69,20 @@ until [ "$(q "select count(*) from pg_stat_activity where query like '%pg_sleep(
 done
 
 (
-  psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/worker.out" 2>"$D/worker.err" -c "select private.aios_lock_approval_chain('$APPROVAL');"
+  PGAPPNAME=aios-binding-worker psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/worker.out" 2>"$D/worker.err" -c "select private.aios_lock_approval_chain('$APPROVAL');"
   echo $? >"$D/worker.rc"
 ) &
 WORKER=$!
 i=0
-until [ "$(q "select count(*) from pg_stat_activity where wait_event_type='Lock' and query like '%aios_lock_approval_chain%'")" = 1 ]; do
-  i=$((i+1)); [ "$i" -gt 100 ] && { echo "FAIL chain-lock worker did not block on the original mission"; kill "$BLOCKER" "$WORKER" 2>/dev/null || true; exit 2; }; sleep 0.05
+until [ "$(q "select count(*) from pg_stat_activity where application_name='aios-binding-worker' and wait_event_type='Lock'")" = 1 ]; do
+  i=$((i+1)); [ "$i" -gt 100 ] && {
+    echo "FAIL chain-lock worker did not block on the original mission"
+    echo "approval=$APPROVAL resolver=$(q "select coalesce(private.aios_resolve_approval_invocation('$APPROVAL')::text,'NULL')")"
+    q "select application_name,state,wait_event_type,wait_event,query from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" || true
+    cat "$D/blocker.err" "$D/worker.err" "$D/worker.out" 2>/dev/null || true
+    kill "$BLOCKER" "$WORKER" 2>/dev/null || true
+    exit 2
+  }; sleep 0.05
 done
 
 wait "$BLOCKER" || true
