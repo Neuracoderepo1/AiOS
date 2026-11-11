@@ -1,0 +1,649 @@
+{
+  "control_ok": true,
+  "control_exit": 0,
+  "mutant_count": 23,
+  "detected_count": 23,
+  "mutants": [
+    {
+      "id": "LM1",
+      "file": "launch-mission/index.ts",
+      "why": "invalid model risk level is coerced to 'low' instead of rejected",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 12,
+      "missing_expected": [],
+      "must_fail": [
+        "invalid model risk_level \"critical\"",
+        "second task has an invalid risk level"
+      ],
+      "failed_tests": [
+        "launch-mission: no database writes when planning fails: second task has an invalid risk level (first is fine) -> 422",
+        "launch-mission: invalid model risk_level \"critical\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"HIGH\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"Low\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \" low\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"none\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level null -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level 3 -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level [\"low\"] -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level {\"level\":\"low\"} -> HTTP 422 and nothing written",
+        "launch-mission: missing risk_level -> 422 (not defaulted)"
+      ],
+      "transformation": [
+        {
+          "find": "if(typeof r!=='string'||!(RISK_LEVELS as readonly string[]).includes(r))return{error:'Model returned an invalid risk_level'};",
+          "replace": ""
+        },
+        {
+          "find": "plan.push({title:t,instructions:i,risk_level:r as RiskLevel});",
+          "replace": "plan.push({title:t,instructions:i,risk_level:((RISK_LEVELS as readonly string[]).includes(r as string)?r:'low') as RiskLevel});"
+        }
+      ]
+    },
+    {
+      "id": "LM2",
+      "file": "launch-mission/index.ts",
+      "why": "mission row is written BEFORE planning/validation",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 26,
+      "missing_expected": [],
+      "must_fail": [
+        "no database writes when planning fails: model network failure",
+        "no database writes when planning fails: model returns non-JSON text",
+        "503 with zero writes"
+      ],
+      "failed_tests": [
+        "launch-mission: valid caller but no API key on an AI-planned objective -> 503 with zero writes",
+        "launch-mission: no database writes when planning fails: model network failure -> 502",
+        "launch-mission: no database writes when planning fails: model HTTP 500 -> 502",
+        "launch-mission: no database writes when planning fails: model returns non-JSON text -> 422",
+        "launch-mission: no database writes when planning fails: model returns empty array (0 tasks) -> 422",
+        "launch-mission: no database writes when planning fails: model returns 4 tasks (over the limit) -> 422",
+        "launch-mission: no database writes when planning fails: model returns blank title -> 422",
+        "launch-mission: no database writes when planning fails: model returns non-string instructions -> 422",
+        "launch-mission: no database writes when planning fails: model returns oversized title -> 422",
+        "launch-mission: no database writes when planning fails: second task has an invalid risk level (first is fine) -> 422",
+        "launch-mission: success writes in the documented order (mission, tasks, model run, audit)",
+        "launch-mission: invalid model risk_level \"critical\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"HIGH\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"Low\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \" low\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level \"none\" -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level null -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level 3 -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level [\"low\"] -> HTTP 422 and nothing written",
+        "launch-mission: invalid model risk_level {\"level\":\"low\"} -> HTTP 422 and nothing written",
+        "launch-mission: missing risk_level -> 422 (not defaulted)",
+        "launch-mission: task insert failure -> 500, mission compensated to 'cancelled' (not deleted), no orphan tasks",
+        "launch-mission: mission_creation_failed audit event records stage, reason and compensated=true",
+        "launch-mission: failure reason is truncated to 500 characters in mission metadata and audit",
+        "launch-mission: concurrent cancellation + task-insert failure: failure is audited with its reason, no stray rows, status and metadata are the canceller's"
+      ],
+      "transformation": [
+        {
+          "find": "let plan:PlannedTask[];",
+          "replace": "let plan:PlannedTask[];await admin.from('aios_missions').insert({organization_id,title,objective,status:'queued'});"
+        }
+      ]
+    },
+    {
+      "id": "LM3",
+      "file": "launch-mission/index.ts",
+      "why": "failed task insert no longer compensates the mission to 'cancelled'",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 1,
+      "missing_expected": [],
+      "must_fail": [
+        "compensated to 'cancelled'"
+      ],
+      "failed_tests": [
+        "launch-mission: task insert failure -> 500, mission compensated to 'cancelled' (not deleted), no orphan tasks"
+      ],
+      "transformation": [
+        {
+          "find": ".update({status:'cancelled',metadata:{creation_failed:true",
+          "replace": ".update({status:'queued',metadata:{creation_failed:true"
+        }
+      ]
+    },
+    {
+      "id": "LM4",
+      "file": "launch-mission/index.ts",
+      "why": "mission_creation_failed audit drops the failure reason",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 4,
+      "missing_expected": [],
+      "must_fail": [
+        "audit event records stage, reason and compensated=true"
+      ],
+      "failed_tests": [
+        "launch-mission: mission_creation_failed audit event records stage, reason and compensated=true",
+        "launch-mission: compensation failure is reported, not hidden (mission stays queued, audit says compensated=false)",
+        "launch-mission: failure reason is truncated to 500 characters in mission metadata and audit",
+        "launch-mission: concurrent cancellation + task-insert failure: failure is audited with its reason, no stray rows, status and metadata are the canceller's"
+      ],
+      "transformation": [
+        {
+          "find": "reason:String(reason).slice(0,500),compensated:!ce",
+          "replace": "compensated:!ce"
+        }
+      ]
+    },
+    {
+      "id": "LM5",
+      "file": "launch-mission/index.ts",
+      "why": "compensation_error is omitted from the audit when compensation fails",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 1,
+      "missing_expected": [],
+      "must_fail": [
+        "compensation failure is reported, not hidden"
+      ],
+      "failed_tests": [
+        "launch-mission: compensation failure is reported, not hidden (mission stays queued, audit says compensated=false)"
+      ],
+      "transformation": [
+        {
+          "find": ",...(ce?{compensation_error:String(ce.message).slice(0,500)}:{})",
+          "replace": ""
+        }
+      ]
+    },
+    {
+      "id": "LM6",
+      "file": "launch-mission/index.ts",
+      "why": "compensation failure is swallowed silently (no console.error)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 1,
+      "missing_expected": [],
+      "must_fail": [
+        "compensation failure is reported, not hidden"
+      ],
+      "failed_tests": [
+        "launch-mission: compensation failure is reported, not hidden (mission stays queued, audit says compensated=false)"
+      ],
+      "transformation": [
+        {
+          "find": "if(ce)console.error(`[launch-mission] compensation failed for mission ${mission.id}: ${ce.message}`);",
+          "replace": ""
+        }
+      ]
+    },
+    {
+      "id": "LM7",
+      "file": "launch-mission/index.ts",
+      "why": "tasks inserted one-by-one instead of one atomic statement",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 2,
+      "missing_expected": [],
+      "must_fail": [
+        "ONE insert statement"
+      ],
+      "failed_tests": [
+        "launch-mission: success writes in the documented order (mission, tasks, model run, audit)",
+        "launch-mission: all tasks go in ONE insert statement (all-or-nothing)"
+      ],
+      "transformation": [
+        {
+          "find": "const {data:tasks,error:te}=await admin.from('aios_tasks').insert(plan.map(t=>({organization_id,mission_id:mission.id,assigned_agent_id:selected.id,title:t.title,instructions:t.instructions,risk_level:t.risk_level,status:'queued'}))).select('*');",
+          "replace": "let tasks:any[]=[];let te:any=null;for(const t of plan){const r1=await admin.from('aios_tasks').insert([{organization_id,mission_id:mission.id,assigned_agent_id:selected.id,title:t.title,instructions:t.instructions,risk_level:t.risk_level,status:'queued'}]).select('*');if(r1.error){te=r1.error;break}tasks.push(...(r1.data??[]))}"
+        }
+      ]
+    },
+    {
+      "id": "LM8",
+      "file": "launch-mission/index.ts",
+      "why": "session validation removed (authentication no longer precedes the API-key check)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 1,
+      "missing_expected": [],
+      "must_fail": [
+        "authentication happens BEFORE API-key validation"
+      ],
+      "failed_tests": [
+        "launch-mission: authentication happens BEFORE API-key validation (invalid session + no key -> 401, not 503)"
+      ],
+      "transformation": [
+        {
+          "find": "if(ue||!u?.user)return json({error:'Invalid or expired session'},401);",
+          "replace": ""
+        }
+      ]
+    },
+    {
+      "id": "LM9",
+      "file": "launch-mission/index.ts",
+      "why": "API-key check hoisted above organization authorization",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 3,
+      "missing_expected": [],
+      "must_fail": [
+        "org authorization happens BEFORE API-key validation",
+        "deterministic support objective needs no API key"
+      ],
+      "failed_tests": [
+        "launch-mission: org authorization happens BEFORE API-key validation (non-member + no key -> 403, not 503)",
+        "launch-mission: agent eligibility is checked BEFORE API-key validation (no agent + no key -> 422, not 503)",
+        "launch-mission: deterministic support objective needs no API key and creates the mission"
+      ],
+      "transformation": [
+        {
+          "find": "const {data:member}=await user.rpc(",
+          "replace": "if(!Deno.env.get('ANTHROPIC_API_KEY'))return json({error:'AI dependency unavailable'},503);const {data:member}=await user.rpc("
+        }
+      ]
+    },
+    {
+      "id": "ET1",
+      "file": "execute-task/index.ts",
+      "why": "API-key check hoisted above authentication",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 11,
+      "missing_expected": [],
+      "must_fail": [
+        "authentication happens BEFORE API-key validation"
+      ],
+      "failed_tests": [
+        "execute-task: authentication happens BEFORE API-key validation (invalid session + no key -> 401, not 503)",
+        "execute-task: org authorization happens BEFORE API-key validation (non-member + no key -> 403, not 503)",
+        "execute-task: request/resource validation happens BEFORE API-key validation",
+        "execute-task: suspended agent -> 403 before API-key validation, no writes",
+        "execute-task: idempotent replay of a succeeded invocation works WITHOUT an API key, read-only",
+        "execute-task: replay of a requires_approval invocation -> 202 without a key, read-only",
+        "execute-task: replay of an executing invocation -> 202 without a key, read-only",
+        "execute-task: replay of a failed invocation -> 409 with its recorded error code, read-only",
+        "execute-task: a key bound to a DIFFERENT task is not replayed (plain 409, no idempotent_replay)",
+        "execute-task: a replay key from another organization is not honoured",
+        "execute-task: non-executable task WITHOUT an idempotency key -> plain 409, never replayed"
+      ],
+      "transformation": [
+        {
+          "find": "const supabaseUrl = Deno.env.get(\"SUPABASE_URL\")!;",
+          "replace": "if (!Deno.env.get(\"ANTHROPIC_API_KEY\")) return json({ error: \"ANTHROPIC_API_KEY is not configured\" }, 503);\n  const supabaseUrl = Deno.env.get(\"SUPABASE_URL\")!;"
+        }
+      ]
+    },
+    {
+      "id": "ET2",
+      "file": "execute-task/index.ts",
+      "why": "API-key check hoisted above the idempotent-replay path",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 8,
+      "missing_expected": [],
+      "must_fail": [
+        "idempotent replay of a succeeded invocation works WITHOUT an API key"
+      ],
+      "failed_tests": [
+        "execute-task: suspended agent -> 403 before API-key validation, no writes",
+        "execute-task: idempotent replay of a succeeded invocation works WITHOUT an API key, read-only",
+        "execute-task: replay of a requires_approval invocation -> 202 without a key, read-only",
+        "execute-task: replay of an executing invocation -> 202 without a key, read-only",
+        "execute-task: replay of a failed invocation -> 409 with its recorded error code, read-only",
+        "execute-task: a key bound to a DIFFERENT task is not replayed (plain 409, no idempotent_replay)",
+        "execute-task: a replay key from another organization is not honoured",
+        "execute-task: non-executable task WITHOUT an idempotency key -> plain 409, never replayed"
+      ],
+      "transformation": [
+        {
+          "find": "if (![\"queued\", \"approved\"].includes(task.status)) {",
+          "replace": "if (!Deno.env.get(\"ANTHROPIC_API_KEY\")) return json({ error: \"ANTHROPIC_API_KEY is not configured; refusing to fake agent execution\" }, 503);\n  if (![\"queued\", \"approved\"].includes(task.status)) {"
+        }
+      ]
+    },
+    {
+      "id": "ET3",
+      "file": "execute-task/index.ts",
+      "why": "mission is started BEFORE the task is claimed",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 6,
+      "missing_expected": [],
+      "must_fail": [
+        "claimed BEFORE the mission is started",
+        "a LOST claim"
+      ],
+      "failed_tests": [
+        "execute-task: the task is claimed BEFORE the mission is started, and both happen before any model call",
+        "execute-task: a LOST claim -> 409, mission untouched, no model call, winner's task is not failed",
+        "execute-task: a claim DB error -> 500, mission untouched, no model call",
+        "execute-task: task CANCELLED between read and claim -> 409, stays cancelled, mission untouched, no model call",
+        "execute-task: a task cancelled while running keeps the canceller's result, timestamps and error byte-for-byte",
+        "execute-task: task CANCELLED while the mission-start failure is being recorded is not overwritten to 'failed'"
+      ],
+      "transformation": [
+        {
+          "find": "// Task: atomic compare-and-set",
+          "replace": "await admin.from(\"aios_missions\").update({ status: \"running\", started_at: new Date().toISOString() }).eq(\"id\", task.mission_id).eq(\"status\", \"queued\");\n  // Task: atomic compare-and-set"
+        }
+      ]
+    },
+    {
+      "id": "ET4",
+      "file": "execute-task/index.ts",
+      "why": "task claim is no longer a compare-and-set on status",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 3,
+      "missing_expected": [],
+      "must_fail": [
+        "claim is a compare-and-set",
+        "a LOST claim",
+        "task CANCELLED between read and claim"
+      ],
+      "failed_tests": [
+        "execute-task: the claim is a compare-and-set on the status that was read",
+        "execute-task: a LOST claim -> 409, mission untouched, no model call, winner's task is not failed",
+        "execute-task: task CANCELLED between read and claim -> 409, stays cancelled, mission untouched, no model call"
+      ],
+      "transformation": [
+        {
+          "find": ".eq(\"id\", task.id).eq(\"status\", task.status).select(\"id\");",
+          "replace": ".eq(\"id\", task.id).select(\"id\");"
+        }
+      ]
+    },
+    {
+      "id": "ET5",
+      "file": "execute-task/index.ts",
+      "why": "mission-start failure no longer fails the claimed task",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 5,
+      "missing_expected": [],
+      "must_fail": [
+        "mission-start failure -> 500, task FAILED"
+      ],
+      "failed_tests": [
+        "execute-task: mission-start failure -> 500, task FAILED with stage + error, no model call",
+        "execute-task: 'completed' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: 'failed' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: 'cancelled' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: 'expired' mission row is untouched on the mission-start database error path and the task failure stays diagnosable"
+      ],
+      "transformation": [
+        {
+          "find": "await failClaimed(\"mission_start\", missionStartError.message, { tool_executed: false });",
+          "replace": ""
+        }
+      ]
+    },
+    {
+      "id": "ET6",
+      "file": "execute-task/index.ts",
+      "why": "failed stage / last_error diagnostics dropped from failed tasks",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 13,
+      "missing_expected": [],
+      "must_fail": [
+        "mission-start failure -> 500, task FAILED",
+        "model failure after the claim"
+      ],
+      "failed_tests": [
+        "execute-task: mission-start failure -> 500, task FAILED with stage + error, no model call",
+        "execute-task: model failure after the claim -> task AND mission end 'failed' with stage model_proposal",
+        "execute-task: invalid tool proposal after the claim -> 422, task and mission end 'failed'",
+        "execute-task: mission CANCELLED while the task runs is not overwritten to 'failed' when the task fails",
+        "execute-task: 'completed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'completed' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: 'failed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'failed' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: 'cancelled' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'cancelled' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: 'expired' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'expired' mission row is untouched on the mission-start database error path and the task failure stays diagnosable",
+        "execute-task: mission CANCELLED at the exact moment of mission-failure recording keeps the canceller's row"
+      ],
+      "transformation": [
+        {
+          "find": "if (stage) {",
+          "replace": "if (false) {"
+        }
+      ]
+    },
+    {
+      "id": "ET7",
+      "file": "execute-task/index.ts",
+      "why": "a lost task claim is ignored and execution continues",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 2,
+      "missing_expected": [],
+      "must_fail": [
+        "a LOST claim"
+      ],
+      "failed_tests": [
+        "execute-task: a LOST claim -> 409, mission untouched, no model call, winner's task is not failed",
+        "execute-task: task CANCELLED between read and claim -> 409, stays cancelled, mission untouched, no model call"
+      ],
+      "transformation": [
+        {
+          "find": "if (!taskClaimed || taskClaimed.length !== 1) return json({ error: \"Task was already claimed by another execution\", task_id: task.id }, 409);",
+          "replace": ""
+        }
+      ]
+    },
+    {
+      "id": "ET8",
+      "file": "execute-task/index.ts",
+      "why": "task failure no longer fails the mission",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 4,
+      "missing_expected": [],
+      "must_fail": [
+        "task AND mission end 'failed'"
+      ],
+      "failed_tests": [
+        "execute-task: mission-start failure -> 500, task FAILED with stage + error, no model call",
+        "execute-task: model failure after the claim -> task AND mission end 'failed' with stage model_proposal",
+        "execute-task: invalid tool proposal after the claim -> 422, task and mission end 'failed'",
+        "execute-task: mission CANCELLED at the exact moment of mission-failure recording keeps the canceller's row"
+      ],
+      "transformation": [
+        {
+          "find": "const { error: missionErr } = await admin.from(\"aios_missions\").update({ status: \"failed\", completed_at: new Date().toISOString() }).eq(\"id\", task.mission_id).eq(\"status\", \"running\");",
+          "replace": "const missionErr = null as { message: string } | null;"
+        }
+      ]
+    },
+    {
+      "id": "ET9",
+      "file": "execute-task/index.ts",
+      "why": "task failure overwrites the mission without the status = running guard (cancelled/terminal missions rewritten)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 11,
+      "missing_expected": [],
+      "must_fail": [
+        "mission CANCELLED while the task runs is not overwritten",
+        "'completed' mission row is never modified"
+      ],
+      "failed_tests": [
+        "execute-task: a 'completed' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: a 'failed' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: a 'cancelled' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: a 'expired' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: mission CANCELLED between task claim and mission start is not resurrected to 'running'",
+        "execute-task: mission CANCELLED while the task runs is not overwritten to 'failed' when the task fails",
+        "execute-task: 'completed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'failed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'cancelled' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'expired' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: mission CANCELLED at the exact moment of mission-failure recording keeps the canceller's row"
+      ],
+      "transformation": [
+        {
+          "find": "const { error: missionErr } = await admin.from(\"aios_missions\").update({ status: \"failed\", completed_at: new Date().toISOString() }).eq(\"id\", task.mission_id).eq(\"status\", \"running\");",
+          "replace": "const { error: missionErr } = await admin.from(\"aios_missions\").update({ status: \"failed\", completed_at: new Date().toISOString() }).eq(\"id\", task.mission_id);"
+        }
+      ]
+    },
+    {
+      "id": "ET10",
+      "file": "execute-task/index.ts",
+      "why": "mission start loses its status = queued guard (cancelled/terminal missions resurrected to running)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 10,
+      "missing_expected": [],
+      "must_fail": [
+        "not resurrected to 'running'",
+        "'cancelled' mission row is never modified"
+      ],
+      "failed_tests": [
+        "execute-task: an already-running mission keeps its original started_at",
+        "execute-task: a 'completed' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: a 'failed' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: a 'cancelled' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: a 'expired' mission row is never modified by an execution (no resurrection, no overwrite)",
+        "execute-task: mission CANCELLED between task claim and mission start is not resurrected to 'running'",
+        "execute-task: 'completed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'failed' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'cancelled' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable",
+        "execute-task: 'expired' mission row is untouched on the model HTTP failure path and the task failure stays diagnosable"
+      ],
+      "transformation": [
+        {
+          "find": ".eq(\"id\", task.mission_id).eq(\"status\", \"queued\").select(\"id\");",
+          "replace": ".eq(\"id\", task.mission_id).select(\"id\");"
+        }
+      ]
+    },
+    {
+      "id": "ET11",
+      "file": "execute-task/index.ts",
+      "why": "task failure recording loses its status = running guard (a cancelled task is overwritten to failed)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 3,
+      "missing_expected": [],
+      "must_fail": [
+        "task cancelled WHILE running is never overwritten"
+      ],
+      "failed_tests": [
+        "execute-task: task cancelled WHILE running is never overwritten to 'failed' by this execution",
+        "execute-task: a task cancelled while running keeps the canceller's result, timestamps and error byte-for-byte",
+        "execute-task: task CANCELLED while the mission-start failure is being recorded is not overwritten to 'failed'"
+      ],
+      "transformation": [
+        {
+          "find": ".update(patch).eq(\"id\", task.id).eq(\"status\", \"running\");",
+          "replace": ".update(patch).eq(\"id\", task.id);"
+        }
+      ]
+    },
+    {
+      "id": "LM10",
+      "file": "launch-mission/index.ts",
+      "why": "mission compensation loses its status = queued guard (a concurrent cancellation is overwritten)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 3,
+      "missing_expected": [],
+      "must_fail": [
+        "CANCELLED concurrently before compensation keeps the canceller's metadata",
+        "compensation only touches a mission that is still 'queued'"
+      ],
+      "failed_tests": [
+        "launch-mission: compensation only touches a mission that is still 'queued' (guarded update)",
+        "launch-mission: mission CANCELLED concurrently before compensation keeps the canceller's metadata",
+        "launch-mission: concurrent cancellation + task-insert failure: failure is audited with its reason, no stray rows, status and metadata are the canceller's"
+      ],
+      "transformation": [
+        {
+          "find": "reason:String(reason).slice(0,500)}}).eq('id',mission.id).eq('status','queued');",
+          "replace": "reason:String(reason).slice(0,500)}}).eq('id',mission.id);"
+        }
+      ]
+    },
+    {
+      "id": "ET12",
+      "file": "execute-task/index.ts",
+      "why": "terminal task statuses (completed/failed/cancelled/expired) become executable (terminal guard removed)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 9,
+      "missing_expected": [],
+      "must_fail": [
+        "task already 'completed'",
+        "task already 'failed'",
+        "task already 'cancelled'",
+        "task already 'expired'"
+      ],
+      "failed_tests": [
+        "execute-task: idempotent replay of a succeeded invocation works WITHOUT an API key, read-only",
+        "execute-task: replay of a failed invocation -> 409 with its recorded error code, read-only",
+        "execute-task: a key bound to a DIFFERENT task is not replayed (plain 409, no idempotent_replay)",
+        "execute-task: a replay key from another organization is not honoured",
+        "execute-task: non-executable task WITHOUT an idempotency key -> plain 409, never replayed",
+        "execute-task: task already 'completed' without an idempotency key -> 409, no writes, no model call",
+        "execute-task: task already 'failed' without an idempotency key -> 409, no writes, no model call",
+        "execute-task: task already 'cancelled' without an idempotency key -> 409, no writes, no model call",
+        "execute-task: task already 'expired' without an idempotency key -> 409, no writes, no model call"
+      ],
+      "transformation": [
+        {
+          "find": "if (![\"queued\", \"approved\"].includes(task.status)) {",
+          "replace": "if (![\"queued\", \"approved\", \"completed\", \"failed\", \"cancelled\", \"expired\"].includes(task.status)) {"
+        }
+      ]
+    },
+    {
+      "id": "ET13",
+      "file": "execute-task/index.ts",
+      "why": "a task-claim database error is no longer reported as a 500 (falls through to the lost-claim path)",
+      "detected": true,
+      "exit": 1,
+      "loads": true,
+      "failed_count": 1,
+      "missing_expected": [],
+      "must_fail": [
+        "a claim DB error -> 500"
+      ],
+      "failed_tests": [
+        "execute-task: a claim DB error -> 500, mission untouched, no model call"
+      ],
+      "transformation": [
+        {
+          "find": "if (taskStartError) return json({ error: \"Failed to start task\", detail: taskStartError.message }, 500);",
+          "replace": ""
+        }
+      ]
+    }
+  ]
+}

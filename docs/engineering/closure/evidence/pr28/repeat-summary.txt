@@ -1,0 +1,6 @@
+l3_audit_lock_forced: runs=20 pass=20 fail=0
+l4_reaper_audit_lock_forced: runs=20 pass=20 fail=0
+l3_lock_conflict_deferral: runs=20 pass=20 fail=0
+l4_reaper_whole_job_failure: runs=20 pass=20 fail=0
+l3_audit_lock_subtree_levels: runs=20 pass=20 fail=0
+server-log 'detected deadlock' lines during repeated fixed-code runs: 0
