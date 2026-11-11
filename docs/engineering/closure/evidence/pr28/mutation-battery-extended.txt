@@ -1,0 +1,12 @@
+  OK     control: expiry forced (control passes)
+  OK     control: reaper forced (control passes)
+  OK     control: lock-conflict deferral (control passes)
+  KILLED M1 expiry phase-1 pre-lock removed (test failed as it must)
+  KILLED M2 reaper phase-1 pre-lock removed (test failed as it must)
+  KILLED M3 lock conflicts treated as errors again (swallow reintroduced) (test failed as it must)
+  OK     control: subtree-level (task/invocation/approval holders) (control passes)
+  OK     control: reaper whole-job failure semantics (control passes)
+  KILLED M4 task-level subtree pre-lock removed (test failed as it must)
+  KILLED M5 invocation-level subtree pre-lock removed (test failed as it must)
+  KILLED M6 mission-level subtree pre-lock removed (test failed as it must)
+mutation battery: ALL KILLED + CONTROLS PASS

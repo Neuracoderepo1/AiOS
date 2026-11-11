@@ -1,0 +1,1 @@
+pg_cron 1.6.2-1 (apt, real); pg_jsonschema = HARNESS STUB (tests/harness/pg_jsonschema_stub.sql); NOT Supabase

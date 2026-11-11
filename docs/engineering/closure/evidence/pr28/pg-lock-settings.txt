@@ -1,0 +1,5 @@
+deadlock_timeout=1000
+lock_timeout=0
+log_lock_waits=on
+max_locks_per_transaction=64
+statement_timeout=0
