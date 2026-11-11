@@ -67,7 +67,7 @@ ORG2=b4b4b4b4-0000-4000-8000-000000000011; AGT2=b4b4b4b4-0000-4000-8000-00000000
 q "insert into public.aios_organizations (id,name) values ('$ORG2','f2-org-independent') on conflict do nothing;
    insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG2','$REQ','member') on conflict do nothing;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority)
-     values ('$AGT2','$ORG2','f2-agent-independent','f2-independent','f2','idle','{\\"risk_level\\":\\"medium\\",\\"allowed_tools\\":[\\"support.export_customer_data\\"],\\"limits\\":{}}') on conflict do nothing;" >/dev/null || { echo "second-org fixture failed"; exit 2; }
+     values ('$AGT2','$ORG2','f2-agent-independent','f2-independent','f2','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.export_customer_data\"],\"limits\":{}}') on conflict do nothing;" >/dev/null || { echo "second-org fixture failed"; exit 2; }
 OUT=$(q "with m as (
   insert into public.aios_missions (organization_id,title,objective,status)
   values ('$ORG2','f2-independent','f2','queued') returning id
