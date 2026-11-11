@@ -5,7 +5,7 @@ import argparse
 import re
 from pathlib import Path
 
-TARGET = re.compile(r'\bALTER\s+(?:ROLE|USER)\s+(?:aios_restorer|"aios_restorer")\b', re.I)
+TARGET = re.compile(r'\bALTER\s+(?:ROLE|USER)\s+(?:aios_restorer|"aios_restorer")(?=\s|;|$)', re.I)
 
 def strip_comments(sql: str) -> str:
     # Preserve quoted strings (including dynamic SQL) while removing SQL comments.
