@@ -87,11 +87,15 @@ select id as other_invocation from public.aios_tool_invocations
  where approval_id=:'approval_one' and id <> :'expected_invocation'::uuid \gset
 update public.aios_approvals set expires_at=now()-interval '1 minute' where id=:'approval_one';
 update public.aios_approvals set expires_at=now()+interval '1 day' where id=:'approval_two';
+-- These are fixture-only lifecycle states; bypass the status trigger for setup,
+-- then restore normal trigger behavior before exercising the production expiry path.
+set local session_replication_role = replica;
 update public.aios_tasks set status='blocked_pending_approval'
  where id in (select task_id from public.aios_tool_invocations where id in (:'expected_invocation',:'other_invocation'));
 update public.aios_missions set status='blocked_pending_approval'
  where id in (select t.mission_id from public.aios_tasks t join public.aios_tool_invocations i on i.task_id=t.id
               where i.id in (:'expected_invocation',:'other_invocation'));
+set local session_replication_role = origin;
 select private.aios_expire_stale_approvals();
 select (select status='expired' from public.aios_tool_invocations where id=:'expected_invocation'::uuid)
    and (select status='requires_approval' from public.aios_tool_invocations where id=:'other_invocation'::uuid)
