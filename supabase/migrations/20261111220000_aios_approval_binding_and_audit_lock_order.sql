@@ -220,3 +220,25 @@ begin
   return new;
 end;
 $$;
+
+
+-- The restoration guard intentionally fingerprints trigger functions. This migration
+-- changes the registered audit append function's GUC (UTC) without changing the
+-- trigger definition; advance exactly that one expected function fingerprint.
+do $pin$
+declare v_rows int;
+begin
+  update private.aios_guarded_triggers
+     set expected_function_fp = private.aios_function_fingerprint('private.aios_audit_append()'::regprocedure),
+         registered_at = clock_timestamp(),
+         registered_by = session_user
+   where schema_name = 'public'
+     and table_name = 'aios_audit_events'
+     and trigger_name = 'trg_aios_audit_hash'
+     and expected_function = 'private.aios_audit_append()';
+  get diagnostics v_rows = row_count;
+  if v_rows <> 1 then
+    raise exception 'expected exactly one guarded audit append trigger registration, updated %', v_rows;
+  end if;
+end
+$pin$;
