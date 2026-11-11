@@ -171,7 +171,39 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           bash tests/concurrency/expiry_race.sh "$DB_URL" 2>&1 | tee /tmp/expiry-race.txt; exit ${PIPESTATUS[0]}
-      # Proves each smoke check fails on its target defect and the runner fails closed (85 cases). Mutations are rolled back.
+      # Real-PostgreSQL mission/task authority races (event barriers, no sleeps as proof). Commits fixtures: throwaway CI database only.
+      - name: Mission/task authority races (lock order, terminal cascade)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          bash tests/concurrency/mission_task_races.sh "$DB_URL" 2>&1 | tee /tmp/mission-task-races.txt; exit ${PIPESTATUS[0]}
+      # Approval resolution / expiry job / reaper against the authorizer and mission cancel (global lock order, real PostgreSQL).
+      - name: Approval-path lock-order races
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e
+          export AOLO_EVIDENCE_DIR=/tmp/approval-lock-order-evidence
+          bash tests/concurrency/approval_lock_order.sh "$DB_URL" > /tmp/approval-lock-order.txt 2>&1; rc=$?
+          cat /tmp/approval-lock-order.txt
+          # Raw logs are not retrievable from every environment; surface the result as an annotation as well.
+          lvl=notice; [ $rc -ne 0 ] && lvl=error
+          echo "::$lvl title=approval-lock-order (rc=$rc)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/approval-lock-order.txt | { if [ $rc -ne 0 ]; then grep -nE '^(==|  (PASS|FAIL|barrier|deadlocks|worker exit codes))' /tmp/approval-lock-order.txt | head -c 1700; echo ' ## DIAGNOSTICS TAIL ##'; tail -c 1700 /tmp/approval-lock-order.txt; else head -c 3500 /tmp/approval-lock-order.txt; fi; } | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+          exit $rc
+      # Deterministic (event-barrier) forced interleavings: the audit advisory lock must never be held while waiting for a row lock (expiry job, reaper),
+      # and a lock conflict inside the per-record handler must be deferred, never recorded as a permanent manual_review disposition. Throwaway CI database only.
+      - name: Audit-lock order forced interleavings + lock-conflict deferral
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set +e; rc=0
+          for t in l3_audit_lock_forced l4_reaper_audit_lock_forced l3_lock_conflict_deferral l3_audit_lock_subtree_levels l4_reaper_whole_job_failure; do
+            L3F_EVIDENCE_DIR=/tmp/forced-evidence/$t L3S_EVIDENCE_DIR=/tmp/forced-evidence/$t bash tests/concurrency/$t.sh "$DB_URL" > /tmp/$t.txt 2>&1; r=$?; cat /tmp/$t.txt
+            lvl=notice; [ $r -ne 0 ] && lvl=error && rc=1
+            echo "::$lvl title=$t (rc=$r)::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/$t.txt | grep -E '^(==|  (PASS|FAIL|barrier))' | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+          done
+          exit $rc
+      # Proves each smoke check fails on its target defect and the runner fails closed (86 cases). Mutations are rolled back.
       - name: Smoke suite self-test
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
         run: |
@@ -192,6 +224,15 @@ jobs:
             /tmp/matrix-out
             /tmp/matrix-run.txt
             /tmp/expiry-race.txt
+            /tmp/mission-task-races.txt
+            /tmp/approval-lock-order.txt
+            /tmp/approval-lock-order-evidence
+            /tmp/forced-evidence
+            /tmp/l3_audit_lock_forced.txt
+            /tmp/l4_reaper_audit_lock_forced.txt
+            /tmp/l3_lock_conflict_deferral.txt
+            /tmp/l3_audit_lock_subtree_levels.txt
+            /tmp/l4_reaper_whole_job_failure.txt
             /tmp/sql.txt
             /tmp/smoke-selftest.txt
             /tmp/start.txt
