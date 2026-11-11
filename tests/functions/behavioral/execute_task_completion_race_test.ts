@@ -55,7 +55,7 @@ Deno.test("execute-task: cancellation after tool result sealing prevents task co
   };
 
   const r = await call("execute-task", { task_id: "task-1" });
-  eq(cancellationFired, true, "cancellation barrier fired after tool success was sealed");
+  eq(cancellationFired, true, `cancellation barrier fired after tool success was sealed; response=${JSON.stringify(r)} ops=${JSON.stringify(world.ops.map((op) => ({ table: op.table, mode: op.mode, patch: op.patch })))}`);
   eq(model.calls, 2, "planning and final analysis each ran once");
   eq(r.status, 409, "completion loses to cancellation");
   eq(world.tables.aios_tasks[0].status, "cancelled", "task remains cancelled");
