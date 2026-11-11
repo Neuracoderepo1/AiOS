@@ -141,9 +141,20 @@ check "cancels either committed or were rejected only by the terminal-state guar
 check "no live invocation left under a cancelled mission" "$([ "$bi" = 0 ] && echo true || echo false)"
 
 echo "== L4: stale-task reaper vs mission cancellation ($PAIRS pairs)"
-ch=(); W=(); for k in $(seq 1 $PAIRS); do read M T I A <<<"$(new_chain l4$k)"; ch+=("$M $T $I $A")
-  q "update public.aios_tasks set status='running' where id='$T'; update public.aios_missions set status='running' where id='$M'" >/dev/null 2>&1 || true
+# FIXTURE FIX: an earlier version built these with new_chain and ignored the failure of "task blocked_pending_approval -> running" (rejected by the task
+# state guard), so the tasks were never 'running' and the reaper never selected them: L4 passed without exercising the reaper. Build genuinely stale
+# running tasks and fail closed if the precondition does not hold.
+new_stale() { # <label>: mission+task 'running' and stale (no invocation). Echoes "M T".
+  local out M T; out=$(q "with m as (insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','alo-$1','alo','queued') returning id),
+          t as (insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status) select '$ORG',id,'$AGT','alo-$1','queued' from m returning id,mission_id)
+     select mission_id||' '||id from t" | tail -1)
+  read M T <<<"$out"; need_ids "$M" "$T"
+  q "update public.aios_missions set status='running' where id='$M'; update public.aios_tasks set status='running' where id='$T'" >/dev/null || { echo "  FIXTURE: cannot make task running"; exit 2; }
   q "begin; set local session_replication_role = replica; update public.aios_tasks set updated_at = now() - interval '1 hour' where id='$T'; commit;" >/dev/null
+  echo "$M $T"
+}
+ch=(); W=(); for k in $(seq 1 $PAIRS); do read M T <<<"$(new_stale l4$k)"; ch+=("$M $T x x")
+  [ "$(q "select count(*) from public.aios_tasks where id='$T' and status='running' and updated_at < now() - interval '10 minutes'")" = 1 ] || { echo "  FIXTURE: L4 task is not running+stale; refusing to report"; exit 2; }
   W+=("select private.aios_reap_stale_tasks('10 minutes'::interval);" "$(CANCEL $M)"); done
 gate_run l4 "${W[@]}"; cc=$(cancelled_count "${ch[@]}"); echo "  deadlocks=$DEAD cancels_committed=$cc/$PAIRS"
 check "no deadlock between the reaper and mission cancel" "$([ "$DEAD" = 0 ] && echo true || echo false)"
