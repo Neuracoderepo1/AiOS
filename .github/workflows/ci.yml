@@ -304,6 +304,16 @@ jobs:
       - name: Reverse-linked approval lock-order static and mutation controls
         run: python3 -m unittest -v tests.security.test_reverse_linked_approval_prelock
 
+      # Equal created_at reverse links must resolve identically in phase-one and phase-two.
+      - name: Tied reverse-link approval resolver regression (real PostgreSQL)
+        if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          set -o pipefail
+          bash tests/concurrency/approval_resolver_tie_break.sh "$DB_URL" 2>&1 | tee /tmp/approval-resolver-tie-break.txt
+      - name: Shared approval resolver static and mutation controls
+        run: python3 -m unittest -v tests.security.test_shared_approval_invocation_resolver
+
       # Deterministic (event-barrier) forced interleavings: the audit advisory lock must never be held while waiting for a row lock (expiry job, reaper),
       # and a lock conflict inside the per-record handler must be deferred, never recorded as a permanent manual_review disposition. Throwaway CI database only.
       - name: Audit-lock order forced interleavings + lock-conflict deferral
@@ -342,6 +352,7 @@ jobs:
             /tmp/approval-lock-order.txt
             /tmp/approval-lock-order-evidence
             /tmp/reverse-linked-approval-prelock.txt
+            /tmp/approval-resolver-tie-break.txt
             /tmp/forced-evidence
             /tmp/l3_audit_lock_forced.txt
             /tmp/l4_reaper_audit_lock_forced.txt
