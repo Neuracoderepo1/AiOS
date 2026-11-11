@@ -64,6 +64,15 @@ select mx.rec('D07.4c', 'roles',
           and not rolcreaterole and not rolreplication and not rolbypassrls
    from pg_catalog.pg_roles where rolname = 'aios_restorer'),
   'all seven restrictive role attributes are verified');
+savepoint s_unsafe_existing_role;
+alter role aios_restorer login inherit;
+select mx.rec('D07.4d', 'roles',
+  private.aios_restorer_boundary_violations()::text like '%restorer_can_login%'
+  and private.aios_restorer_boundary_violations()::text like '%restorer_inherits_roles%'
+  and (select rolcanlogin and rolinherit from pg_catalog.pg_roles where rolname = 'aios_restorer'),
+  'unsafe pre-existing attributes are detected and remain unrepaired');
+rollback to s_unsafe_existing_role;
+
 
 
 -- application roles: no EXECUTE, no table access (every restoration entry point and every table)
