@@ -63,7 +63,10 @@ begin
   return jsonb_build_object('task_id',p_task_id,'quarantine_resolved',true,'resolved_by',v_actor);
 end
 $resolve$;
-revoke all on function public.aios_resolve_task_reaper_quarantine(uuid,text) from public, anon;
+-- Owner-only: identity comes from auth.uid(), which any session can set via request.jwt.claim.sub, so the EXECUTE grant is the
+-- barrier against a service-side role presenting an owner identity. Platform default privileges grant service_role EXECUTE on new
+-- public functions; revoke it explicitly rather than rely on the body check alone.
+revoke all on function public.aios_resolve_task_reaper_quarantine(uuid,text) from public, anon, service_role;
 grant execute on function public.aios_resolve_task_reaper_quarantine(uuid,text) to authenticated;
 
 create or replace function private.aios_reap_stale_tasks(p_max_age interval DEFAULT '00:10:00'::interval)
