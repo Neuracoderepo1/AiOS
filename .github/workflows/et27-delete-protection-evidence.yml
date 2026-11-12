@@ -43,6 +43,13 @@ jobs:
           done
           echo "::notice title=ET27D supabase start::started=$started after attempt $attempt"
           [ "$started" = 1 ]
+      - name: Verify startup logs contain no unredacted Supabase keys
+        run: |
+          if grep -Eq 'sb_(secret|publishable)_[A-Za-z0-9_-]+' /tmp/start.txt; then
+            echo "::error::unredacted Supabase key found in startup log"
+            exit 1
+          fi
+          echo "PASS no unredacted Supabase secret or publishable key in startup log"
       - name: Run delete protection suite
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
