@@ -193,31 +193,24 @@ begin
       if not pg_catalog.pg_try_advisory_xact_lock(
         pg_catalog.hashtextextended(coalesce(r.organization_id::text,''),0)
       ) then
-        v_failed_orgs := array_append(v_failed_orgs,r.organization_id);
-        for v_task_id in
-          select t.id from public.aios_tasks t
-          where t.id = any(v_ids) and t.organization_id = r.organization_id
-        loop
-          if not (v_deferred_diag ? v_task_id::text) then
-            v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
-              -- pg_try_advisory_xact_lock returns boolean and raises no SQLSTATE on false.
-              -- Store NULL rather than inventing a PostgreSQL error code.
-              jsonb_build_object('sqlstate',null,'error',
-                'organization audit advisory lock unavailable (pg_try_advisory_xact_lock returned false)'));
-          end if;
-        end loop;
+        -- Convert the non-blocking false result into PostgreSQL's canonical
+        -- lock_not_available SQLSTATE so every deferred record has an explicit,
+        -- machine-readable cause. The exception is contained by this org savepoint.
+        raise exception 'organization audit advisory lock unavailable (pg_try_advisory_xact_lock returned false)'
+          using errcode = '55P03';
       end if;
     exception when others then
       if private.aios_is_lock_conflict(sqlstate) then
         v_failed_orgs := array_append(v_failed_orgs,r.organization_id);
+        -- Organization-level contention supersedes any earlier per-mission
+        -- diagnostic: every candidate in this organization is deferred for this
+        -- precise reason and must not receive a public transition or audit write.
         for v_task_id in
           select t.id from public.aios_tasks t
           where t.id = any(v_ids) and t.organization_id = r.organization_id
         loop
-          if not (v_deferred_diag ? v_task_id::text) then
-            v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
-              jsonb_build_object('sqlstate',sqlstate,'error',sqlerrm));
-          end if;
+          v_deferred_diag := v_deferred_diag || jsonb_build_object(v_task_id::text,
+            jsonb_build_object('sqlstate',sqlstate,'error',sqlerrm));
         end loop;
       else
         raise;
