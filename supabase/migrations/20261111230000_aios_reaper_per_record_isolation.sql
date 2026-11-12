@@ -37,14 +37,17 @@ begin
   if p_resolution_note is null or length(btrim(p_resolution_note)) < 12 then
     raise exception 'resolution note must contain at least 12 characters' using errcode = '22023';
   end if;
-  select q.organization_id into v_org from private.aios_task_reaper_quarantine q
-    where q.task_id=p_task_id and q.resolved_at is null for update;
-  if not found then raise exception 'active task quarantine not found' using errcode = 'P0002'; end if;
+  -- Authorize against the task's organization before revealing whether a quarantine exists.
+  select t.organization_id into v_org from public.aios_tasks t where t.id=p_task_id;
+  if not found then raise exception 'task not found' using errcode = 'P0002'; end if;
   if not exists (select 1 from public.aios_organization_members m
     where m.organization_id=v_org and m.user_id=v_actor
       and m.role::text in ('owner','admin','administrator')) then
     raise exception 'organization owner/admin authorization required' using errcode = '42501';
   end if;
+  perform 1 from private.aios_task_reaper_quarantine q
+    where q.task_id=p_task_id and q.resolved_at is null for update;
+  if not found then raise exception 'active task quarantine not found' using errcode = 'P0002'; end if;
   update private.aios_task_reaper_quarantine set resolved_at=clock_timestamp(),
     resolved_by=v_actor,resolution_note=btrim(p_resolution_note)
     where task_id=p_task_id and resolved_at is null;
