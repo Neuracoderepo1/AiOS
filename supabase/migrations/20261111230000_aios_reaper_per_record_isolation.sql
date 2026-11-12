@@ -31,7 +31,12 @@ revoke all on private.aios_task_reaper_quarantine from public, anon, authenticat
 create or replace function public.aios_resolve_task_reaper_quarantine(
   p_task_id uuid, p_resolution_note text
 ) returns jsonb language plpgsql security definer set search_path = '' as $resolve$
-declare v_org uuid; v_actor uuid := auth.uid(); v_rows integer;
+declare
+  v_org uuid;
+  v_actor uuid := auth.uid();
+  v_rows integer;
+  v_member_role text;
+
 begin
   if v_actor is null then raise exception 'authenticated owner identity required' using errcode = '42501'; end if;
   if p_resolution_note is null or length(btrim(p_resolution_note)) < 12 then
@@ -40,11 +45,18 @@ begin
   -- Authorize against the task's organization before revealing whether a quarantine exists.
   select t.organization_id into v_org from public.aios_tasks t where t.id=p_task_id;
   if not found then raise exception 'task not found' using errcode = 'P0002'; end if;
-  if not exists (select 1 from public.aios_organization_members m
-    where m.organization_id=v_org and m.user_id=v_actor
-      and m.role::text in ('owner','admin','administrator')) then
+  -- Authorization linearizes on the membership row lock. If a demotion/revocation
+  -- commits first, this locking read observes the new role and denies resolution.
+  -- If this transaction locks first, the membership change waits until resolution
+  -- commits; the two operations therefore have a deterministic serial order.
+  select m.role::text into v_member_role
+  from public.aios_organization_members m
+  where m.organization_id=v_org and m.user_id=v_actor
+  for update;
+  if not found or v_member_role not in ('owner','admin','administrator') then
     raise exception 'organization owner/admin authorization required' using errcode = '42501';
   end if;
+  -- Lock order for this RPC is membership row, then quarantine row.
   perform 1 from private.aios_task_reaper_quarantine q
     where q.task_id=p_task_id and q.resolved_at is null for update;
   if not found then raise exception 'active task quarantine not found' using errcode = 'P0002'; end if;
@@ -309,15 +321,36 @@ begin
         where id=r.id and status='running';
         v_task_updated := found;
 
-        if v_task_updated and r.mission_id is not null then
-          update public.aios_missions m set status='failed',completed_at=now()
-          where m.id=r.mission_id and m.status='running'
-            and not exists(select 1 from public.aios_tasks s where s.mission_id=m.id
-              and s.status in ('queued','assigned','ready','running','approved','blocked_pending_approval'));
+        if v_task_updated then
+          if r.mission_id is not null then
+            update public.aios_missions m set status='failed',completed_at=now()
+            where m.id=r.mission_id and m.status='running'
+              and not exists(select 1 from public.aios_tasks s where s.mission_id=m.id
+                and s.status in ('queued','assigned','ready','running','approved','blocked_pending_approval'));
+          end if;
+          delete from private.aios_task_reaper_deferred where task_id=r.id;
+          v_failed:=v_failed+1;
+          v_outcome:='reaped';
+        else
+          -- A BEFORE UPDATE trigger may suppress a row update by returning NULL.
+          -- Do not report success or erase retry state when the task remains running.
+          -- Quarantine this invariant failure for an explicit owner decision.
+          insert into private.aios_task_reaper_quarantine(task_id,organization_id,reason,sqlstate)
+          values (r.id,r.organization_id,
+            'Stale-task recovery UPDATE matched no row; task was not transitioned', 'P0002')
+          on conflict(task_id) do update set organization_id=excluded.organization_id,
+            reason=excluded.reason,sqlstate=excluded.sqlstate,created_at=clock_timestamp(),
+            resolved_at=null,resolved_by=null,resolution_note=null;
+          delete from private.aios_task_reaper_deferred where task_id=r.id;
+          insert into public.aios_backlog_dispositions
+            (organization_id,entity_type,entity_id,classification,disposition,rationale,decided_by)
+          values (r.organization_id,'task',r.id,'needs_owner_review','manual_review',
+            'Stale-task recovery UPDATE matched no row; task remains unchanged and requires owner review.',
+            'job:aios_reap_stale_tasks')
+          on conflict do nothing;
+          v_quarantined:=v_quarantined+1;
+          v_outcome:='quarantined';
         end if;
-        delete from private.aios_task_reaper_deferred where task_id=r.id;
-        v_failed:=v_failed+1;
-        v_outcome:='reaped';
       end if;
 
       if v_outcome in ('blocked','skipped') then
