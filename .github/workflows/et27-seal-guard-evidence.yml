@@ -29,6 +29,13 @@ jobs:
           set -o pipefail
           ls supabase/migrations | wc -l | tee /tmp/migration_count.txt
           supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector 2>&1 | sed -E 's/sb_(secret|publishable)_[A-Za-z0-9_-]+/[REDACTED_SUPABASE_KEY]/g' | tee /tmp/start.txt
+      - name: Verify startup logs contain no unredacted Supabase keys
+        run: |
+          if grep -Eq 'sb_(secret|publishable)_[A-Za-z0-9_-]+' /tmp/start.txt; then
+            echo "::error::unredacted Supabase key found in startup log"
+            exit 1
+          fi
+          echo "PASS no unredacted Supabase secret or publishable key in startup log"
       - name: Run seal guard suite
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
