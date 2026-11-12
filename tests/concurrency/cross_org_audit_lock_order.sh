@@ -58,6 +58,7 @@ q "select
   position('aios_prelock_audit_organizations' in pg_get_functiondef('private.aios_expire_stale_approvals()'::regprocedure)) > 0
   and position('pg_try_advisory_xact_lock' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
   and position('hashtextextended' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
+  and position('order by x.organization_id' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
   and position('order by x.organization_id' in pg_get_functiondef('private.aios_prelock_audit_organizations(uuid[])'::regprocedure)) > 0" | grep -qx t
 echo "  PASS expiry uses sorted audit prelock; reaper uses matching non-blocking organization audit key"
 echo "== cross-organization audit lock ordering: PASS"
