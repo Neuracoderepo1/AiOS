@@ -14,7 +14,7 @@ REQ="$(q "select gen_random_uuid()")"
 ORG2="$(q "select gen_random_uuid()")"; AGT2="$(q "select gen_random_uuid()")"
 LOCK_PID=""; LOCK_LOG=""
 verify_chain() {
-  q "select set_config('request.jwt.claims','{\\"role\\":\\"service_role\\"}',false); select (private.verify_audit_chain('$1'))->>'valid'" | tail -1
+  q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$1'))->>'valid'" | tail -1
 }
 cleanup() {
   rc=$?
