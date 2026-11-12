@@ -13,6 +13,8 @@ ORG="$(q "select gen_random_uuid()")"; AGT="$(q "select gen_random_uuid()")"
 REQ="$(q "select gen_random_uuid()")"
 ORG2="$(q "select gen_random_uuid()")"; AGT2="$(q "select gen_random_uuid()")"
 LOCK_PID=""; LOCK_LOG=""
+AUTH_LOCK_PID=""; AUTH_LOCK_LOG=""
+AUTH_RESOLVER_PID=""; AUTH_RESOLVER_LOG=""
 verify_chain() {
   q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$1'))->>'valid'" | tail -1
 }
@@ -20,7 +22,11 @@ cleanup() {
   rc=$?
   trap - EXIT
   if [ -n "$LOCK_PID" ]; then kill "$LOCK_PID" 2>/dev/null || true; wait "$LOCK_PID" 2>/dev/null || true; fi
+  if [ -n "$AUTH_LOCK_PID" ]; then kill "$AUTH_LOCK_PID" 2>/dev/null || true; wait "$AUTH_LOCK_PID" 2>/dev/null || true; fi
+  if [ -n "$AUTH_RESOLVER_PID" ]; then kill "$AUTH_RESOLVER_PID" 2>/dev/null || true; wait "$AUTH_RESOLVER_PID" 2>/dev/null || true; fi
   [ -z "$LOCK_LOG" ] || rm -f "$LOCK_LOG"
+  [ -z "$AUTH_LOCK_LOG" ] || rm -f "$AUTH_LOCK_LOG"
+  [ -z "$AUTH_RESOLVER_LOG" ] || rm -f "$AUTH_RESOLVER_LOG"
   # Throwaway CI database only: remove the complete fixture, including audit evidence.
   psql "$DB" -X -q -v ON_ERROR_STOP=1 >/dev/null <<SQL || rc=1
 begin;
@@ -66,16 +72,18 @@ new_stale() {
 status() { q "select status from public.aios_tasks where id='$1'"; }
 audits() { q "select count(*) from public.aios_audit_events where organization_id='$ORG'"; }
 
-echo "== fixture: four stale tasks on four independent missions"
+echo "== fixture: five stale tasks on five independent missions"
 read M1 T1 <<<"$(new_stale ok1)"; read M2 T2 <<<"$(new_stale bad1)"
 read M3 T3 <<<"$(new_stale ok2)"; read M4 T4 <<<"$(new_stale retry)"
-need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4"
-[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4') and status='running' and updated_at<now()-interval '10 minutes'")" = 4 ] || { echo "fixture not stale"; exit 2; }
+read M5 T5 <<<"$(new_stale suppressed-update)"
+need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5"
+[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5') and status='running' and updated_at<now()-interval '10 minutes'")" = 5 ] || { echo "fixture not stale"; exit 2; }
 
 q "create or replace function public.l4_wj_test_fn() returns trigger language plpgsql as \$t\$
      begin
        if new.status='failed' and new.id='$T2' then raise exception 'forced invariant error' using errcode='XX001'; end if;
        if new.status='failed' and new.id='$T4' then raise exception 'forced transient lock conflict' using errcode='40P01'; end if;
+       if new.status='failed' and new.id='$T5' then return null; end if;
        return new;
      end \$t\$;
      create trigger l4_wj_test_trg before update on public.aios_tasks for each row execute function public.l4_wj_test_fn();" >/dev/null
@@ -90,6 +98,9 @@ check "T3 committed despite T4 lock conflict" "$([ "$(status "$T3")" = failed ] 
 check "T4 remains running after lock conflict" "$([ "$(status "$T4")" = running ] && echo true || echo false)"
 check "T4 has durable retry state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4' and last_sqlstate='40P01'")" = 1 ] && echo true || echo false)"
 check "T4 has no permanent disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T4'")" = 0 ] && echo true || echo false)"
+check "T5 remains running when a BEFORE UPDATE trigger suppresses its transition" "$([ "$(status "$T5")" = running ] && echo true || echo false)"
+check "suppressed T5 transition is quarantined with P0002" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T5' and resolved_at is null and sqlstate='P0002'")" = 1 ] && echo true || echo false)"
+check "suppressed T5 transition receives one manual-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T5' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
 check "return value reports deferred and quarantined records" "$([ "$(q "select ('$R'::jsonb->>'deferred')::int")" -ge 1 ] && [ "$(q "select ('$R'::jsonb->>'quarantined')::int")" -ge 1 ] && echo true || echo false)"
 check "audit chain valid after run 1" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 
@@ -127,9 +138,50 @@ for ROLE in anon service_role; do
   check "$ROLE with a spoofed owner identity is refused before the function body runs" "$([ "$ROLE_RC" -ne 0 ] && echo "$ROLE_OUT" | grep -q 'permission denied for function' && echo true || echo false)"
 done
 
+echo "== authorization race: committed owner demotion wins before quarantine resolution"
+q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';" >/dev/null
+AUTH_LOCK_LOG=$(mktemp)
+(
+  psql "$DB" -X -At -q -v ON_ERROR_STOP=1 >"$AUTH_LOCK_LOG" 2>&1 <<SQL
+begin;
+update public.aios_organization_members set role='member'
+where organization_id='$ORG' and user_id='$REQ';
+select 'F2_MEMBER_DEMOTION_HELD';
+select pg_sleep(12);
+commit;
+SQL
+) &
+AUTH_LOCK_PID=$!
+i=0
+until grep -q F2_MEMBER_DEMOTION_HELD "$AUTH_LOCK_LOG" 2>/dev/null; do
+  i=$((i+1)); [ "$i" -gt 200 ] && { echo "membership demotion never reached barrier"; exit 2; }
+  sleep 0.05
+done
+AUTH_RESOLVER_LOG=$(mktemp)
+(
+  PGAPPNAME=f2-membership-race-resolver psql "$DB" -X -At -v ON_ERROR_STOP=1 -c "select set_config('request.jwt.claim.sub','$REQ',false); select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"authenticated\"}',false); select public.aios_resolve_task_reaper_quarantine('$T2','Concurrent demotion must prevent owner quarantine release.');" >"$AUTH_RESOLVER_LOG" 2>&1
+) &
+AUTH_RESOLVER_PID=$!
+i=0; AUTH_WAITING=0
+while [ "$i" -lt 200 ]; do
+  AUTH_WAITING=$(q "select count(*) from pg_stat_activity where application_name='f2-membership-race-resolver' and state='active' and wait_event_type='Lock'")
+  [ "$AUTH_WAITING" = 1 ] && break
+  if ! kill -0 "$AUTH_RESOLVER_PID" 2>/dev/null; then break; fi
+  i=$((i+1)); sleep 0.05
+done
+check "resolver blocks on the membership row while demotion holds it" "$([ "$AUTH_WAITING" = 1 ] && echo true || echo false)"
+wait "$AUTH_LOCK_PID" || { echo "membership demotion transaction failed"; exit 2; }
+AUTH_LOCK_PID=""
+wait "$AUTH_RESOLVER_PID"; AUTH_RESOLVER_RC=$?
+AUTH_RESOLVER_PID=""
+check "resolver is denied after the committed owner demotion" "$([ "$AUTH_RESOLVER_RC" -ne 0 ] && grep -q 'organization owner/admin authorization required' "$AUTH_RESOLVER_LOG" && echo true || echo false)"
+check "denied race leaves quarantine active and unresolved" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is null")" = 1 ] && echo true || echo false)"
+check "denied race creates no owner-decision disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and classification='owner_decision'")" = 0 ] && echo true || echo false)"
+rm -f "$AUTH_LOCK_LOG" "$AUTH_RESOLVER_LOG"; AUTH_LOCK_LOG=""; AUTH_RESOLVER_LOG=""
+q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';" >/dev/null
+
 echo "== owner resolution: authorized org owner releases quarantine"
-q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';
-   select set_config('request.jwt.claim.sub','$REQ',false);
+q "select set_config('request.jwt.claim.sub','$REQ',false);
    select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"authenticated\"}',false);
    select public.aios_resolve_task_reaper_quarantine('$T2','Owner inspected the invariant failure and approved reprocessing.');" >/dev/null
 check "owner resolution is durably recorded" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is not null and resolved_by='$REQ' and length(resolution_note)>=12")" = 1 ] && echo true || echo false)"
