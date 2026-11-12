@@ -70,6 +70,22 @@ MEMBER_DENIAL=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -c "select set_config('requ
 MEMBER_RC=$?
 check "ordinary member cannot resolve quarantine" "$([ "$MEMBER_RC" -ne 0 ] && echo "$MEMBER_DENIAL" | grep -q 'organization owner/admin authorization required' && echo true || echo false)"
 
+echo "== owner-only RPC privilege boundary: only authenticated may execute (no PUBLIC / anon / service_role)"
+# The function body authorizes by auth.uid(), which any session can set through request.jwt.claim.sub. The EXECUTE grant is the
+# only barrier that stops a service-side role from presenting an owner identity, so it is asserted directly and with real roles.
+RPC='public.aios_resolve_task_reaper_quarantine(uuid,text)'
+check "authenticated can execute the owner resolution RPC" "$([ "$(q "select has_function_privilege('authenticated','$RPC','execute')")" = t ] && echo true || echo false)"
+check "anon cannot execute the owner resolution RPC" "$([ "$(q "select has_function_privilege('anon','$RPC','execute')")" = f ] && echo true || echo false)"
+check "service_role cannot execute the owner resolution RPC" "$([ "$(q "select has_function_privilege('service_role','$RPC','execute')")" = f ] && echo true || echo false)"
+check "PUBLIC holds no EXECUTE on the owner resolution RPC" "$([ "$(q "select count(*) from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where p.oid='$RPC'::regprocedure and a.grantee=0 and a.privilege_type='EXECUTE'")" = 0 ] && echo true || echo false)"
+# Real calls with a spoofed owner identity against a task id that does not exist: a correct ACL refuses before the body runs
+# ('permission denied for function'); a wrong ACL reaches the body ('task not found') and never mutates quarantine state.
+for ROLE in anon service_role; do
+  ROLE_OUT=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -c "begin; set local role $ROLE; select set_config('request.jwt.claim.sub','$REQ',true); select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"$ROLE\"}',true); select public.aios_resolve_task_reaper_quarantine('b4b4b4b4-0000-4000-8000-0000000000ff','Role must not reach the function body.'); rollback;" 2>&1)
+  ROLE_RC=$?
+  check "$ROLE with a spoofed owner identity is refused before the function body runs" "$([ "$ROLE_RC" -ne 0 ] && echo "$ROLE_OUT" | grep -q 'permission denied for function' && echo true || echo false)"
+done
+
 echo "== owner resolution: authorized org owner releases quarantine"
 q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';
    select set_config('request.jwt.claim.sub','$REQ',false);
