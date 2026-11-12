@@ -89,9 +89,9 @@ echo "== fixture: seven stale tasks across six missions; two share a structural-
 read M1 T1 <<<"$(new_stale ok1)"; read M2 T2 <<<"$(new_stale bad1)"
 read M3 T3 <<<"$(new_stale ok2)"; read M4 T4 <<<"$(new_stale retry)"
 read M5 T5 <<<"$(new_stale suppressed-update)"
-STRUCTURAL_MISSION="$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','f2-structural','f2','running') returning id")"
-STRUCTURAL_TASK1="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-1','running',now()-interval '60 minutes') returning id")"
-STRUCTURAL_TASK2="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-2','running',now()-interval '60 minutes') returning id")"
+STRUCTURAL_MISSION="$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','f2-structural','f2','running') returning id" | tail -1)"
+STRUCTURAL_TASK1="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-1','running',now()-interval '60 minutes') returning id" | tail -1)"
+STRUCTURAL_TASK2="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-2','running',now()-interval '60 minutes') returning id" | tail -1)"
 need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5" "$STRUCTURAL_MISSION" "$STRUCTURAL_TASK1" "$STRUCTURAL_TASK2"
 [ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5','$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and status='running' and updated_at<now()-interval '10 minutes'")" = 7 ] || { echo "fixture not stale"; exit 2; }
 
