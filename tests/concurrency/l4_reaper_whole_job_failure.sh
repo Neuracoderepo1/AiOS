@@ -25,10 +25,15 @@ cleanup() {
   psql "$DB" -X -q -v ON_ERROR_STOP=1 >/dev/null <<SQL || rc=1
 begin;
 set local session_replication_role=replica;
+-- The audit DELETE guard is ENABLE ALWAYS, so replication_role alone cannot bypass it.
+-- This is a disposable CI database: temporarily disable only that guard for fixture cleanup,
+-- then restore its ALWAYS state before committing the cleanup transaction.
+alter table public.aios_audit_events disable trigger trg_aios_audit_immutable_delete;
 drop trigger if exists l4_wj_test_trg on public.aios_tasks;
 drop function if exists public.l4_wj_test_fn();
 delete from public.aios_backlog_dispositions where organization_id in ('$ORG','$ORG2');
 delete from public.aios_audit_events where organization_id in ('$ORG','$ORG2');
+alter table public.aios_audit_events enable always trigger trg_aios_audit_immutable_delete;
 delete from private.aios_task_reaper_deferred where task_id in (select id from public.aios_tasks where organization_id in ('$ORG','$ORG2'));
 delete from private.aios_task_reaper_quarantine where task_id in (select id from public.aios_tasks where organization_id in ('$ORG','$ORG2'));
 delete from public.aios_tasks where organization_id in ('$ORG','$ORG2');
