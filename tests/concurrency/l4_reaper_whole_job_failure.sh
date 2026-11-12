@@ -65,6 +65,7 @@ check "repeat run does not duplicate T2 disposition" "$([ "$(q "select count(*) 
 check "repeat run produces no T2 audit transition" "$([ "$(audits)" = "$AUDIT_BEFORE" ] && echo true || echo false)"
 
 echo "== owner resolution: ordinary member is denied"
+q "update public.aios_organization_members set role=\x27member\x27 where organization_id=\x27$ORG\x27 and user_id=\x27$REQ\x27;" >/dev/null
 MEMBER_DENIAL=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -c "select set_config('request.jwt.claim.sub','$REQ',false); select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"authenticated\"}',false); select public.aios_resolve_task_reaper_quarantine('$T2','Member must not release an owner quarantine.');" 2>&1)
 MEMBER_RC=$?
 check "ordinary member cannot resolve quarantine" "$([ "$MEMBER_RC" -ne 0 ] && echo "$MEMBER_DENIAL" | grep -q 'organization owner/admin authorization required' && echo true || echo false)"
