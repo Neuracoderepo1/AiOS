@@ -74,6 +74,7 @@ q "create or replace function public.l4_wj_test_fn() returns trigger language pl
      create trigger l4_wj_test_trg before update on public.aios_tasks for each row execute function public.l4_wj_test_fn();" >/dev/null
 
 echo "== run 1: independent recoveries; T2 quarantined; T4 deferred"
+check "audit chain valid before run 1" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 R=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "reaper raised"; exit 1; }
 check "T1 committed despite later record failure" "$([ "$(status "$T1")" = failed ] && echo true || echo false)"
 check "T2 rolled back and remains running" "$([ "$(status "$T2")" = running ] && echo true || echo false)"
@@ -83,9 +84,11 @@ check "T4 remains running after lock conflict" "$([ "$(status "$T4")" = running 
 check "T4 has durable retry state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4' and last_sqlstate='40P01'")" = 1 ] && echo true || echo false)"
 check "T4 has no permanent disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T4'")" = 0 ] && echo true || echo false)"
 check "return value reports deferred and quarantined records" "$([ "$(q "select ('$R'::jsonb->>'deferred')::int")" -ge 1 ] && [ "$(q "select ('$R'::jsonb->>'quarantined')::int")" -ge 1 ] && echo true || echo false)"
+check "audit chain valid after run 1" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 
 
 echo "== run 1b: unresolved quarantine is excluded from the next reaper run"
+check "audit chain valid before quarantine repeat" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 DISPOSITION_BEFORE=$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and disposition='manual_review'")
 AUDIT_BEFORE=$(audits)
 R1B=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "quarantine repeat raised"; exit 1; }
@@ -93,6 +96,7 @@ check "quarantined T2 remains untouched on repeat run" "$([ "$(status "$T2")" = 
 check "quarantine marker remains active" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is null")" = 1 ] && echo true || echo false)"
 check "repeat run does not duplicate T2 disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and disposition='manual_review'")" = "$DISPOSITION_BEFORE" ] && echo true || echo false)"
 check "repeat run produces no T2 audit transition" "$([ "$(audits)" = "$AUDIT_BEFORE" ] && echo true || echo false)"
+check "audit chain valid after quarantine repeat" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 
 echo "== owner resolution: ordinary member is denied"
 q "update public.aios_organization_members set role='member' where organization_id='$ORG' and user_id='$REQ';" >/dev/null
@@ -125,6 +129,7 @@ check "owner resolution is durably recorded" "$([ "$(q "select count(*) from pri
 check "owner decision is present in append-only history" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and classification='owner_decision' and disposition='owner_decision_retain'")" = 1 ] && echo true || echo false)"
 
 echo "== run 2: transient failure removed; retry is made eligible immediately"
+check "audit chain valid before run 2 retry" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 q "drop trigger l4_wj_test_trg on public.aios_tasks;
    update private.aios_task_reaper_deferred set next_attempt_at=now() where task_id='$T4';" >/dev/null
 R2=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "retry raised"; exit 1; }
@@ -132,7 +137,7 @@ check "T4 converged to failed on retry" "$([ "$(status "$T4")" = failed ] && ech
 check "owner-released T2 becomes eligible and converges after invariant is repaired" "$([ "$(status "$T2")" = failed ] && [ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is not null")" = 1 ] && echo true || echo false)"
 check "successful retry cleared deferred state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4'")" = 0 ] && echo true || echo false)"
 check "repeated run did not duplicate T1 disposition or recovery" "$([ "$(q "select count(*) from public.aios_tasks where id='$T1' and status='failed'")" = 1 ] && echo true || echo false)"
-check "audit chain remains valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
+check "audit chain valid after run 2 retry" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 echo "== run 3: one organization audit lock is held; another organization must still recover"
 q "insert into public.aios_organizations (id,name) values ('$ORG2','f2-org-independent') on conflict do nothing;
    insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG2','$REQ','member') on conflict do nothing;
@@ -156,6 +161,8 @@ read M6 T6 <<<"$(new_stale auditlock 60)"
 need_ids "$M6" "$T6"
 ORG_AUDIT_BEFORE=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG'")
 ORG_DISPOSITION_BEFORE=$(q "select count(*) from public.aios_backlog_dispositions where organization_id='$ORG'")
+check "organization A audit chain valid before run 3" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
+check "organization B audit chain valid before run 3" "$( [ "$(verify_chain "$ORG2")" = true ] && echo true || echo false)"
 LOCK_LOG=$(mktemp)
 (
   psql "$DB" -X -At -q -v ON_ERROR_STOP=1 >"$LOCK_LOG" 2>&1 <<SQL
@@ -187,7 +194,8 @@ check "unrelated organization task recovered while first org lock remains held" 
 check "unrelated organization mission reached terminal failed state" "$([ "$(q "select status from public.aios_missions where id='$M5'")" = failed ] && echo true || echo false)"
 wait "$LOCK_PID" || { echo "audit lock holder failed"; fail=1; }
 rm -f "$LOCK_LOG"; LOCK_LOG=""; LOCK_PID=""
-check "both organization audit chains remain valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && [ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG2'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
+check "organization A audit chain valid after run 3" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
+check "organization B audit chain valid after run 3" "$( [ "$(verify_chain "$ORG2")" = true ] && echo true || echo false)"
 
 echo
 # Remove the test-only owner-decision fixture so later production-profile smoke checks
