@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# One run per PR (or per ref). A newer push cancels the superseded PR run; main and manual runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Tool versions are pinned so a run is reproducible. Bump deliberately, in a PR that shows this workflow green.
 #   Deno 2.9.8 is the version `v2.x` resolved to in the last green run before pinning (run 41403693969).
 #   Supabase CLI 2.122.0 is the npm `latest` stable at that time (the previous `latest` pin did not record the version).
