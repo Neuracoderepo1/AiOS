@@ -33,7 +33,7 @@ cleanup() {
 begin;
 set local session_replication_role=replica;
 -- Restore the original mission-subtree locker if the structural-failure injection was installed.
-do \\$restore\\$
+do \$restore\$
 declare d text;
 begin
   if to_regprocedure('private.aios_lock_mission_subtree_f2_test_original(uuid)') is not null then
@@ -43,7 +43,7 @@ begin
     drop function private.aios_lock_mission_subtree_f2_test_original(uuid);
   end if;
 end
-\\$restore\\$;
+\$restore\$;
 -- The audit DELETE guard is ENABLE ALWAYS, so replication_role alone cannot bypass it.
 -- This is a disposable CI database: temporarily disable only that guard for fixture cleanup,
 -- then restore its ALWAYS state before committing the cleanup transaction.
