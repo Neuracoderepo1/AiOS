@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# One run per PR (or per ref). A newer push cancels the superseded PR run; main and manual runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   SUPABASE_CLI_VERSION: "2.122.0"
 
