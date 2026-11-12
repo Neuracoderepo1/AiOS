@@ -36,7 +36,7 @@ jobs:
           started=0
           for attempt in 1 2 3; do
             { echo "=== attempt $attempt pre-start $(date -u +%FT%TZ)"; ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':54[0-9]{3}$' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
-            if supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector 2>&1 | tee -a /tmp/start.txt; then started=1; break; fi
+            if supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector 2>&1 | sed -E 's/sb_(secret|publishable)_[A-Za-z0-9_-]+/[REDACTED_SUPABASE_KEY]/g' | tee -a /tmp/start.txt; then started=1; break; fi
             { echo "=== attempt $attempt FAILED; post-failure listeners"; ss -ltnpH 2>/dev/null | grep -E ':54[0-9]{3}\b' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
             supabase stop --no-backup >> /tmp/start.txt 2>&1 || true
             sleep 5
