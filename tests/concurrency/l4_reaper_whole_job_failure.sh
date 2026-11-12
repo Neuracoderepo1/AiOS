@@ -8,10 +8,40 @@ q() { psql "$DB" -X -At -v ON_ERROR_STOP=1 -c "$1"; }
 check() { if [ "$2" = "true" ]; then echo "  PASS $1"; else echo "  FAIL $1"; fail=1; fi; }
 . "$(dirname "$0")/cron_guard.sh"
 cron_pause "$DB" || { echo "cannot guarantee a quiet scheduler"; exit 1; }
-trap 'rc=$?; psql "$DB" -X -q -c "drop trigger if exists l4_wj_test_trg on public.aios_tasks; drop function if exists public.l4_wj_test_fn()" >/dev/null 2>&1; cron_restore || rc=1; exit $rc' EXIT
-ORG=b4b4b4b4-0000-4000-8000-000000000001; AGT=b4b4b4b4-0000-4000-8000-000000000002
-REQ=b4b4b4b4-0000-4000-8000-000000000003
-q "insert into auth.users (id,aud,role,email) values ('$REQ','authenticated','authenticated','f2-req@example.test') on conflict do nothing;
+# Every invocation receives fresh identities, isolating all three CI repetitions.
+ORG="$(q "select gen_random_uuid()")"; AGT="$(q "select gen_random_uuid()")"
+REQ="$(q "select gen_random_uuid()")"
+ORG2="$(q "select gen_random_uuid()")"; AGT2="$(q "select gen_random_uuid()")"
+LOCK_PID=""; LOCK_LOG=""
+verify_chain() {
+  q "select set_config('request.jwt.claims','{\\"role\\":\\"service_role\\"}',false); select (private.verify_audit_chain('$1'))->>'valid'" | tail -1
+}
+cleanup() {
+  rc=$?
+  trap - EXIT
+  if [ -n "$LOCK_PID" ]; then kill "$LOCK_PID" 2>/dev/null || true; wait "$LOCK_PID" 2>/dev/null || true; fi
+  [ -z "$LOCK_LOG" ] || rm -f "$LOCK_LOG"
+  # Throwaway CI database only: remove the complete fixture, including audit evidence.
+  psql "$DB" -X -q -v ON_ERROR_STOP=1 >/dev/null <<SQL || rc=1
+begin;
+set local session_replication_role=replica;
+delete from public.aios_backlog_dispositions where organization_id in ('$ORG','$ORG2');
+delete from public.aios_audit_events where organization_id in ('$ORG','$ORG2');
+delete from private.aios_task_reaper_deferred where task_id in (select id from public.aios_tasks where organization_id in ('$ORG','$ORG2'));
+delete from private.aios_task_reaper_quarantine where task_id in (select id from public.aios_tasks where organization_id in ('$ORG','$ORG2'));
+delete from public.aios_tasks where organization_id in ('$ORG','$ORG2');
+delete from public.aios_missions where organization_id in ('$ORG','$ORG2');
+delete from public.aios_agents where organization_id in ('$ORG','$ORG2');
+delete from public.aios_organization_members where organization_id in ('$ORG','$ORG2');
+delete from public.aios_organizations where id in ('$ORG','$ORG2');
+delete from auth.users where id='$REQ';
+commit;
+SQL
+  cron_restore || rc=1
+  exit "$rc"
+}
+trap cleanup EXIT
+q "insert into auth.users (id,aud,role,email) values ('$REQ','authenticated','authenticated','f2-$REQ@example.test') on conflict do nothing;
    insert into public.aios_organizations (id,name) values ('$ORG','f2-org') on conflict do nothing;
    insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$REQ','member') on conflict do nothing;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','f2-agent','f2','f2','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.export_customer_data\"],\"limits\":{}}') on conflict do nothing;" >/dev/null || { echo "fixture failed"; exit 2; }
@@ -104,7 +134,6 @@ check "successful retry cleared deferred state" "$([ "$(q "select count(*) from 
 check "repeated run did not duplicate T1 disposition or recovery" "$([ "$(q "select count(*) from public.aios_tasks where id='$T1' and status='failed'")" = 1 ] && echo true || echo false)"
 check "audit chain remains valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
 echo "== run 3: one organization audit lock is held; another organization must still recover"
-ORG2=b4b4b4b4-0000-4000-8000-000000000011; AGT2=b4b4b4b4-0000-4000-8000-000000000012
 q "insert into public.aios_organizations (id,name) values ('$ORG2','f2-org-independent') on conflict do nothing;
    insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG2','$REQ','member') on conflict do nothing;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority)
@@ -157,7 +186,7 @@ check "no public quarantine/disposition was appended for contended organization"
 check "unrelated organization task recovered while first org lock remains held" "$([ "$(status "$T5")" = failed ] && echo true || echo false)"
 check "unrelated organization mission reached terminal failed state" "$([ "$(q "select status from public.aios_missions where id='$M5'")" = failed ] && echo true || echo false)"
 wait "$LOCK_PID" || { echo "audit lock holder failed"; fail=1; }
-rm -f "$LOCK_LOG"
+rm -f "$LOCK_LOG"; LOCK_LOG=""; LOCK_PID=""
 check "both organization audit chains remain valid" "$([ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG'))->>'valid'" | tail -1)" = true ] && [ "$(q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$ORG2'))->>'valid'" | tail -1)" = true ] && echo true || echo false)"
 
 echo
