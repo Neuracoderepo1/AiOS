@@ -14,6 +14,7 @@ REQ="$(q "select gen_random_uuid()")"
 ORG2="$(q "select gen_random_uuid()")"; AGT2="$(q "select gen_random_uuid()")"
 LOCK_PID=""; LOCK_LOG=""
 AUTH_LOCK_PID=""; AUTH_LOCK_LOG=""
+STRUCTURAL_MISSION=""; STRUCTURAL_TASK1=""; STRUCTURAL_TASK2=""
 AUTH_RESOLVER_PID=""; AUTH_RESOLVER_LOG=""
 verify_chain() {
   q "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); select (private.verify_audit_chain('$1'))->>'valid'" | tail -1
@@ -31,6 +32,18 @@ cleanup() {
   psql "$DB" -X -q -v ON_ERROR_STOP=1 >/dev/null <<SQL || rc=1
 begin;
 set local session_replication_role=replica;
+-- Restore the original mission-subtree locker if the structural-failure injection was installed.
+do $restore$
+declare d text;
+begin
+  if to_regprocedure('private.aios_lock_mission_subtree_f2_test_original(uuid)') is not null then
+    d := pg_get_functiondef('private.aios_lock_mission_subtree_f2_test_original(uuid)'::regprocedure);
+    d := replace(d, 'private.aios_lock_mission_subtree_f2_test_original(', 'private.aios_lock_mission_subtree(');
+    execute d;
+    drop function private.aios_lock_mission_subtree_f2_test_original(uuid);
+  end if;
+end
+$restore$;
 -- The audit DELETE guard is ENABLE ALWAYS, so replication_role alone cannot bypass it.
 -- This is a disposable CI database: temporarily disable only that guard for fixture cleanup,
 -- then restore its ALWAYS state before committing the cleanup transaction.
@@ -72,12 +85,15 @@ new_stale() {
 status() { q "select status from public.aios_tasks where id='$1'"; }
 audits() { q "select count(*) from public.aios_audit_events where organization_id='$ORG'"; }
 
-echo "== fixture: five stale tasks on five independent missions"
+echo "== fixture: seven stale tasks across six missions; two share a structural-failure subtree"
 read M1 T1 <<<"$(new_stale ok1)"; read M2 T2 <<<"$(new_stale bad1)"
 read M3 T3 <<<"$(new_stale ok2)"; read M4 T4 <<<"$(new_stale retry)"
 read M5 T5 <<<"$(new_stale suppressed-update)"
-need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5"
-[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5') and status='running' and updated_at<now()-interval '10 minutes'")" = 5 ] || { echo "fixture not stale"; exit 2; }
+STRUCTURAL_MISSION="$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','f2-structural','f2','running') returning id")"
+STRUCTURAL_TASK1="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-1','running',now()-interval '60 minutes') returning id")"
+STRUCTURAL_TASK2="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-2','running',now()-interval '60 minutes') returning id")"
+need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5" "$STRUCTURAL_MISSION" "$STRUCTURAL_TASK1" "$STRUCTURAL_TASK2"
+[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5','$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and status='running' and updated_at<now()-interval '10 minutes'")" = 7 ] || { echo "fixture not stale"; exit 2; }
 
 q "create or replace function public.l4_wj_test_fn() returns trigger language plpgsql as \$t\$
      begin
@@ -88,7 +104,31 @@ q "create or replace function public.l4_wj_test_fn() returns trigger language pl
      end \$t\$;
      create trigger l4_wj_test_trg before update on public.aios_tasks for each row execute function public.l4_wj_test_fn();" >/dev/null
 
-echo "== run 1: independent recoveries; T2 quarantined; T4 deferred"
+# Preserve the real lock helper under a test-only name, then inject a deterministic
+# non-lock structural failure for one mission. Other mission locks still use the
+# original helper, so this exercises the phase-one catch/quarantine branch itself.
+q "do \$copy\$
+declare d text;
+begin
+  d := pg_get_functiondef('private.aios_lock_mission_subtree(uuid)'::regprocedure);
+  d := replace(d, 'private.aios_lock_mission_subtree(', 'private.aios_lock_mission_subtree_f2_test_original(');
+  if d not like '%aios_lock_mission_subtree_f2_test_original%' then
+    raise exception 'could not preserve original mission lock helper';
+  end if;
+  execute d;
+end
+\$copy\$;
+create or replace function private.aios_lock_mission_subtree(p_mission_id uuid)
+returns void language plpgsql security definer set search_path = '' as \$inject\$
+begin
+  if p_mission_id = '$STRUCTURAL_MISSION'::uuid then
+    raise exception 'forced structural mission-lock failure' using errcode='XX001';
+  end if;
+  perform private.aios_lock_mission_subtree_f2_test_original(p_mission_id);
+end
+\$inject\$;" >/dev/null
+
+echo "== run 1: independent recoveries; transition and structural failures quarantined; T4 deferred"
 check "audit chain valid before run 1" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 R=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "reaper raised"; exit 1; }
 check "T1 committed despite later record failure" "$([ "$(status "$T1")" = failed ] && echo true || echo false)"
@@ -101,6 +141,10 @@ check "T4 has no permanent disposition" "$([ "$(q "select count(*) from public.a
 check "T5 remains running when a BEFORE UPDATE trigger suppresses its transition" "$([ "$(status "$T5")" = running ] && echo true || echo false)"
 check "suppressed T5 transition is quarantined with P0002" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T5' and resolved_at is null and sqlstate='P0002'")" = 1 ] && echo true || echo false)"
 check "suppressed T5 transition receives one manual-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T5' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
+check "phase-one structural failure leaves both subtree tasks running" "$([ "$(status "$STRUCTURAL_TASK1")" = running ] && [ "$(status "$STRUCTURAL_TASK2")" = running ] && echo true || echo false)"
+check "phase-one structural failure quarantines every candidate in the subtree" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id in ('$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and resolved_at is null and reason like '%Structural failure%'")" = 2 ] && echo true || echo false)"
+check "phase-one structural failure records one manual-review disposition per task" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id in ('$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and disposition='manual_review'")" = 2 ] && echo true || echo false)"
+check "phase-one structural failure creates no transient deferred records" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id in ('$STRUCTURAL_TASK1','$STRUCTURAL_TASK2')")" = 0 ] && echo true || echo false)"
 check "return value reports deferred and quarantined records" "$([ "$(q "select ('$R'::jsonb->>'deferred')::int")" -ge 1 ] && [ "$(q "select ('$R'::jsonb->>'quarantined')::int")" -ge 1 ] && echo true || echo false)"
 check "audit chain valid after run 1" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 
@@ -113,8 +157,21 @@ R1B=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") ||
 check "quarantined T2 remains untouched on repeat run" "$([ "$(status "$T2")" = running ] && echo true || echo false)"
 check "quarantine marker remains active" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is null")" = 1 ] && echo true || echo false)"
 check "repeat run does not duplicate T2 disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and disposition='manual_review'")" = "$DISPOSITION_BEFORE" ] && echo true || echo false)"
-check "repeat run produces no T2 audit transition" "$([ "$(audits)" = "$AUDIT_BEFORE" ] && echo true || echo false)"
+check "quarantined phase-one subtree remains untouched on repeat run" "$([ "$(status "$STRUCTURAL_TASK1")" = running ] && [ "$(status "$STRUCTURAL_TASK2")" = running ] && [ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id in ('$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and resolved_at is null")" = 2 ] && echo true || echo false)"
+check "repeat run does not duplicate phase-one manual-review dispositions" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id in ('$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and disposition='manual_review'")" = 2 ] && echo true || echo false)"
+check "repeat run produces no quarantine audit transition" "$([ "$(audits)" = "$AUDIT_BEFORE" ] && echo true || echo false)"
 check "audit chain valid after quarantine repeat" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
+
+# Restore the real lock helper before exercising owner release and retry convergence.
+q "do \$restore\$
+declare d text;
+begin
+  d := pg_get_functiondef('private.aios_lock_mission_subtree_f2_test_original(uuid)'::regprocedure);
+  d := replace(d, 'private.aios_lock_mission_subtree_f2_test_original(', 'private.aios_lock_mission_subtree(');
+  execute d;
+  drop function private.aios_lock_mission_subtree_f2_test_original(uuid);
+end
+\$restore\$;" >/dev/null
 
 echo "== owner resolution: ordinary member is denied"
 q "update public.aios_organization_members set role='member' where organization_id='$ORG' and user_id='$REQ';" >/dev/null
@@ -186,6 +243,10 @@ q "select set_config('request.jwt.claim.sub','$REQ',false);
    select public.aios_resolve_task_reaper_quarantine('$T2','Owner inspected the invariant failure and approved reprocessing.');" >/dev/null
 check "owner resolution is durably recorded" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is not null and resolved_by='$REQ' and length(resolution_note)>=12")" = 1 ] && echo true || echo false)"
 check "owner decision is present in append-only history" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T2' and classification='owner_decision' and disposition='owner_decision_retain'")" = 1 ] && echo true || echo false)"
+q "select set_config('request.jwt.claim.sub','$REQ',false);
+   select set_config('request.jwt.claims','{\"sub\":\"$REQ\",\"role\":\"authenticated\"}',false);
+   select public.aios_resolve_task_reaper_quarantine('$STRUCTURAL_TASK1','Owner reviewed the structural lock failure and approved retry.');" >/dev/null
+check "owner resolution releases phase-one structural quarantine" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$STRUCTURAL_TASK1' and resolved_at is not null and resolved_by='$REQ'")" = 1 ] && echo true || echo false)"
 
 echo "== run 2: transient failure removed; retry is made eligible immediately"
 check "audit chain valid before run 2 retry" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
@@ -194,6 +255,8 @@ q "drop trigger l4_wj_test_trg on public.aios_tasks;
 R2=$(q "select private.aios_reap_stale_tasks('10 minutes'::interval)::text") || { echo "retry raised"; exit 1; }
 check "T4 converged to failed on retry" "$([ "$(status "$T4")" = failed ] && echo true || echo false)"
 check "owner-released T2 becomes eligible and converges after invariant is repaired" "$([ "$(status "$T2")" = failed ] && [ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T2' and resolved_at is not null")" = 1 ] && echo true || echo false)"
+check "owner-released phase-one task becomes eligible and converges after lock repair" "$([ "$(status "$STRUCTURAL_TASK1")" = failed ] && [ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$STRUCTURAL_TASK1' and resolved_at is not null")" = 1 ] && echo true || echo false)"
+check "unresolved sibling remains quarantined and excluded" "$([ "$(status "$STRUCTURAL_TASK2")" = running ] && [ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$STRUCTURAL_TASK2' and resolved_at is null")" = 1 ] && echo true || echo false)"
 check "successful retry cleared deferred state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4'")" = 0 ] && echo true || echo false)"
 check "repeated run did not duplicate T1 disposition or recovery" "$([ "$(q "select count(*) from public.aios_tasks where id='$T1' and status='failed'")" = 1 ] && echo true || echo false)"
 check "audit chain valid after run 2 retry" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
