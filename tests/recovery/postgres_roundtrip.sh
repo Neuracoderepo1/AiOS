@@ -13,6 +13,8 @@ tmp="$(mktemp -d /tmp/aios-recovery-roundtrip.XXXXXX)"
 chmod 700 "$tmp"
 created_export_fixture=0
 created_restore_fixture=0
+created_schema_guard=0
+created_partition_guard=0
 cleanup() {
   rc=$?
   set +e
@@ -26,6 +28,12 @@ cleanup() {
     fi
     if [[ "$created_export_fixture" == 1 ]]; then
       PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_export_fixture >/dev/null 2>&1
+    fi
+    if [[ "$created_schema_guard" == 1 ]]; then
+      PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_restore_schema_guard >/dev/null 2>&1
+    fi
+    if [[ "$created_partition_guard" == 1 ]]; then
+      PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_restore_partition_guard >/dev/null 2>&1
     fi
   fi
   rm -rf "$tmp"
@@ -68,6 +76,24 @@ createdb --owner=postgres aios_export_fixture
 created_export_fixture=1
 createdb aios_restore_ci
 created_restore_fixture=1
+createdb aios_restore_schema_guard
+created_schema_guard=1
+PGUSER=postgres PGDATABASE=aios_restore_schema_guard psql -X -v ON_ERROR_STOP=1 -c 'create schema preexisting_private'
+if PGUSER=supabase_admin PGDATABASE=aios_restore_schema_guard bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export" >"$tmp/schema-guard.log" 2>&1; then
+  fail "restore accepted a target with a pre-existing custom schema"
+fi
+grep -q 'target database is not empty' "$tmp/schema-guard.log" || fail "custom-schema rejection did not come from the emptiness guard"
+schema_survived="$(PGUSER=postgres PGDATABASE=aios_restore_schema_guard psql -X -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_namespace where nspname='preexisting_private'")"
+[[ "$schema_survived" == "1" ]] || fail "restore preflight altered the pre-existing custom schema"
+createdb aios_restore_partition_guard
+created_partition_guard=1
+PGUSER=postgres PGDATABASE=aios_restore_partition_guard psql -X -v ON_ERROR_STOP=1 -c 'create table public.preexisting_partitioned (id bigint) partition by range (id)'
+if PGUSER=supabase_admin PGDATABASE=aios_restore_partition_guard bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export" >"$tmp/partition-guard.log" 2>&1; then
+  fail "restore accepted a target with a pre-existing partitioned table"
+fi
+grep -q 'target database is not empty' "$tmp/partition-guard.log" || fail "partitioned-table rejection did not come from the emptiness guard"
+partition_survived="$(PGUSER=postgres PGDATABASE=aios_restore_partition_guard psql -X -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='preexisting_partitioned' and c.relkind='p'")"
+[[ "$partition_survived" == "1" ]] || fail "restore preflight altered the pre-existing partitioned table"
 
 PGUSER=postgres PGDATABASE=aios_export_fixture psql -X -v ON_ERROR_STOP=1 <<'SQL'
 create extension if not exists pgcrypto;
