@@ -50,14 +50,14 @@ export PGSSLMODE='require'
 
 ## Create a logical export
 
-For a disposable non-production environment:
+For a disposable non-production environment on loopback only:
 
 ```sh
 export AIOS_EXPORT_APPROVAL='NONPRODUCTION'
 bash scripts/recovery/export_logical.sh "$HOME/secure-backups/aios"
 ```
 
-For production, do not proceed unless the separate owner approval described above exists and covers this exact operation. Then set the marker to `OWNER_APPROVED_PRODUCTION:<approval-id>` and run the same script into the approved encrypted destination. Do not store the export in this repository. The script will create a new `aios-logical-export` directory and refuse to overwrite an existing export.
+For a remote non-production environment, obtain an explicit owner approval and set `OWNER_APPROVED_NONPRODUCTION:<approval-id>`. For production, do not proceed unless the separate owner approval described above exists and covers this exact operation; then set `OWNER_APPROVED_PRODUCTION:<approval-id>` and run the same script into the approved encrypted destination. The plain `NONPRODUCTION` marker is rejected for non-loopback hosts and when a remote `PGHOSTADDR` or libpq service override is configured. Do not store the export in this repository. The script will create a new `aios-logical-export` directory and refuse to overwrite an existing export.
 
 The script checks command exit status, non-empty artifacts, archive readability, and writes SHA-256 hashes for all generated artifacts. Verify the manifest immediately:
 
