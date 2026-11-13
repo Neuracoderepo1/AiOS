@@ -1,8 +1,8 @@
 # AiOS current state and release boundary
 
 **Snapshot:** 2026-11-13  
-**Previously reviewed base:** `0bf79e798f01b77ad665fc1e71873b29c104e5b7`  
-**Current follow-up candidate:** `be0e9edb3e4f4fb10f1e7ff5c155ec327f5e0768`  
+**Last independently reviewed implementation candidate:** `40f80035e43e12604ad326388772008017171dbf`  
+**Current PR #35 follow-up:** restore-preflight atomicity test and documentation reconciliation; exact successor SHA is the current PR head and requires fresh CI.  
 **Active review:** PR #35, draft and unmerged  
 **Hosted project:** `jtkcdwhiduixoiodhbfn`, PostgreSQL 17.6, Supabase Free plan
 
@@ -12,7 +12,11 @@ Agent 003's source-review disposition for PR #35's F-2/P1 remediation remains ac
 
 ## Candidate and CI
 
-The latest candidate adds the budget-neutral logical-export and isolated-restore scripts, safety self-tests, a synthetic real-PostgreSQL roundtrip, CI integration, and the recovery runbook. The previously reviewed implementation head passed all three workflows (runs 43348478340, 43348478449, and 43348478353). A subsequent restore-preflight and documentation correction creates a new candidate; its exact-head CI is pending and must pass before this snapshot is treated as validated.
+The reviewed implementation baseline `40f80035e43e12604ad326388772008017171dbf` passed all three exact-head workflows: AiOS CI `43404925437`, ET27 delete protection `43404925475`, and ET27 seal guard `43404925438`. Its four evidence artifacts were independently hashed and matched GitHub metadata. The current follow-up adds an explicit, read-only, enumerated restore-target preflight contract and a real-PostgreSQL regression that deliberately bypasses only the preflight to prove `pg_restore --single-transaction --exit-on-error` rolls back earlier archive objects after a later duplicate-relation conflict. This follow-up also reconciles the stale release records. These successor changes require fresh exact-head CI; the baseline's green runs do not certify the successor.
+
+## Restore preflight contract
+
+The restore preflight is intentionally scoped and documented rather than claiming to enumerate every PostgreSQL catalog object. It checks non-system schemas (except the standard `public` schema itself), every public relation kind, routines, user-defined types, collations, conversions, operators, operator classes/families, text-search objects, and extended statistics, excluding extension-owned objects. The runbook explicitly lists non-enumerated database-level classes. Any restore-time collision or error is handled by `pg_restore --exit-on-error --single-transaction`; the added disposable PostgreSQL regression confirms an earlier archive-created schema and extension are rolled back and the pre-existing conflicting table remains unchanged. The restore path never drops target objects.
 
 ## Migration state
 
