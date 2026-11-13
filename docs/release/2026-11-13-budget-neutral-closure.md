@@ -262,7 +262,8 @@ Production certification remains **WITHHELD / NOT CERTIFIED**. The 11 unapplied 
 
 ## 16. Exact-head engineering and documentation checkpoint — 13 November 2026
 
-**Current PR #35 head:** `54a8bfc9daf5638fc25654acb937c6737c6f80d2`  
+**Implementation SHA with completed exact-head CI:** `54a8bfc9daf5638fc25654acb937c6737c6f80d2`  
+**Documentation successor at this checkpoint:** `b6cee309b532256b863b4648167c62c18ccc71ab` (its own exact-head CI is running; this SHA is superseded by the commit containing this update)  
 **Branch:** `agent004/f2-reaper-record-isolation`  
 **Status at this checkpoint:** PR #35 is draft, open, and unmerged. This section supersedes earlier statements in this document that the current successor SHA was unknown or that the approval-chain concurrency test was still failing. Earlier candidate records remain historical and are not substituted for this exact-head evidence.
 
