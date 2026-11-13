@@ -9,6 +9,7 @@ The scripts are:
 - `scripts/recovery/restore_local.sh`
 - `scripts/recovery/validate_local_restore.sh`
 - Safety self-tests: `tests/recovery/test_scripts.sh`
+- Disposable real-PostgreSQL roundtrip: `tests/recovery/postgres_roundtrip.sh` (invoked by AiOS CI after the local Supabase migration replay)
 
 The exporter creates a PostgreSQL custom-format database archive, a schema-only SQL export, an extension inventory, source metadata, a readable archive listing, and a SHA-256 manifest. It refuses to write into the Git working tree. The restore script only targets loopback PostgreSQL and a database named `aios_restore_*`; it requires an empty, pre-created database.
 
@@ -137,4 +138,4 @@ A failed restore is isolated to the disposable local `aios_restore_*` database. 
 
 ## Operational acceptance status
 
-The safety self-test covers refusal paths and shell syntax. It does not establish a successful end-to-end database export/restore. That remains NOT VERIFIED until this script set has passed a disposable real-PostgreSQL export, restore, and validation cycle on a clean test database.
+The safety self-test covers refusal paths and shell syntax. The CI roundtrip creates a disposable source database, inserts synthetic fixture rows, exports it, restores into a separate loopback-only database, validates structure/extensions, and compares row counts. A successful run proves the scripts' mechanics on the CI PostgreSQL fixture only. It does not prove a production export, full hosted AiOS database compatibility, provider-specific extension reconstruction, real audit-chain correctness, cron reconstruction, owner-context verification, or measured RPO/RTO. Production recovery readiness remains NOT VERIFIED until an owner-authorized export and restore exercise is performed against a properly approved recovery environment.
