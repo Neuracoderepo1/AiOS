@@ -6,7 +6,21 @@
 set -euo pipefail
 DB="$1"
 D=$(mktemp -d)
-trap 'rm -rf "$D"' EXIT
+cleanup() {
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "== approval-chain diagnostic capture (exit=$rc) =="
+    for f in blocker.out blocker.err worker.out worker.err blocker.rc worker.rc; do
+      echo "-- $f --"; cat "$D/$f" 2>/dev/null || true
+    done
+    q "select application_name,state,wait_event_type,wait_event,left(query,500) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>&1 || true
+  fi
+  kill "${BLOCKER:-}" "${WORKER:-}" 2>/dev/null || true
+  wait "${BLOCKER:-}" "${WORKER:-}" 2>/dev/null || true
+  rm -rf "$D"
+  exit "$rc"
+}
+trap cleanup EXIT
 
 ORG=ab030101-0000-4000-8000-000000000001
 AGT=ab030101-0000-4000-8000-000000000002
@@ -70,8 +84,17 @@ SQL
 ) &
 BLOCKER=$!
 i=0
-until [ "$(q "select count(*) from pg_stat_activity where query like '%pg_sleep(15)%' and state='active'")" = 1 ]; do
-  i=$((i+1)); [ "$i" -gt 100 ] && { echo "FAIL blocker did not acquire original mission row"; exit 2; }; sleep 0.05
+until [ "$(q "select count(*) from pg_stat_activity where application_name='aios-binding-blocker' and state='active' and query like '%pg_sleep(15)%'")" = 1 ]; do
+  if [[ -s "$D/blocker.rc" ]]; then
+    echo "FAIL blocker exited before reaching lock-holding phase (rc=$(cat "$D/blocker.rc"))"
+    exit 2
+  fi
+  i=$((i+1))
+  if [ "$i" -gt 400 ]; then
+    echo "FAIL blocker did not reach lock-holding phase within 20 seconds"
+    exit 2
+  fi
+  sleep 0.05
 done
 
 (
@@ -81,14 +104,17 @@ done
 WORKER=$!
 i=0
 until [ "$(q "select count(*) from pg_stat_activity where application_name='aios-binding-worker' and wait_event_type='Lock'")" = 1 ]; do
-  i=$((i+1)); [ "$i" -gt 100 ] && {
-    echo "FAIL chain-lock worker did not block on the original mission"
-    echo "approval=$APPROVAL resolver=$(q "select coalesce(private.aios_resolve_approval_invocation('$APPROVAL')::text,'NULL')")"
-    q "select application_name,state,wait_event_type,wait_event,query from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" || true
-    cat "$D/blocker.out" "$D/blocker.err" "$D/worker.err" "$D/worker.out" 2>/dev/null || true
-    kill "$BLOCKER" "$WORKER" 2>/dev/null || true
+  if [[ -s "$D/worker.rc" ]]; then
+    echo "FAIL chain-lock worker exited instead of waiting for original mission lock (rc=$(cat "$D/worker.rc"))"
     exit 2
-  }; sleep 0.05
+  fi
+  i=$((i+1))
+  if [ "$i" -gt 400 ]; then
+    echo "FAIL chain-lock worker did not block on original mission within 20 seconds"
+    echo "approval=$APPROVAL resolver=$(q "select coalesce(private.aios_resolve_approval_invocation('$APPROVAL')::text,'NULL')")"
+    exit 2
+  fi
+  sleep 0.05
 done
 
 wait "$BLOCKER" || true
