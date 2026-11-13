@@ -89,17 +89,30 @@ echo "== fixture: seven stale tasks across six missions; two share a structural-
 read M1 T1 <<<"$(new_stale ok1)"; read M2 T2 <<<"$(new_stale bad1)"
 read M3 T3 <<<"$(new_stale ok2)"; read M4 T4 <<<"$(new_stale retry)"
 read M5 T5 <<<"$(new_stale suppressed-update)"
+read M8 T8 <<<"$(new_stale approval-block-suppressed)"
+# This fixture forces the invocation into requires_approval through the same
+# supported tool/contract path used by the approval lock-order regressions.
+q "insert into public.aios_contracts
+     (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active)
+   values ('$ORG','$AGT',1,'medium','[\"support.export_customer_data\"]','{}',true)
+   on conflict (agent_id,version) do update set is_active=true;
+   insert into public.aios_tool_invocations
+     (organization_id,agent_id,task_id,tool_name,tool_key,arguments,risk_level,requested_by,request_id,idempotency_key)
+   values ('$ORG','$AGT','$T8','support.export_customer_data','support.export_customer_data',
+     jsonb_build_object('scope','f2-approval-block','format','csv'),'low','$REQ',gen_random_uuid(),
+     'f2-approval-block-'||gen_random_uuid());" >/dev/null
 STRUCTURAL_MISSION="$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','f2-structural','f2','running') returning id" | head -1)"
 STRUCTURAL_TASK1="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-1','running',now()-interval '60 minutes') returning id" | head -1)"
 STRUCTURAL_TASK2="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-2','running',now()-interval '60 minutes') returning id" | head -1)"
-need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5" "$STRUCTURAL_MISSION" "$STRUCTURAL_TASK1" "$STRUCTURAL_TASK2"
-[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5','$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and status='running' and updated_at<now()-interval '10 minutes'")" = 7 ] || { echo "fixture not stale"; exit 2; }
+need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5" "$STRUCTURAL_MISSION" "$STRUCTURAL_TASK1" "$STRUCTURAL_TASK2" "$M8" "$T8"
+[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5','$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and status='running' and updated_at<now()-interval '10 minutes'")" = 8 ] || { echo "fixture not stale"; exit 2; }
 
 q "create or replace function public.l4_wj_test_fn() returns trigger language plpgsql as \$t\$
      begin
        if new.status='failed' and new.id='$T2' then raise exception 'forced invariant error' using errcode='XX001'; end if;
        if new.status='failed' and new.id='$T4' then raise exception 'forced transient lock conflict' using errcode='40P01'; end if;
        if new.status='failed' and new.id='$T5' then return null; end if;
+       if new.status='blocked_pending_approval' and new.id='$T8' then return null; end if;
        return new;
      end \$t\$;
      create trigger l4_wj_test_trg before update on public.aios_tasks for each row execute function public.l4_wj_test_fn();" >/dev/null
@@ -138,6 +151,12 @@ check "T3 committed despite T4 lock conflict" "$([ "$(status "$T3")" = failed ] 
 check "T4 remains running after lock conflict" "$([ "$(status "$T4")" = running ] && echo true || echo false)"
 check "T4 has durable retry state" "$([ "$(q "select count(*) from private.aios_task_reaper_deferred where task_id='$T4' and last_sqlstate='40P01'")" = 1 ] && echo true || echo false)"
 check "T4 has no permanent disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T4'")" = 0 ] && echo true || echo false)"
+check "approval fixture invocation requires approval" "$([ "$(q "select status from public.aios_tool_invocations where task_id='$T8' order by created_at desc limit 1")" = requires_approval ] && echo true || echo false)"
+check "suppressed approval transition leaves task running" "$([ "$(status "$T8")" = running ] && echo true || echo false)"
+check "suppressed approval transition leaves mission running" "$([ "$(q "select status from public.aios_missions where id='$M8'")" = running ] && echo true || echo false)"
+check "suppressed approval transition creates the exact durable quarantine reason" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T8' and reason='approval_block_rowcount_invariant' and resolved_at is null")" = 1 ] && echo true || echo false)"
+check "suppressed approval transition creates owner-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T8' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
+check "approval transition is not counted as blocked" "$([ "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("blocked_pending_approval", -1))' "$R")" = 0 ] && echo true || echo false)"
 check "T5 remains running when a BEFORE UPDATE trigger suppresses its transition" "$([ "$(status "$T5")" = running ] && echo true || echo false)"
 check "suppressed T5 transition is quarantined with P0002" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T5' and resolved_at is null and sqlstate='P0002'")" = 1 ] && echo true || echo false)"
 check "suppressed T5 transition receives one manual-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T5' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
