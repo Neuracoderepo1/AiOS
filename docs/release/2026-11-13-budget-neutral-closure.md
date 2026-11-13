@@ -259,3 +259,61 @@ This checkpoint and `docs/operations/current-state.md` now identify `40f80035...
 ### Release boundary remains unchanged
 
 Production certification remains **WITHHELD / NOT CERTIFIED**. The 11 unapplied hosted migrations, audit trigger/grant drift, missing hosted restorer role, owner-context verification, branch-governance evidence, complete source-to-hosted function parity, production recovery exercise, measured RPO/RTO, and external TSA/trust-root dependency remain open. No hosted migration, production write/export/restore, deployment, billing change, paid upgrade, or merge is authorized by this checkpoint. PR #35 must remain draft and unmerged pending fresh exact-head CI and independent Agent 003 review.
+
+## 16. Exact-head engineering and documentation checkpoint — 13 November 2026
+
+**Current PR #35 head:** `54a8bfc9daf5638fc25654acb937c6737c6f80d2`  
+**Branch:** `agent004/f2-reaper-record-isolation`  
+**Status at this checkpoint:** PR #35 is draft, open, and unmerged. This section supersedes earlier statements in this document that the current successor SHA was unknown or that the approval-chain concurrency test was still failing. Earlier candidate records remain historical and are not substituted for this exact-head evidence.
+
+### Exact-head workflow results
+
+All three required workflows completed successfully against the same exact SHA `54a8bfc9daf5638fc25654acb937c6737c6f80d2`:
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| AiOS CI | [43431423424](https://github.com/Neuracoderepo1/AiOS/actions/runs/43431423424) | SUCCESS, 4/4 jobs |
+| ET27 delete protection | [43431423482](https://github.com/Neuracoderepo1/AiOS/actions/runs/43431423482) | SUCCESS |
+| ET27 seal guard | [43431423441](https://github.com/Neuracoderepo1/AiOS/actions/runs/43431423441) | SUCCESS |
+
+The approval-chain binding revalidation script was restored to its complete intended test body and hardened so failure diagnostics survive cleanup. On this candidate, shell syntax validation and ShellCheck passed. The forced lock interleaving passed ten consecutive repetitions, each after an independent local database reset and full migration replay. In all ten repetitions, the task-binding change committed while the worker was waiting; the worker rejected the stale snapshot with SQLSTATE `40001`. The targeted PostgreSQL sessions were absent after cleanup in every repetition.
+
+The AiOS CI evidence also reports the smoke self-test at 86/86, mutation detection at 23/23, and known-gap probes at 5/5. These are engineering test results, not proof of hosted production parity or recovery readiness.
+
+### Exact-head artifact inventory
+
+GitHub artifact metadata binds each artifact to the exact SHA above and reports these SHA-256 digests:
+
+| Evidence | Artifact ID | SHA-256 |
+|---|---:|---|
+| AiOS CI evidence | 14040084106 | `3efe82421652cee2175721419a48e4ae75ea2cd944fca2ac0b01ffa67d4d11f7` |
+| Behavioral evidence | 14040206839 | `7afe6451883fe0bad9591d15a47fa331d968aa80f047c0d1c073a49d4b1264e2` |
+| ET27 delete protection | 14038728179 | `96ab35644b7f2cfa402e311f283bce9d04952ca23c9f0f875fcb3327495063e0` |
+| ET27 seal guard | 14040326910 | `bf9bc571be9e7d810bd08655adc631703e38a730705e981ef1ae68f9c8e724a9` |
+
+The artifact records identify branch `agent004/f2-reaper-record-isolation` and head SHA `54a8bfc9daf5638fc25654acb937c6737c6f80d2`. These digests are the GitHub-reported artifact digests; do not describe them as independently recomputed local ZIP hashes unless a separate download-and-hash record is attached.
+
+### Agent 003 review boundary
+
+The successful exact-head workflows and repeated concurrency test establish the engineering evidence for this candidate. They do **not** themselves constitute Agent 003 independent certification. Agent 003 must review the exact SHA, the concurrency script and its ten-run evidence, the workflow logs, and the four artifact records, then record a distinct disposition. Until that review is recorded, the current successor is **AWAITING AGENT 003 EXACT-HEAD REVIEW**.
+
+### Production boundary and outstanding blockers
+
+Production certification remains **WITHHELD / NOT CERTIFIED**. The following remain open and must not be represented as closed by CI success:
+
+- 11 candidate migrations remain unapplied to the hosted project.
+- Four hosted audit protection triggers remain ORIGIN-enabled; hosted `service_role` retains broader audit-table grants than candidate intent.
+- Hosted `aios_restorer` role is absent.
+- Authenticated owner-context audit verification is not evidenced.
+- Required-review/CODEOWNERS and complete branch-governance enforcement evidence remains incomplete.
+- Full candidate-to-hosted function-definition/hash parity and function-level grant-intent reconciliation remain incomplete.
+- Hosted cron/reconciliation parity remains incomplete.
+- No production export and isolated production-copy restore, secrets/Edge Function/cron reconstruction, or application acceptance exercise is evidenced.
+- Managed backups/PITR remain unavailable on the current Free plan; no paid upgrade is authorized.
+- Measured RPO/RTO and external TSA/RFC3161 trust-root lifecycle remain unproven.
+
+No hosted migration, production write/export/restore, role/grant/RLS/trigger/cron change, deployment, billing change, paid upgrade, or merge is authorized by this checkpoint. Keep PR #35 draft and unmerged. Scope remains AiOS only; Armadillon and Arbitron are excluded.
+
+### Documentation successor rule
+
+This checkpoint is written on the PR branch. Its commit creates a new candidate SHA. The three required workflows must run again against the final documentation commit SHA, and Agent 003 must review that exact final SHA. The successful runs listed above validate implementation SHA `54a8bfc9...` only; they do not certify a later documentation-only commit.
