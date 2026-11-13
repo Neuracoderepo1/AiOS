@@ -1,7 +1,7 @@
 # AiOS current state and release boundary
 
 **Snapshot:** 2026-11-13  
-**Candidate inspected:** `4dc26124917e3d9ec257314156cc7dcf53b02981`  
+**Candidate inspected:** `3a3fe839824f174b08607c8027f24672a18659e5`  
 **Active review:** PR #35, draft and unmerged  
 **Hosted project:** `jtkcdwhiduixoiodhbfn`, PostgreSQL 17.6, Supabase Free plan
 
@@ -56,7 +56,7 @@ Budget-neutral scripts now exist:
 - `tests/recovery/test_scripts.sh`
 - `docs/operations/LOGICAL-EXPORT-RESTORE.md`
 
-The exporter requires explicit approval classification, uses PGPASSFILE, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an empty `aios_restore_*` database on loopback. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. Exact-head CI is pending. A successful real-PostgreSQL end-to-end export/restore exercise remains NOT VERIFIED. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
+The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an empty `aios_restore_*` database on loopback. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. Exact-head CI is pending. A successful real-PostgreSQL end-to-end export/restore exercise remains NOT VERIFIED. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
 
 ## Governance
 
