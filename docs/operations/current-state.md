@@ -1,7 +1,7 @@
 # AiOS current state and release boundary
 
 **Snapshot:** 2026-11-13  
-**Candidate inspected:** `16c65b8d5bb730d8813124c39a6276df53ea721c`  
+**Candidate inspected:** `0bf79e798f01b77ad665fc1e71873b29c104e5b7`  
 **Active review:** PR #35, draft and unmerged  
 **Hosted project:** `jtkcdwhiduixoiodhbfn`, PostgreSQL 17.6, Supabase Free plan
 
@@ -11,7 +11,7 @@ Agent 003's source-review disposition for PR #35's F-2/P1 remediation remains ac
 
 ## Candidate and CI
 
-The latest candidate adds the budget-neutral logical-export and isolated-restore scripts, safety self-tests, a synthetic real-PostgreSQL roundtrip, CI integration, and the recovery runbook. All three exact-head workflows passed on this candidate: AiOS CI 43346710190, ET27 delete protection 43346709899, and ET27 seal guard 43346710291.
+The latest candidate adds the budget-neutral logical-export and isolated-restore scripts, safety self-tests, a synthetic real-PostgreSQL roundtrip, CI integration, and the recovery runbook. The previously reviewed implementation head passed all three workflows (runs 43348478340, 43348478449, and 43348478353). A subsequent restore-preflight and documentation correction creates a new candidate; its exact-head CI is pending and must pass before this snapshot is treated as validated.
 
 ## Migration state
 
@@ -56,13 +56,13 @@ Budget-neutral scripts now exist:
 - `tests/recovery/test_scripts.sh`
 - `docs/operations/LOGICAL-EXPORT-RESTORE.md`
 
-The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an empty `aios_restore_*` database on loopback. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. Exact-head CI is pending. A synthetic real-PostgreSQL export/restore roundtrip passed in CI on 2026-11-13. It verified checksums, schema/data restore, RLS, four audit-event triggers, verifier-function presence, extension presence, and matching 3+2 source/restored fixture rows. This does not prove a full hosted AiOS restore or production recovery readiness. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
+The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an `aios_restore_*` database on loopback containing no pre-existing user schemas or objects. The emptiness guard covers all relation kinds (including partitioned tables), routines, and user-defined types in public, and rejects non-system custom schemas. Negative PostgreSQL tests verify that custom schemas and partitioned tables are rejected without being modified. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. The synthetic real-PostgreSQL export/restore roundtrip passed on the prior reviewed head. The new negative tests for pre-existing custom schemas and partitioned tables are added in the current follow-up and require fresh exact-head CI. It verified checksums, schema/data restore, RLS, four audit-event triggers, verifier-function presence, extension presence, and matching 3+2 source/restored fixture rows. This does not prove a full hosted AiOS restore or production recovery readiness. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
 
 ## Governance
 
 - Agent 004 implements and submits evidence.
 - Agent 003 independently reviews and certifies.
-- PRs #34 and #35 remain draft/unmerged pending their release gates.
+- PRs #34 and #35 remain draft/unmerged pending their release gates. The follow-up implementation branch is `agent004/restore-preflight-docs-closure`, based on reviewed head `0bf79e798f01b77ad665fc1e71873b29c104e5b7`.
 - No production deployment, hosted migration, production write/export, restore, plan change, or merge is authorized.
 - Scope is AiOS only. Armadillon and Arbitron are excluded.
 
