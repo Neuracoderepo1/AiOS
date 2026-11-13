@@ -33,11 +33,8 @@ out="$1"
 [[ "$out" = /* ]] || fail "output directory must be an absolute path"
 mkdir -p "$out"
 out="$(cd "$out" && pwd -P)"
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [[ -n "$repo_root" ]]; then
-  repo_root="$(cd "$repo_root" && pwd -P)"
-  case "$out/" in "$repo_root/"*) fail "refusing to write database exports inside the repository" ;; esac
-fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+case "$out/" in "$repo_root/"*) fail "refusing to write database exports inside the repository" ;; esac
 [[ ! -e "$out/aios-logical-export" ]] || fail "output already exists; choose a new empty destination"
 tmp="$(mktemp -d "$out/.aios-export.XXXXXX")"
 cleanup() { rm -rf "$tmp"; }
