@@ -17,6 +17,8 @@ trap 'rm -rf "$tmp"' EXIT
 chmod 600 "$tmp/pgpass"
 expect_reject "export without explicit approval" env -u AIOS_EXPORT_APPROVAL "$root/scripts/recovery/export_logical.sh" "$tmp/out"
 expect_reject "export with invalid approval marker" env AIOS_EXPORT_APPROVAL=maybe "$root/scripts/recovery/export_logical.sh" "$tmp/out"
+expect_reject "nonproduction export to remote host" env AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=db.example.invalid PGPORT=5432 PGUSER=postgres PGDATABASE=aios PGPASSFILE="$tmp/pgpass" "$root/scripts/recovery/export_logical.sh" "$tmp/out"
+expect_reject "nonproduction export with remote PGHOSTADDR override" env AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=127.0.0.1 PGHOSTADDR=203.0.113.8 PGPORT=5432 PGUSER=postgres PGDATABASE=aios PGPASSFILE="$tmp/pgpass" "$root/scripts/recovery/export_logical.sh" "$tmp/out"
 expect_reject "restore against remote host" env PGHOST=db.example.invalid PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" "$root/scripts/recovery/restore_local.sh" "$tmp"
 expect_reject "restore with remote PGHOSTADDR override" env PGHOST=127.0.0.1 PGHOSTADDR=203.0.113.8 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" "$root/scripts/recovery/restore_local.sh" "$tmp"
 expect_reject "restore with libpq service override" env PGHOST=127.0.0.1 PGSERVICE=remote-service PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" "$root/scripts/recovery/restore_local.sh" "$tmp"
