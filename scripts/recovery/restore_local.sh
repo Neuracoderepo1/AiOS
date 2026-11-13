@@ -7,13 +7,15 @@ for name in PGHOST PGPORT PGUSER PGDATABASE PGPASSFILE; do
   [[ -n "${!name:-}" ]] || fail "missing required libpq variable: $name"
 done
 case "$PGHOST" in localhost|127.0.0.1|::1) ;; *) fail "restore target must be loopback; refusing remote host" ;; esac
-[[ "$PGDATABASE" == aios_restore_* ]] || fail "target database name must start with aios_restore_"
+[[ -z "${PGHOSTADDR:-}" || "$PGHOSTADDR" == 127.0.0.1 || "$PGHOSTADDR" == ::1 ]] || fail "PGHOSTADDR must be loopback"
+[[ -z "${PGSERVICE:-}" && -z "${PGSERVICEFILE:-}" ]] || fail "PGSERVICE/PGSERVICEFILE are not allowed for isolated restore"
 [[ -f "$PGPASSFILE" ]] || fail "PGPASSFILE must name an existing password file"
 python3 - "$PGPASSFILE" <<'PY'
 import os, stat, sys
 if stat.S_IMODE(os.stat(sys.argv[1]).st_mode) & 0o077:
     raise SystemExit("PGPASSFILE permissions must be 0600 or stricter")
 PY
+[[ "$PGDATABASE" == aios_restore_* ]] || fail "target database name must start with aios_restore_"
 command -v pg_restore >/dev/null || fail "pg_restore is required"
 command -v psql >/dev/null || fail "psql is required"
 command -v python3 >/dev/null || fail "python3 is required"
