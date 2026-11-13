@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # Forced PostgreSQL interleaving: mutate the invocation->task binding while the
 # chain-lock worker is blocked on the original mission row. The worker must either
 # reject the changed post-lock snapshot with 40001, or the database must prove the
@@ -6,8 +5,9 @@
 set -euo pipefail
 DB="$1"
 D=$(mktemp -d)
-EVIDENCE_DIR="${AIOS_BINDING_EVIDENCE_DIR:-}"
+EVIDENCE_DIR="\${AIOS_BINDING_EVIDENCE_DIR:-}"
 CLEANUP_DONE=0
+
 cleanup() {
   local rc=$?
   local remaining=""
@@ -39,14 +39,54 @@ cleanup() {
     fi
   fi
 
-  # Terminate only this test's named PostgreSQL sessions. Record the server's
-  # result, then prove both application names have disappeared before returning.
   termination=$(q "select pid || ':' || pg_terminate_backend(pid)::text from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker') and pid<>pg_backend_pid() order by pid" 2>&1)
   if [[ $? -eq 0 ]]; then
     if [[ -n "$termination" ]]; then
       echo "-- targeted backend termination outcomes (pid:terminated) --"
       printf '%s\n' "$termination"
-      if grep -q ':false
+      if grep -q ':false$' <<<"$termination"; then
+        echo "FAIL one or more targeted PostgreSQL backends refused termination"
+        rc=1
+      fi
+    else
+      echo "-- targeted backend termination outcomes: no remaining named sessions --"
+    fi
+  else
+    echo "FAIL unable to request targeted PostgreSQL backend termination: $termination"
+    rc=1
+  fi
+
+  for attempt in {1..40}; do
+    remaining=$(q "select count(*) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>/dev/null)
+    [[ "$remaining" == "0" ]] && break
+    sleep 0.05
+  done
+  if [[ "$remaining" != "0" ]]; then
+    echo "FAIL targeted PostgreSQL sessions remain after termination attempt (count=\${remaining:-unknown})"
+    q "select pid,application_name,state,wait_event_type,wait_event,left(query,300) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>&1 || true
+    rc=1
+  else
+    echo "PASS targeted PostgreSQL sessions absent after cleanup"
+  fi
+
+  kill "\${BLOCKER:-}" "\${WORKER:-}" 2>/dev/null || true
+  wait "\${BLOCKER:-}" "\${WORKER:-}" 2>/dev/null || true
+
+  if [[ "$rc" -ne 0 ]]; then
+    if [[ -n "$EVIDENCE_DIR" ]]; then
+      mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+      cp -a "$D/." "$EVIDENCE_DIR/" 2>/dev/null || true
+      echo "Failure diagnostics preserved at: $EVIDENCE_DIR"
+    else
+      echo "Failure diagnostics preserved at: $D"
+      D=""
+    fi
+  fi
+  [[ -z "$D" ]] || rm -rf "$D"
+  exit "$rc"
+}
+trap cleanup EXIT
+
 ORG=ab030101-0000-4000-8000-000000000001
 AGT=ab030101-0000-4000-8000-000000000002
 REQ=ab030101-0000-4000-8000-000000000003
