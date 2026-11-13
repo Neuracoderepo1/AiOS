@@ -125,7 +125,9 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
       - name: Recovery export/restore safety self-tests
-        run: bash tests/recovery/test_scripts.sh
+        run: |
+          set -o pipefail
+          bash tests/recovery/test_scripts.sh 2>&1 | tee /tmp/recovery-selftest.txt
       - name: Migration version uniqueness and ordering
         run: |
           ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
@@ -163,7 +165,14 @@ jobs:
         if: steps.start.conclusion == 'success'
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          AIOS_TEST_DB_URL="$DB_URL" bash tests/recovery/postgres_roundtrip.sh
+          set -o pipefail
+          AIOS_TEST_DB_URL="$DB_URL" bash tests/recovery/postgres_roundtrip.sh 2>&1 | tee /tmp/recovery-roundtrip.txt
+      - name: Restore preflight conflict matrix (D1)
+        if: steps.start.conclusion == 'success'
+        run: |
+          set -o pipefail
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          AIOS_TEST_DB_URL="$DB_URL" bash tests/recovery/preflight_matrix.sh 2>&1 | tee /tmp/recovery-preflight-matrix.txt
       - name: Capture migration runner and restorer membership authority
         if: steps.start.conclusion == 'success'
         run: |
@@ -408,6 +417,9 @@ jobs:
           path: |
             /tmp/matrix-out
             /tmp/matrix-run.txt
+            /tmp/recovery-selftest.txt
+            /tmp/recovery-roundtrip.txt
+            /tmp/recovery-preflight-matrix.txt
             /tmp/expiry-race.txt
             /tmp/mission-task-races.txt
             /tmp/approval-lock-order.txt

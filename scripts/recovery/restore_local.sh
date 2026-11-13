@@ -2,7 +2,7 @@
 # Restore a logical archive into a pre-created, empty local PostgreSQL database only.
 set -Eeuo pipefail
 umask 077
-fail() { printf 'ERROR: %s\\n' "$*" >&2; exit 1; }
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 for name in PGHOST PGPORT PGUSER PGDATABASE PGPASSFILE; do
   [[ -n "${!name:-}" ]] || fail "missing required libpq variable: $name"
 done
@@ -32,34 +32,22 @@ pg_restore --list "$src/database.dump" >/dev/null || fail "archive validation fa
 exists="$(psql -X -v ON_ERROR_STOP=1 -Atc "select 1 from pg_database where datname = current_database()")"
 [[ "$exists" == "1" ]] || fail "target database is not available"
 
-# Fail closed on every pre-existing user schema/object. A newly created
-# PostgreSQL database's standard public schema is allowed, but it must be empty.
-# Include every pg_class relkind (notably partitioned tables), routines, types,
-# and non-system namespaces. No target objects are ever dropped automatically.
-object_count="$(psql -X -v ON_ERROR_STOP=1 -Atc "
-with user_schemas as (
-  select n.oid, n.nspname
-  from pg_namespace n
-  where n.nspname <> 'public'
-    and n.nspname <> 'information_schema'
-    and n.nspname !~ '^pg_'
-), user_objects as (
-  select 'schema:' || nspname as object_name from user_schemas
-  union all
-  select 'relation:' || n.nspname || '.' || c.relname
-  from pg_class c join pg_namespace n on n.oid=c.relnamespace
-  where n.nspname='public'
-  union all
-  select 'routine:' || n.nspname || '.' || p.proname
-  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-  where n.nspname='public'
-  union all
-  select 'type:' || n.nspname || '.' || t.typname
-  from pg_type t join pg_namespace n on n.oid=t.typnamespace
-  where n.nspname='public' and t.typtype <> 'p'
-)
-select count(*) from user_objects
-")"
-[[ "$object_count" == "0" ]] || fail "target database is not empty (user schema/object count=$object_count)"
+# Fail closed on any pre-existing user object in the ENUMERATED classes (see
+# preflight_target_empty.sql for the exact list and the explicit exclusions). The
+# preflight is read-only and nothing in the target is ever dropped, truncated or
+# altered. Classes that are not enumerated (extensions themselves, event triggers,
+# publications, foreign data wrappers/servers, casts, languages, ...) are not
+# predicted here: a collision in one of them is stopped by the single-transaction,
+# exit-on-error pg_restore below, which leaves the target exactly as it was.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+preflight_sql="$script_dir/preflight_target_empty.sql"
+[[ -s "$preflight_sql" ]] || fail "restore preflight query is missing: $preflight_sql"
+conflicts="$(PGOPTIONS="${PGOPTIONS:+$PGOPTIONS }-c default_transaction_read_only=on" \
+  psql -X -q -v ON_ERROR_STOP=1 -At -f "$preflight_sql")" || fail "restore preflight query failed; refusing to restore"
+object_count="$(printf '%s\n' "$conflicts" | grep -c . || true)"
+if [[ "$object_count" != "0" ]]; then
+  listing="$(printf '%s\n' "$conflicts" | head -n 20 | paste -sd ';' - | sed 's/;/; /g')"
+  fail "target database is not empty (pre-existing user objects=$object_count; first up to 20: $listing)"
+fi
 pg_restore --exit-on-error --single-transaction --no-owner --no-acl --dbname "$PGDATABASE" "$src/database.dump"
-printf 'Restore completed into local database %s. Run validate_local_restore.sh next.\\n' "$PGDATABASE"
+printf 'Restore completed into local database %s. Run validate_local_restore.sh next.\n' "$PGDATABASE"

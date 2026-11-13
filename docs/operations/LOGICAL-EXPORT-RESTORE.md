@@ -11,7 +11,7 @@ The scripts are:
 - Safety self-tests: `tests/recovery/test_scripts.sh`
 - Disposable real-PostgreSQL roundtrip: `tests/recovery/postgres_roundtrip.sh` (invoked by AiOS CI after the local Supabase migration replay)
 
-The exporter creates a PostgreSQL custom-format database archive, a schema-only SQL export, an extension inventory, source metadata, a readable archive listing, and a SHA-256 manifest. It refuses to write into the Git working tree. The restore script only targets loopback PostgreSQL and a database named `aios_restore_*`; it requires an empty, pre-created database.
+The exporter creates a PostgreSQL custom-format database archive, a schema-only SQL export, an extension inventory, source metadata, a readable archive listing, and a SHA-256 manifest. It refuses to write into the Git working tree. The restore script only targets loopback PostgreSQL and a database named `aios_restore_*`; it requires a pre-created destination that contains no user objects in the enumerated classes listed under "Restore destination preflight" below.
 
 ## Security requirements
 
@@ -71,7 +71,7 @@ On macOS, use `shasum -a 256 -c SHA256SUMS` if `sha256sum` is unavailable. Prese
 
 ## Restore into isolated local PostgreSQL
 
-Use a disposable local PostgreSQL instance, not the hosted project. Install compatible PostgreSQL client/server versions and confirm that every required extension binary/control file is available locally. Read `extensions.tsv` from the export. Do not pre-create extensions in the target database before running the restore script: the archive may contain extension creation entries, and the target must remain empty. The restore will fail closed if the extension cannot be created from the archive. Supabase-specific/provider-managed extensions may not be available in a generic local PostgreSQL installation; use a compatible local Supabase stack or classify that dependency as external.
+Use a disposable local PostgreSQL instance, not the hosted project. Install compatible PostgreSQL client/server versions and confirm that every required extension binary/control file is available locally. Read `extensions.tsv` from the export. You do not need to pre-create extensions: the archive contains `CREATE EXTENSION IF NOT EXISTS` entries and the restore creates them. Extensions that are already installed in the destination are tolerated, and the objects they own are not treated as conflicts (see below), but the restore does not reconcile an existing extension's version or schema with the archive. The restore fails closed if an extension cannot be created from the archive. Supabase-specific/provider-managed extensions may not be available in a generic local PostgreSQL installation; use a compatible local Supabase stack or classify that dependency as external.
 
 Create a fresh empty database with a name beginning `aios_restore_`. Example:
 
@@ -97,7 +97,21 @@ bash scripts/recovery/restore_local.sh "$HOME/secure-backups/aios/aios-logical-e
 bash scripts/recovery/validate_local_restore.sh "$HOME/secure-backups/aios/aios-logical-export"
 ```
 
-The restore script verifies the archive checksums, confirms the target is loopback and uses the `aios_restore_*` prefix, refuses non-empty targets, and runs `pg_restore` in a single transaction. It does not drop or recreate a database.
+The restore script verifies the archive checksums, confirms the target is loopback and uses the `aios_restore_*` prefix, runs the read-only destination preflight below, and runs `pg_restore --exit-on-error --single-transaction`. It never drops, truncates, alters or recreates anything in the destination, and has no option to do so.
+
+### Restore destination preflight
+
+`scripts/recovery/preflight_target_empty.sql` is run through `psql` with `default_transaction_read_only=on`; it only reads `pg_catalog`. Any row it returns is a pre-existing user object, and the restore stops before `pg_restore` starts with `target database is not empty`, naming up to 20 offending objects. If the query itself errors, the restore also stops; an error is never treated as "clean".
+
+**Enumerated classes (checked in every non-system schema, including `public`):** schemas other than `public`; relations of every kind (ordinary and partitioned tables, indexes, sequences, views, materialized views, composite types, foreign tables); routines (functions, procedures, aggregates); non-implicit types (base, domain, enum, range); collations; conversions; operators; operator classes; operator families; text-search configurations, dictionaries, parsers and templates; extended statistics.
+
+**Not counted as conflicts:** `pg_catalog`, `information_schema`, `pg_toast` and temp schemas; the empty `public` schema itself; implicit row, array and multirange types; and any object that belongs to an installed extension (`pg_depend` dependency type `e`). A destination with standard or Supabase extensions installed is therefore not a false positive.
+
+**Not enumerated (protection boundary):** objects with no schema namespace, namely extensions themselves, event triggers, publications, subscriptions, foreign data wrappers and servers, user mappings, casts, transforms, procedural languages and default privileges. The preflight does not predict collisions in these classes. They are covered only by the transactional backstop: `pg_restore --single-transaction --exit-on-error` aborts on the first error and rolls back everything the replay had already done. A pre-existing object of one of these classes that does **not** collide with the archive is not detected and will coexist with the restored data, so use a freshly created database rather than relying on the preflight to vet a reused one.
+
+**What is verified, and where.** `tests/recovery/preflight_matrix.sh` runs against disposable real PostgreSQL databases: a clean destination (restore, structural validation and row counts); a destination with pgcrypto, hstore, pg_trgm and unaccent installed (no false positives; restore succeeds); one destination per enumerated conflict class, each rejected by the emptiness guard with the object named and the destination byte-identical afterwards (full schema and data `pg_dump` hash, itself checked to be stable when untouched and to change on schema and data edits); a user object beside extension-owned objects (only the user object is reported); conflicts spread over several schemas; a mid-replay collision showing that the single transaction rolls back earlier work; and a collision in a non-enumerated class (publication) through the script, showing the backstop leaves the destination byte-identical. `tests/recovery/test_scripts.sh` additionally asserts that each earlier safety guard is rejected by its own message (not merely by a failure to execute) and that the restore path stays single-transaction and free of drop/clean/create/alter statements.
+
+These are checks of this script against synthetic fixtures on a disposable PostgreSQL. They do not demonstrate a restore of the hosted AiOS database.
 
 The structural validator checks that application tables and RLS-enabled public tables exist, that audit-event protection triggers exist, that an audit-chain verifier function exists, and that all source extensions are installed. This is a structural check, not a full application acceptance test or cryptographic audit-chain PASS. Follow it with the repository's PostgreSQL SQL, concurrency, audit-chain, and application smoke suites against the restored database.
 
