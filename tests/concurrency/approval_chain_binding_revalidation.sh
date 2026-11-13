@@ -45,7 +45,7 @@ cleanup() {
   if [[ $? -eq 0 ]]; then
     if [[ -n "$termination" ]]; then
       echo "-- targeted backend termination outcomes (pid:terminated) --"
-      printf '%s\\n' "$termination"
+      printf '%s\n' "$termination"
       if grep -q ':false
 ORG=ab030101-0000-4000-8000-000000000001
 AGT=ab030101-0000-4000-8000-000000000002
