@@ -174,7 +174,7 @@ This inventory improves observability but is not full function-body/hash parity.
 
 ## 12. Current candidate CI boundary
 
-The documentation and recovery-toolkit commits supersede the earlier candidate SHA. The current candidate is `0a7ce7caa64c6a24d9eaf4045a4571b84b1e0eb9`. Its three exact-head workflows must complete successfully before any prior successful workflow results can be used as current candidate evidence. No artifact or CI result from an earlier SHA is being attributed to this SHA.
+The documentation and recovery-toolkit commits supersede the earlier candidate SHA. The implementation candidate `16c65b8d5bb730d8813124c39a6276df53ea721c` passed all three exact-head workflows: AiOS CI 43346710190, ET27 delete protection 43346709899, and ET27 seal guard 43346710291. The documentation update in this commit is a separate docs-only candidate and must receive fresh CI before being treated as the current PR head.
 
 ## 13. Updated findings register
 
@@ -182,14 +182,14 @@ The documentation and recovery-toolkit commits supersede the earlier candidate S
 |---|---|---|
 | F-2/P1 source review | A. CLOSED | Agent 003 source disposition remains accepted; production certification withheld |
 | Stale migration count | A. CLOSED | Corrected current-state document |
-| Recovery scripts and operator runbook | A. IMPLEMENTED, verification pending | Self-tests wired into CI; end-to-end PostgreSQL export/restore not yet demonstrated |
-| Exact-head CI for latest recovery candidate | E. ENGINEERING BLOCKED pending evidence | Await all three workflows on SHA `0a7ce7caa64c6a24d9eaf4045a4571b84b1e0eb9` |
+| Recovery scripts and operator runbook | A. CLOSED for repository mechanics | Safety self-tests and synthetic real-PostgreSQL export/restore roundtrip passed; production recovery readiness remains unverified |
+| Exact-head CI for implementation candidate | A. CLOSED | All three workflows passed on SHA `16c65b8d5bb730d8813124c39a6276df53ea721c`; docs-only follow-up will receive its own CI |
 | 11 unapplied hosted migrations and catalog drift | B. OWNER ACTION REQUIRED | Requires separately approved migration plan |
 | Owner-context audit verification | B. OWNER ACTION REQUIRED | Genuine authenticated owner session required |
 | Full branch-protection evidence | B/D. OWNER ACTION / EXTERNAL LIMITATION | Owner export required; dedicated endpoint returns 403 |
 | Supabase managed backups/PITR | C. PAID-TIER / BUDGET BLOCKED | Current Free plan excludes scheduled backups; PITR requires paid plan/add-on |
 | Full function definition/hash parity and grant-intent review | E. ENGINEERING BLOCKED | Aggregate catalog captured; exact source-to-hosted parity remains to be completed |
-| Real-PostgreSQL export/restore acceptance | E. ENGINEERING BLOCKED | Requires disposable PostgreSQL/Supabase environment and actual dump/restore execution |
+| Synthetic real-PostgreSQL export/restore acceptance | A. CLOSED | Disposable local source/target roundtrip passed with checksums, structural checks, and row-count parity; full hosted restore remains an owner/environment dependency |
 | External TSA/RFC3161 trust anchor | D. EXTERNAL PLATFORM LIMITATION | Provider/trust-root dependency remains |
 
 
@@ -197,3 +197,27 @@ The documentation and recovery-toolkit commits supersede the earlier candidate S
 ### Recovery guard hardening follow-up
 
 The export approval gate was tightened after source inspection: the bare `NONPRODUCTION` marker is accepted only for loopback sources and is rejected if `PGHOSTADDR`, `PGSERVICE`, or `PGSERVICEFILE` could redirect the connection. Remote non-production and production exports require an explicit approval identifier. The local restore and validator reject remote `PGHOST`/`PGHOSTADDR`, reject libpq service overrides, and verify the password file is present with permissions 0600 or stricter. Safety tests now include these negative cases. These checks are code-level guardrails; they do not replace independent approval or a real PostgreSQL restore test.
+
+
+## 14. Final implementation-candidate CI and artifact evidence
+
+Implementation candidate: `16c65b8d5bb730d8813124c39a6276df53ea721c`
+
+| Workflow | Run ID | Conclusion |
+|---|---:|---|
+| AiOS CI | 43346710190 | success |
+| ET27 delete protection | 43346709899 | success |
+| ET27 seal guard | 43346710291 | success |
+
+Downloaded ZIP artifacts and independently recomputed SHA-256:
+
+| Artifact | ID | SHA-256 |
+|---|---:|---|
+| Behavioral evidence | 14002126505 | `54b21a3a987e5db9fd57f8a74dccde93252cd13e0f3f70bacc7a66396dabe0c2` |
+| AiOS CI evidence | 14001628833 | `617b1c4862df239b66e4c67a318c81ce53fe0091f787e6e28c255f4da1b7f60b` |
+| ET27 delete protection | 14001174550 | `ece3d8961e67a07454bfaa85b81400ab720c91218a93e642e1046933162a34db` |
+| ET27 seal guard | 14001029933 | `a19d032b0f75eb20e62879953d89ddcdbe1e5c04665375cebf27a005503ee289` |
+
+All four local SHA-256 computations matched GitHub artifact metadata. AiOS CI included the real PostgreSQL roundtrip and all existing regression/concurrency suites. The candidate passed 46/46 canonical matrix cases, 97/97 behavioral and no-remote tests, 23/23 mutation tests, 5/5 gap probes, three F-2 repetitions, and 86/86 smoke tests.
+
+Production certification remains withheld. Agent 003 independent review is requested; no formal review has been recorded at this checkpoint.

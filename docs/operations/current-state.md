@@ -1,7 +1,7 @@
 # AiOS current state and release boundary
 
 **Snapshot:** 2026-11-13  
-**Candidate inspected:** `3a3fe839824f174b08607c8027f24672a18659e5`  
+**Candidate inspected:** `16c65b8d5bb730d8813124c39a6276df53ea721c`  
 **Active review:** PR #35, draft and unmerged  
 **Hosted project:** `jtkcdwhiduixoiodhbfn`, PostgreSQL 17.6, Supabase Free plan
 
@@ -11,7 +11,7 @@ Agent 003's source-review disposition for PR #35's F-2/P1 remediation remains ac
 
 ## Candidate and CI
 
-The latest candidate adds the budget-neutral logical-export and isolated-restore scripts, safety self-tests, CI integration, and the recovery runbook. Its exact-head AiOS CI, ET27 delete-protection, and ET27 seal-guard runs are pending at the time of this snapshot. Do not reuse prior SHA workflow results as validation for this candidate.
+The latest candidate adds the budget-neutral logical-export and isolated-restore scripts, safety self-tests, a synthetic real-PostgreSQL roundtrip, CI integration, and the recovery runbook. All three exact-head workflows passed on this candidate: AiOS CI 43346710190, ET27 delete protection 43346709899, and ET27 seal guard 43346710291.
 
 ## Migration state
 
@@ -56,7 +56,7 @@ Budget-neutral scripts now exist:
 - `tests/recovery/test_scripts.sh`
 - `docs/operations/LOGICAL-EXPORT-RESTORE.md`
 
-The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an empty `aios_restore_*` database on loopback. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. Exact-head CI is pending. A successful real-PostgreSQL end-to-end export/restore exercise remains NOT VERIFIED. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
+The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an empty `aios_restore_*` database on loopback. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. Exact-head CI is pending. A synthetic real-PostgreSQL export/restore roundtrip passed in CI on 2026-11-13. It verified checksums, schema/data restore, RLS, four audit-event triggers, verifier-function presence, extension presence, and matching 3+2 source/restored fixture rows. This does not prove a full hosted AiOS restore or production recovery readiness. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
 
 ## Governance
 
