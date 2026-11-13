@@ -151,6 +151,11 @@ jobs:
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Real PostgreSQL logical export and isolated restore roundtrip
+        if: steps.start.conclusion == 'success'
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          AIOS_TEST_DB_URL="$DB_URL" bash tests/recovery/postgres_roundtrip.sh
       - name: Capture migration runner and restorer membership authority
         if: steps.start.conclusion == 'success'
         run: |
