@@ -54,13 +54,14 @@ APPROVAL=$(q "select approval_id from public.aios_tool_invocations where id='$IN
 [[ "$(q "select task_id from public.aios_tool_invocations where id='$INV'")" = "$T1" ]] || { echo "FAIL invocation/task fixture binding missing"; exit 2; }
 [[ "$(q "select private.aios_resolve_approval_invocation('$APPROVAL')")" = "$INV" ]] || { echo "FAIL shared resolver did not select fixture invocation"; exit 2; }
 
-# B owns the original mission and task rows. The lock-chain worker will read the old binding,
-# then wait here before it can acquire the mission/task/invocation/approval chain.
+# B holds FOR UPDATE on the original mission and task rows. This conflicts with every row-lock
+# strength the lock-chain worker can request, including FOR KEY SHARE. The worker must therefore
+# be observed waiting before B commits the task_id change.
 (
   PGAPPNAME=aios-binding-blocker psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
 begin;
-select 1 from public.aios_missions where id='$M1' for no key update;
-select 1 from public.aios_tasks where id='$T1' for no key update;
+select 1 from public.aios_missions where id='$M1' for update;
+select 1 from public.aios_tasks where id='$T1' for update;
 select pg_sleep(3);
 update public.aios_tool_invocations set task_id='$T2' where id='$INV';
 commit;
