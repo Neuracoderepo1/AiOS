@@ -16,6 +16,7 @@ created_export_fixture=0
 created_restore_fixture=0
 created_schema_guard=0
 created_partition_guard=0
+created_atomicity_guard=0
 cleanup() {
   rc=$?
   set +e
@@ -35,6 +36,9 @@ cleanup() {
     fi
     if [[ "$created_partition_guard" == 1 ]]; then
       PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_restore_partition_guard >/dev/null 2>&1
+    fi
+    if [[ "$created_atomicity_guard" == 1 ]]; then
+      PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_restore_atomicity_guard >/dev/null 2>&1
     fi
   fi
   rm -rf "$tmp"
@@ -119,6 +123,33 @@ SQL
 PGUSER=postgres PGDATABASE=aios_export_fixture \
   AIOS_EXPORT_APPROVAL=NONPRODUCTION \
   bash scripts/recovery/export_logical.sh "$tmp/export"
+
+# Exercise the transactional fallback for a restore-time conflict outside the
+# preflight's explicitly enumerated catalog classes. This test deliberately calls
+# pg_restore with the exact production wrapper flags, bypassing only the preflight,
+# so a duplicate relation is encountered after the archive has begun creating
+# earlier objects. The single transaction must roll those earlier creations back.
+createdb --owner=postgres aios_restore_atomicity_guard
+created_atomicity_guard=1
+PGUSER=postgres PGDATABASE=aios_restore_atomicity_guard psql -X -v ON_ERROR_STOP=1 <<'SQL'
+create table public.aios_fixture (sentinel text primary key);
+insert into public.aios_fixture values ('pre-existing-row');
+SQL
+if PGUSER=postgres PGDATABASE=aios_restore_atomicity_guard \
+  pg_restore --exit-on-error --single-transaction --no-owner --no-acl \
+    --dbname aios_restore_atomicity_guard "$tmp/export/aios-logical-export/database.dump" \
+    >"$tmp/atomicity-guard.log" 2>&1; then
+  fail "single-transaction restore unexpectedly accepted a duplicate relation"
+fi
+grep -Eiq 'already exists|duplicate key|conflict' "$tmp/atomicity-guard.log" || \
+  fail "atomicity test failed for an unexpected reason: $(tail -n 20 "$tmp/atomicity-guard.log")"
+atomicity_private_schema="$(PGUSER=postgres PGDATABASE=aios_restore_atomicity_guard psql -X -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_namespace where nspname='private'")"
+[[ "$atomicity_private_schema" == "0" ]] || fail "failed restore left the archive's earlier private schema behind"
+atomicity_extension="$(PGUSER=postgres PGDATABASE=aios_restore_atomicity_guard psql -X -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_extension where extname='pgcrypto'")"
+[[ "$atomicity_extension" == "0" ]] || fail "failed restore left the archive's earlier extension behind"
+atomicity_row="$(PGUSER=postgres PGDATABASE=aios_restore_atomicity_guard psql -X -v ON_ERROR_STOP=1 -Atc "select sentinel from public.aios_fixture")"
+[[ "$atomicity_row" == "pre-existing-row" ]] || fail "failed restore changed the pre-existing relation"
+printf 'PASS: unenumerated restore-time conflict rolled back atomically; existing object preserved\\n'
 
 createdb --owner=postgres aios_restore_schema_guard
 created_schema_guard=1
