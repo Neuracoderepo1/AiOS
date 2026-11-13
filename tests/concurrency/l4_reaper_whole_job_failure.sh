@@ -114,7 +114,6 @@ q "create or replace function public.l4_wj_test_fn() returns trigger language pl
        if new.status='failed' and new.id='$T4' then raise exception 'forced transient lock conflict' using errcode='40P01'; end if;
        if new.status='failed' and new.id='$T5' then return null; end if;
        if new.status='blocked_pending_approval' and new.id='$T8' then return null; end if;
-       if new.status='failed' and new.id='$T10' then return null; end if;
        return new;
      end \$t\$;
      create trigger l4_wj_test_trg before update on public.aios_tasks for each row execute function public.l4_wj_test_fn();" >/dev/null
@@ -165,6 +164,15 @@ read M9 T9 <<<"$(new_stale halt-before)"
 read M10 T10 <<<"$(new_stale halt-failure)"
 read M11 T11 <<<"$(new_stale halt-after)"
 need_ids "$M9" "$T9" "$M10" "$T10" "$M11" "$T11"
+q "create or replace function public.l4_reaper_task_suppress_fn() returns trigger
+     language plpgsql set search_path='' as \$ts\$
+     begin
+       if new.id='$T10'::uuid and new.status='failed' then return null; end if;
+       return new;
+     end \$ts\$;
+   create trigger l4_reaper_task_suppress_trg
+     before update on public.aios_tasks
+     for each row execute function public.l4_reaper_task_suppress_fn();" >/dev/null
 q "create or replace function private.l4_reaper_halt_fail_fn() returns trigger
      language plpgsql set search_path='' as \$hf\$
      begin
