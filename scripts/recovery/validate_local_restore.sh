@@ -10,11 +10,12 @@ case "$PGHOST" in localhost|127.0.0.1|::1) ;; *) fail "validation target must be
 [[ $# -eq 1 ]] || fail "usage: $0 <export-directory>"
 src="$(cd "$1" && pwd -P)"
 [[ -s "$src/extensions.tsv" ]] || fail "source extension inventory missing"
-psql -X -v ON_ERROR_STOP=1 -Atc "select extname from pg_extension order by extname" > "$src/.restored-extensions.tmp"
-trap 'rm -f "$src/.restored-extensions.tmp"' EXIT
+ext_tmp="$(mktemp)"
+trap 'rm -f "$ext_tmp"' EXIT
+psql -X -v ON_ERROR_STOP=1 -Atc "select extname from pg_extension order by extname" > "$ext_tmp"
 while IFS=$'\t' read -r extname extversion; do
   [[ -n "$extname" ]] || continue
-  grep -Fxq "$extname" "$src/.restored-extensions.tmp" || fail "required extension absent after restore: $extname"
+  grep -Fxq "$extname" "$ext_tmp" || fail "required extension absent after restore: $extname"
 done < "$src/extensions.tsv"
 metrics="$(psql -X -v ON_ERROR_STOP=1 -AtF '|' -c "
 select
