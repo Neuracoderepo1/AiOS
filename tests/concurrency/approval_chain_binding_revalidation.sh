@@ -62,7 +62,7 @@ APPROVAL=$(q "select approval_id from public.aios_tool_invocations where id='$IN
 begin;
 select 1 from public.aios_missions where id='$M1' for update;
 select 1 from public.aios_tasks where id='$T1' for update;
-select pg_sleep(3);
+select pg_sleep(15);
 update public.aios_tool_invocations set task_id='$T2' where id='$INV';
 commit;
 SQL
@@ -70,7 +70,7 @@ SQL
 ) &
 BLOCKER=$!
 i=0
-until [ "$(q "select count(*) from pg_stat_activity where query like '%pg_sleep(3)%' and state='active'")" = 1 ]; do
+until [ "$(q "select count(*) from pg_stat_activity where query like '%pg_sleep(15)%' and state='active'")" = 1 ]; do
   i=$((i+1)); [ "$i" -gt 100 ] && { echo "FAIL blocker did not acquire original mission row"; exit 2; }; sleep 0.05
 done
 
