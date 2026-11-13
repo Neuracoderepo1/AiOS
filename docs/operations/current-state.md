@@ -1,7 +1,8 @@
 # AiOS current state and release boundary
 
 **Snapshot:** 2026-11-13  
-**Candidate inspected:** `0bf79e798f01b77ad665fc1e71873b29c104e5b7`  
+**Previously reviewed base:** `0bf79e798f01b77ad665fc1e71873b29c104e5b7`  
+**Current follow-up candidate:** `be0e9edb3e4f4fb10f1e7ff5c155ec327f5e0768`  
 **Active review:** PR #35, draft and unmerged  
 **Hosted project:** `jtkcdwhiduixoiodhbfn`, PostgreSQL 17.6, Supabase Free plan
 
@@ -62,7 +63,7 @@ The exporter requires explicit approval classification (loopback-only NONPRODUCT
 
 - Agent 004 implements and submits evidence.
 - Agent 003 independently reviews and certifies.
-- PRs #34 and #35 remain draft/unmerged pending their release gates. The follow-up implementation branch is `agent004/restore-preflight-docs-closure`, based on reviewed head `0bf79e798f01b77ad665fc1e71873b29c104e5b7`.
+- PRs #34 and #35 remain draft/unmerged pending their release gates. The follow-up implementation is on the existing PR #35 head branch `agent004/f2-reaper-record-isolation`, based on reviewed head `0bf79e798f01b77ad665fc1e71873b29c104e5b7`.
 - No production deployment, hosted migration, production write/export, restore, plan change, or merge is authorized.
 - Scope is AiOS only. Armadillon and Arbitron are excluded.
 
