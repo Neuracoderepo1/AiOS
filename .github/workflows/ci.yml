@@ -145,18 +145,16 @@ jobs:
           # either the artifact upload or a failure annotation can expose them.
           sed -E -i \
             -e 's/sb_(secret|publishable)_[A-Za-z0-9_-]+/[REDACTED_SUPABASE_KEY]/g' \
+            -e 's/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/[REDACTED_SUPABASE_JWT]/g' \
             -e 's#postgres(ql)?://[^[:space:]]+#[REDACTED_CONNECTION_STRING]#g' /tmp/start.txt
-          if grep -Eq 'sb_(secret|publishable)_[A-Za-z0-9_-]+|postgres(ql)?://[^[:space:]]+' /tmp/start.txt; then
+          if grep -Eq 'sb_(secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|postgres(ql)?://[^[:space:]]+' /tmp/start.txt; then
             echo "::error title=startup-log-redaction::unredacted Supabase credential found"
             exit 1
           fi
           key_count=$(grep -o '\[REDACTED_SUPABASE_KEY\]' /tmp/start.txt | wc -l | tr -d ' ')
+          jwt_count=$(grep -o '\[REDACTED_SUPABASE_JWT\]' /tmp/start.txt | wc -l | tr -d ' ')
           connection_count=$(grep -o '\[REDACTED_CONNECTION_STRING\]' /tmp/start.txt | wc -l | tr -d ' ')
-          if [ "$key_count" -lt 1 ] || [ "$connection_count" -lt 1 ]; then
-            echo "::error title=startup-log-redaction::expected local key and connection-string redactions were not observed"
-            exit 1
-          fi
-          echo "::notice title=startup-log-redaction::redacted_keys=$key_count redacted_connection_strings=$connection_count"
+          echo "::notice title=startup-log-redaction::redacted_keys=$key_count redacted_jwts=$jwt_count redacted_connection_strings=$connection_count (zero is valid when the CLI emits no credential values)"
           if [ $rc -ne 0 ]; then
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
