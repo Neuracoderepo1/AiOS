@@ -341,26 +341,34 @@ select cron.schedule(
 );
 
 -- Keep the canonical schedule verifier pinned to the exact command text.
-do $registry$
-declare
-  v_src text;
-  v_old text := '(''aios-reap-stale-tasks'', ''*/5 * * * *'', null)';
-  v_new text := '(''aios-reap-stale-tasks'', ''*/5 * * * *'', ''select private.aios_reap_stale_tasks_scheduled(''''10 minutes''''::interval)'')';
+create or replace function private.aios_schedule_check() returns jsonb
+language plpgsql stable security definer set search_path = '' as $fn$
+declare v jsonb := '[]'::jsonb; e record; j record;
 begin
-  select p.prosrc into v_src
-  from pg_catalog.pg_proc p
-  join pg_catalog.pg_namespace n on n.oid=p.pronamespace
-  where n.nspname='private' and p.proname='aios_schedule_check' and p.pronargs=0;
-  if v_src is null or position(v_old in v_src)=0 then
-    raise exception 'cron registry reaper-command anchor missing';
-  end if;
-  v_src := replace(v_src,v_old,v_new);
-  execute format(
-    'create or replace function private.aios_schedule_check() returns jsonb language plpgsql stable security definer set search_path = '''' as %L',
-    v_src
-  );
+  for e in select * from (values
+      ('aios-restoration-watchdog', '*/5 * * * *', 'select private.aios_restoration_watchdog()'),
+      ('aios-audit-verify-hourly',  '7 * * * *',   'select private.aios_scheduled_verify()'),
+      ('aios-reap-stale-tasks',     '*/5 * * * *', 'select private.aios_reap_stale_tasks_scheduled(''10 minutes''::interval)'),
+      ('aios-expire-stale-approvals','*/5 * * * *', null),
+      ('aios-reconcile-mission-completions','* * * * *', 'select private.aios_process_mission_reconciliation_queue(100)')) as x(jobname, schedule, command) loop
+    if (select count(*) from cron.job where jobname = e.jobname) > 1 then
+      v := v || jsonb_build_object('kind', 'duplicate_job', 'job', e.jobname);
+    end if;
+    select * into j from cron.job where jobname = e.jobname order by jobid limit 1;
+    if not found then v := v || jsonb_build_object('kind', 'job_missing', 'job', e.jobname);
+    else
+      if not j.active then v := v || jsonb_build_object('kind', 'job_inactive', 'job', e.jobname); end if;
+      if j.schedule <> e.schedule then v := v || jsonb_build_object('kind', 'schedule_changed', 'job', e.jobname, 'actual', j.schedule); end if;
+      if e.command is not null and btrim(j.command) <> e.command then
+        v := v || jsonb_build_object('kind', 'command_changed', 'job', e.jobname, 'actual', j.command);
+      end if;
+    end if;
+  end loop;
+  return jsonb_build_object('problem_count', jsonb_array_length(v), 'problems', v,
+    'jobs', (select coalesce(jsonb_agg(jsonb_build_object('job', jobname, 'schedule', schedule, 'active', active, 'username', username) order by jobname), '[]'::jsonb) from cron.job where jobname like 'aios-%'));
 end
-$registry$;
+$fn$;
+revoke all on function private.aios_schedule_check() from public, anon, authenticated, service_role;
 
 -- Owner/admin halt clearance mirrors the existing task-quarantine RPC's
 -- auth.uid() + membership-row lock authorization boundary.
