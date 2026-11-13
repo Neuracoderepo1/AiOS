@@ -5,7 +5,7 @@
 set -euo pipefail
 DB="$1"
 D=$(mktemp -d)
-EVIDENCE_DIR="\${AIOS_BINDING_EVIDENCE_DIR:-}"
+EVIDENCE_DIR="${AIOS_BINDING_EVIDENCE_DIR:-}"
 CLEANUP_DONE=0
 
 cleanup() {
@@ -62,15 +62,15 @@ cleanup() {
     sleep 0.05
   done
   if [[ "$remaining" != "0" ]]; then
-    echo "FAIL targeted PostgreSQL sessions remain after termination attempt (count=\${remaining:-unknown})"
+    echo "FAIL targeted PostgreSQL sessions remain after termination attempt (count=${remaining:-unknown})"
     q "select pid,application_name,state,wait_event_type,wait_event,left(query,300) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>&1 || true
     rc=1
   else
     echo "PASS targeted PostgreSQL sessions absent after cleanup"
   fi
 
-  kill "\${BLOCKER:-}" "\${WORKER:-}" 2>/dev/null || true
-  wait "\${BLOCKER:-}" "\${WORKER:-}" 2>/dev/null || true
+  kill "${BLOCKER:-}" "${WORKER:-}" 2>/dev/null || true
+  wait "${BLOCKER:-}" "${WORKER:-}" 2>/dev/null || true
 
   if [[ "$rc" -ne 0 ]]; then
     if [[ -n "$EVIDENCE_DIR" ]]; then
