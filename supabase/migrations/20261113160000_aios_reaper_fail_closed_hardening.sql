@@ -337,8 +337,30 @@ revoke all on function private.aios_reaper_record_quarantine(uuid,uuid,text,text
 select cron.schedule(
   'aios-reap-stale-tasks',
   '*/5 * * * *',
-  $select private.aios_reap_stale_tasks_scheduled('10 minutes'::interval)$
+  $cron$select private.aios_reap_stale_tasks_scheduled('10 minutes'::interval)$cron$
 );
+
+-- Keep the canonical schedule verifier pinned to the exact command text.
+do $registry$
+declare
+  v_src text;
+  v_old text := '(''aios-reap-stale-tasks'', ''*/5 * * * *'', null)';
+  v_new text := '(''aios-reap-stale-tasks'', ''*/5 * * * *'', ''select private.aios_reap_stale_tasks_scheduled(''''10 minutes''''::interval)'')';
+begin
+  select p.prosrc into v_src
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='private' and p.proname='aios_schedule_check' and p.pronargs=0;
+  if v_src is null or position(v_old in v_src)=0 then
+    raise exception 'cron registry reaper-command anchor missing';
+  end if;
+  v_src := replace(v_src,v_old,v_new);
+  execute format(
+    'create or replace function private.aios_schedule_check() returns jsonb language plpgsql stable security definer set search_path = '''' as %L',
+    v_src
+  );
+end
+$registry$;
 
 -- Owner/admin halt clearance mirrors the existing task-quarantine RPC's
 -- auth.uid() + membership-row lock authorization boundary.
