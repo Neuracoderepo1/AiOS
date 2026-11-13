@@ -6,18 +6,21 @@ umask 077
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 : "${AIOS_EXPORT_APPROVAL:?Set AIOS_EXPORT_APPROVAL to NONPRODUCTION or OWNER_APPROVED_PRODUCTION:<approval-id>}"
-case "$AIOS_EXPORT_APPROVAL" in
-  NONPRODUCTION) ;;
-  OWNER_APPROVED_PRODUCTION:*)
-    approval_id="${AIOS_EXPORT_APPROVAL#OWNER_APPROVED_PRODUCTION:}"
-    [[ -n "$approval_id" && "$approval_id" != *[!A-Za-z0-9._:-]* ]] || fail "invalid owner approval identifier"
-    ;;
-  *) fail "export denied: explicit NONPRODUCTION or owner-approved production marker required" ;;
-esac
-
 for name in PGHOST PGPORT PGUSER PGDATABASE PGPASSFILE; do
   [[ -n "${!name:-}" ]] || fail "missing required libpq variable: $name"
 done
+case "$AIOS_EXPORT_APPROVAL" in
+  NONPRODUCTION)
+    case "$PGHOST" in localhost|127.0.0.1|::1) ;; *) fail "NONPRODUCTION marker is restricted to loopback; remote export requires an explicit owner approval ID" ;; esac
+    [[ -z "${PGHOSTADDR:-}" || "$PGHOSTADDR" == 127.0.0.1 || "$PGHOSTADDR" == ::1 ]] || fail "NONPRODUCTION export cannot use a remote PGHOSTADDR"
+    [[ -z "${PGSERVICE:-}" && -z "${PGSERVICEFILE:-}" ]] || fail "PGSERVICE/PGSERVICEFILE are not allowed for NONPRODUCTION export"
+    ;;
+  OWNER_APPROVED_NONPRODUCTION:*|OWNER_APPROVED_PRODUCTION:*)
+    approval_id="${AIOS_EXPORT_APPROVAL#*:}"
+    [[ -n "$approval_id" && "$approval_id" != *[!A-Za-z0-9._:-]* ]] || fail "invalid owner approval identifier"
+    ;;
+  *) fail "export denied: explicit NONPRODUCTION or owner-approved export marker required" ;;
+esac
 [[ -f "$PGPASSFILE" ]] || fail "PGPASSFILE must name an existing password file"
 python3 - "$PGPASSFILE" <<'PY'
 import os, stat, sys
