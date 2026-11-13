@@ -1,3 +1,4 @@
+# use the disposable local superuser as explicit fixture owner and restore operator
 #!/usr/bin/env bash
 # Real PostgreSQL logical export -> isolated restore -> structural/data validation.
 # CI-only disposable databases; connection URI is read from environment, never argv or logs.
@@ -74,7 +75,7 @@ source "$tmp/connection.env"
 # collision; cleanup removes only databases created successfully below.
 createdb --owner=postgres aios_export_fixture
 created_export_fixture=1
-createdb aios_restore_ci
+createdb --owner=postgres aios_restore_ci
 created_restore_fixture=1
 PGUSER=postgres PGDATABASE=aios_export_fixture psql -X -v ON_ERROR_STOP=1 <<'SQL'
 create extension if not exists pgcrypto;
@@ -119,31 +120,31 @@ PGUSER=postgres PGDATABASE=aios_export_fixture \
   AIOS_EXPORT_APPROVAL=NONPRODUCTION \
   bash scripts/recovery/export_logical.sh "$tmp/export"
 
-createdb aios_restore_schema_guard
+createdb --owner=postgres aios_restore_schema_guard
 created_schema_guard=1
 PGUSER=postgres PGDATABASE=aios_restore_schema_guard psql -X -v ON_ERROR_STOP=1 -c 'create schema preexisting_private'
-if PGUSER=supabase_admin PGDATABASE=aios_restore_schema_guard bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export" >"$tmp/schema-guard.log" 2>&1; then
+if PGUSER=postgres PGDATABASE=aios_restore_schema_guard bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export" >"$tmp/schema-guard.log" 2>&1; then
   fail "restore accepted a target with a pre-existing custom schema"
 fi
 grep -q 'target database is not empty' "$tmp/schema-guard.log" || fail "custom-schema rejection did not come from the emptiness guard"
 schema_survived="$(PGUSER=postgres PGDATABASE=aios_restore_schema_guard psql -X -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_namespace where nspname='preexisting_private'")"
 [[ "$schema_survived" == "1" ]] || fail "restore preflight altered the pre-existing custom schema"
-createdb aios_restore_partition_guard
+createdb --owner=postgres aios_restore_partition_guard
 created_partition_guard=1
 PGUSER=postgres PGDATABASE=aios_restore_partition_guard psql -X -v ON_ERROR_STOP=1 -c 'create table public.preexisting_partitioned (id bigint) partition by range (id)'
-if PGUSER=supabase_admin PGDATABASE=aios_restore_partition_guard bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export" >"$tmp/partition-guard.log" 2>&1; then
+if PGUSER=postgres PGDATABASE=aios_restore_partition_guard bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export" >"$tmp/partition-guard.log" 2>&1; then
   fail "restore accepted a target with a pre-existing partitioned table"
 fi
 grep -q 'target database is not empty' "$tmp/partition-guard.log" || fail "partitioned-table rejection did not come from the emptiness guard"
 partition_survived="$(PGUSER=postgres PGDATABASE=aios_restore_partition_guard psql -X -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='preexisting_partitioned' and c.relkind='p'")"
 [[ "$partition_survived" == "1" ]] || fail "restore preflight altered the pre-existing partitioned table"
-PGUSER=supabase_admin PGDATABASE=aios_restore_ci \
+PGUSER=postgres PGDATABASE=aios_restore_ci \
   bash scripts/recovery/restore_local.sh "$tmp/export/aios-logical-export"
-PGUSER=supabase_admin PGDATABASE=aios_restore_ci \
+PGUSER=postgres PGDATABASE=aios_restore_ci \
   bash scripts/recovery/validate_local_restore.sh "$tmp/export/aios-logical-export"
 
 source_counts="$(PGUSER=postgres PGDATABASE=aios_export_fixture psql -X -v ON_ERROR_STOP=1 -AtF '|' -c "select (select count(*) from public.aios_fixture),(select count(*) from public.aios_audit_events)")"
-restored_counts="$(PGUSER=supabase_admin PGDATABASE=aios_restore_ci psql -X -v ON_ERROR_STOP=1 -AtF '|' -c "select (select count(*) from public.aios_fixture),(select count(*) from public.aios_audit_events)")"
+restored_counts="$(PGUSER=postgres PGDATABASE=aios_restore_ci psql -X -v ON_ERROR_STOP=1 -AtF '|' -c "select (select count(*) from public.aios_fixture),(select count(*) from public.aios_audit_events)")"
 [[ "$source_counts" == "$restored_counts" ]] || fail "row-count mismatch: source=$source_counts restored=$restored_counts"
 [[ "$source_counts" == "3|2" ]] || fail "unexpected source fixture row counts: $source_counts"
 printf 'REAL POSTGRESQL LOGICAL EXPORT / ISOLATED RESTORE: PASS\n'
