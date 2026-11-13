@@ -1,8 +1,9 @@
 # AiOS current state and release boundary
 
-**Snapshot:** 2026-11-13  
-**Last independently reviewed implementation candidate:** `40f80035e43e12604ad326388772008017171dbf`  
-**Current PR #35 follow-up:** restore-preflight atomicity test and documentation reconciliation; exact successor SHA is the current PR head and requires fresh CI.  
+**Snapshot:** 2026-11-13, updated after exact-head engineering verification  
+**Current implementation candidate:** `54a8bfc9daf5638fc25654acb937c6737c6f80d2`  
+**Last independently reviewed baseline:** `40f80035e43e12604ad326388772008017171dbf`  
+**Current PR #35 follow-up:** approval-chain concurrency-test repair and evidence-backed documentation reconciliation. The current candidate has green exact-head CI; Agent 003 exact-head review is still required.  
 **Active review:** PR #35, draft and unmerged  
 **Hosted project:** `jtkcdwhiduixoiodhbfn`, PostgreSQL 17.6, Supabase Free plan
 
@@ -12,7 +13,7 @@ Agent 003's source-review disposition for PR #35's F-2/P1 remediation remains ac
 
 ## Candidate and CI
 
-The reviewed implementation baseline `40f80035e43e12604ad326388772008017171dbf` passed all three exact-head workflows: AiOS CI `43404925437`, ET27 delete protection `43404925475`, and ET27 seal guard `43404925438`. Its four evidence artifacts were independently hashed and matched GitHub metadata. The current follow-up adds an explicit, read-only, enumerated restore-target preflight contract and a real-PostgreSQL regression that deliberately bypasses only the preflight to prove `pg_restore --single-transaction --exit-on-error` rolls back earlier archive objects after a later duplicate-relation conflict. This follow-up also reconciles the stale release records. These successor changes require fresh exact-head CI; the baseline's green runs do not certify the successor.
+The last independently reviewed baseline `40f80035e43e12604ad326388772008017171dbf` passed AiOS CI `43404925437`, ET27 delete protection `43404925475`, and ET27 seal guard `43404925438`. The current implementation candidate `54a8bfc9daf5638fc25654acb937c6737c6f80d2` subsequently passed all three exact-head workflows: AiOS CI `43431423424` (4/4 jobs), ET27 delete protection `43431423482`, and ET27 seal guard `43431423441`. The approval-chain binding revalidation script passes `bash -n` and ShellCheck and completed ten consecutive forced-interleaving repetitions after independent local database resets and full migration replay. Each repetition observed the concurrent task-binding change commit while the worker waited, followed by stale-snapshot rejection with SQLSTATE `40001`; targeted PostgreSQL sessions were absent after cleanup. Exact-head artifact IDs and GitHub-reported SHA-256 digests are recorded in the release checkpoint, section 16. These results validate engineering behavior on `54a8bfc9...`; they do not constitute Agent 003 certification or hosted production readiness. The documentation reconciliation now being committed creates a new successor SHA, which must receive fresh exact-head CI and Agent 003 review.
 
 ## Restore preflight contract
 
@@ -61,13 +62,13 @@ Budget-neutral scripts now exist:
 - `tests/recovery/test_scripts.sh`
 - `docs/operations/LOGICAL-EXPORT-RESTORE.md`
 
-The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an `aios_restore_*` database on loopback containing no pre-existing user schemas or objects. The emptiness guard covers all relation kinds (including partitioned tables), routines, and user-defined types in public, and rejects non-system custom schemas. Negative PostgreSQL tests verify that custom schemas and partitioned tables are rejected without being modified. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. The synthetic real-PostgreSQL export/restore roundtrip passed on the prior reviewed head. The new negative tests for pre-existing custom schemas and partitioned tables are added in the current follow-up and require fresh exact-head CI. It verified checksums, schema/data restore, RLS, four audit-event triggers, verifier-function presence, extension presence, and matching 3+2 source/restored fixture rows. This does not prove a full hosted AiOS restore or production recovery readiness. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
+The exporter requires explicit approval classification (loopback-only NONPRODUCTION or an owner approval ID for remote/production), uses PGPASSFILE, rejects remote host overrides for local restores, writes outside the repository, validates the archive, and produces SHA-256 checksums. The restore script refuses remote targets and requires an `aios_restore_*` database on loopback containing no pre-existing user schemas or objects. The emptiness guard covers all relation kinds (including partitioned tables), routines, and user-defined types in public, and rejects non-system custom schemas. Negative PostgreSQL tests verify that custom schemas and partitioned tables are rejected without being modified. The validator checks structural invariants and extension presence. Safety self-tests have been added to AiOS CI. The synthetic real-PostgreSQL export/restore roundtrip passed on a prior reviewed head. The restore-preflight negative tests for pre-existing custom schemas and partitioned tables, plus the mid-replay transactional rollback regression, are recorded in the release checkpoint. Their CI status must be read from the exact candidate's workflow evidence, not inferred from historical runs. The synthetic roundtrip verifies checksums, schema/data restore, RLS, four audit-event triggers, verifier-function presence, extension presence, and matching 3+2 source/restored fixture rows. This does not prove a full hosted AiOS restore or production recovery readiness. These scripts do not create a managed backup, PITR, automatic schedule, RPO, or RTO.
 
 ## Governance
 
 - Agent 004 implements and submits evidence.
 - Agent 003 independently reviews and certifies.
-- PRs #34 and #35 remain draft/unmerged pending their release gates. The follow-up implementation is on the existing PR #35 head branch `agent004/f2-reaper-record-isolation`, based on reviewed head `0bf79e798f01b77ad665fc1e71873b29c104e5b7`.
+- PRs #34 and #35 remain draft/unmerged pending their release gates. The follow-up implementation is on the existing PR #35 head branch `agent004/f2-reaper-record-isolation`. The current implementation candidate is `54a8bfc9daf5638fc25654acb937c6737c6f80d2`; the last independently reviewed baseline remains `40f80035e43e12604ad326388772008017171dbf`.
 - No production deployment, hosted migration, production write/export, restore, plan change, or merge is authorized.
 - Scope is AiOS only. Armadillon and Arbitron are excluded.
 
