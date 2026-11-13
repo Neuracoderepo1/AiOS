@@ -400,14 +400,32 @@ jobs:
           echo "selftest connects as: $(psql "$SUPER_URL" -X -A -t -c "select current_user || ' rolsuper=' || rolsuper from pg_roles where rolname = current_user")"
           bash scripts/smoke/selftest.sh "$SUPER_URL" 2>&1 | tee /tmp/smoke-selftest.txt
           test "${PIPESTATUS[0]}" -eq 0
-      # Forced post-lock approval binding mutation while the lock worker waits on the original mission.
-      - name: Approval-chain post-lock binding revalidation
+      # Rebuild the disposable local database from every migration before each repetition.
+      # This keeps the fixed fixture IDs isolated and makes all 10 runs independent fresh-stack trials.
+      - name: Approval-chain post-lock binding revalidation (10 fresh migrated databases)
         if: ${{ !cancelled() && steps.start.conclusion == 'success' }}
+        env:
+          AIOS_BINDING_EVIDENCE_DIR: /tmp/approval-chain-binding-evidence
         run: |
-          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
-          set -o pipefail
-          bash tests/concurrency/approval_chain_binding_revalidation.sh "$SUPER_URL" 2>&1 | tee /tmp/approval-chain-binding-revalidation.txt
+          set -euo pipefail
+          TEST_SCRIPT=tests/concurrency/approval_chain_binding_revalidation.sh
+          bash -n "$TEST_SCRIPT"
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck "$TEST_SCRIPT"
+          for attempt in $(seq 1 10); do
+            echo "== approval-chain fresh migrated database repetition $attempt/10 =="
+            supabase db reset --local > "/tmp/approval-chain-binding-reset-$attempt.txt" 2>&1 || {
+              cat "/tmp/approval-chain-binding-reset-$attempt.txt"
+              exit 1
+            }
+            DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+            SUPER_URL=$(printf '%s' "$DB_URL" | sed 's#://postgres:#://supabase_admin:#')
+            bash "$TEST_SCRIPT" "$SUPER_URL" 2>&1 | tee "/tmp/approval-chain-binding-revalidation-$attempt.txt"
+          done
+          echo "PASS: 10/10 consecutive runs on independently reset and fully migrated local PostgreSQL databases"
 
       - name: Upload test evidence
         if: ${{ always() }}
@@ -427,7 +445,9 @@ jobs:
             /tmp/reverse-linked-approval-prelock.txt
             /tmp/approval-resolver-tie-break.txt
             /tmp/cross-org-audit-lock-order.txt
-            /tmp/approval-chain-binding-revalidation.txt
+            /tmp/approval-chain-binding-revalidation-*.txt
+            /tmp/approval-chain-binding-reset-*.txt
+            /tmp/approval-chain-binding-evidence
             /tmp/forced-evidence
             /tmp/l3_audit_lock_forced.txt
             /tmp/l4_reaper_audit_lock_forced.txt
