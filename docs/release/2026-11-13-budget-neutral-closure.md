@@ -1,7 +1,9 @@
 # AiOS budget-neutral release closure checkpoint
 
 **Inspection date:** 2026-11-13  
-**Candidate at start of inspection:** `13394941bc31a8005777ee40cf0ce87115e6783a`  
+**Historical candidate at start of inspection:** `13394941bc31a8005777ee40cf0ce87115e6783a`  
+**Latest reviewed implementation head:** `0bf79e798f01b77ad665fc1e71873b29c104e5b7`  
+**Follow-up branch:** `agent004/restore-preflight-docs-closure`  
 **PR:** [#35](https://github.com/Neuracoderepo1/AiOS/pull/35)  
 **Hosted project:** `jtkcdwhiduixoiodhbfn` (Project AiOS, PostgreSQL 17.6, eu-west-1)
 
@@ -155,9 +157,9 @@ After the initial checkpoint, Agent 004 added the following repository artifacts
 | `docs/operations/LOGICAL-EXPORT-RESTORE.md` | Operator runbook, data handling, prerequisites, limitations, restore evidence and cleanup |
 | `.github/workflows/ci.yml` | Runs the recovery script safety self-tests in the migrations/SQL CI job |
 
-The exporter requires an explicit `NONPRODUCTION` marker restricted to loopback, or an `OWNER_APPROVED_NONPRODUCTION:<approval-id>` / `OWNER_APPROVED_PRODUCTION:<approval-id>` marker for remote sources. It rejects remote `PGHOSTADDR` and libpq service overrides for loopback non-production exports, reads secrets only through libpq's protected `PGPASSFILE`, and refuses output inside the repository. The production marker is a guardrail, not a substitute for owner approval. No production export was performed. The restore script accepts only loopback targets and a database name prefixed `aios_restore_`, validates checksums, refuses non-empty targets, and runs `pg_restore` in a single transaction.
+The exporter requires an explicit `NONPRODUCTION` marker restricted to loopback, or an `OWNER_APPROVED_NONPRODUCTION:<approval-id>` / `OWNER_APPROVED_PRODUCTION:<approval-id>` marker for remote sources. It rejects remote `PGHOSTADDR` and libpq service overrides for loopback non-production exports, reads secrets only through libpq's protected `PGPASSFILE`, and refuses output inside the repository. The production marker is a guardrail, not a substitute for owner approval. No production export was performed. The restore script accepts only loopback targets and a database name prefixed `aios_restore_`, validates checksums, rejects non-system user schemas and pre-existing public relations of every relkind (including partitioned tables), routines, and user-defined types, and runs `pg_restore` in a single transaction. It never drops target objects. The new PostgreSQL roundtrip tests create a custom schema and a partitioned table in separate disposable targets, assert both restores are rejected by the preflight, and assert both original objects remain present.
 
-**Verification boundary:** The fail-closed self-test is wired into CI, but no successful real-PostgreSQL export/restore cycle has yet been evidenced. The validator is structural only; it does not by itself prove audit-chain integrity, owner-context authorization, cron reconstruction, application behavior, or measured recovery objectives. Therefore logical recovery is **PARTIALLY IMPLEMENTED / ENGINEERING VERIFICATION PENDING**, not CLOSED.
+**Verification boundary:** The fail-closed self-test and synthetic real-PostgreSQL export/restore cycle passed on the previous reviewed head. The additional custom-schema and partitioned-table negative cases are now part of the follow-up and await fresh exact-head CI. The validator is structural only; it does not by itself prove audit-chain integrity, owner-context authorization, cron reconstruction, application behavior, or measured recovery objectives. Therefore logical recovery is **PARTIALLY IMPLEMENTED / ENGINEERING VERIFICATION PENDING**, not CLOSED.
 
 ## 11. Supplemental hosted catalog inventory
 
@@ -174,7 +176,7 @@ This inventory improves observability but is not full function-body/hash parity.
 
 ## 12. Current candidate CI boundary
 
-The documentation and recovery-toolkit commits supersede the earlier candidate SHA. The implementation candidate `16c65b8d5bb730d8813124c39a6276df53ea721c` passed all three exact-head workflows: AiOS CI 43346710190, ET27 delete protection 43346709899, and ET27 seal guard 43346710291. The documentation update in this commit is a separate docs-only candidate and must receive fresh CI before being treated as the current PR head.
+The implementation head reviewed by Agent 003 was `0bf79e798f01b77ad665fc1e71873b29c104e5b7`. Its three exact-head workflows passed: AiOS CI 43348478340, ET27 delete protection 43348478449, and ET27 seal guard 43348478353. GitHub artifact metadata for that head reported: AiOS CI evidence artifact 14002338583 SHA-256 `062c1de4d48134d3ec6599fb7a86678dd90d359f6837f2470c266946f6f3725e`; behavioral evidence artifact 14002323186 SHA-256 `c0c3355dabb77864493afd013083a9dc1cd63a76f67f38c2333d95caf7fcfea7`; ET27 delete-protection artifact 14002318574 SHA-256 `b09aaa5e76d161420367a333613912e16d34ae7918df4c911065c251fe171d37`; ET27 seal-guard artifact 14001844269 SHA-256 `2c0f875215a1e491d564868aacaffeffd682a05eaf128c73fbe2780b2e6f1e94`. The current follow-up branch adds a stricter restore target preflight, negative real-PostgreSQL tests for a pre-existing custom schema and partitioned table (including non-modification assertions), and this documentation refresh. Its exact-head CI has not yet run; no claims of success are made until all three workflows complete against the new commit SHA.
 
 ## 13. Updated findings register
 
@@ -199,7 +201,7 @@ The documentation and recovery-toolkit commits supersede the earlier candidate S
 The export approval gate was tightened after source inspection: the bare `NONPRODUCTION` marker is accepted only for loopback sources and is rejected if `PGHOSTADDR`, `PGSERVICE`, or `PGSERVICEFILE` could redirect the connection. Remote non-production and production exports require an explicit approval identifier. The local restore and validator reject remote `PGHOST`/`PGHOSTADDR`, reject libpq service overrides, and verify the password file is present with permissions 0600 or stricter. Safety tests now include these negative cases. These checks are code-level guardrails; they do not replace independent approval or a real PostgreSQL restore test.
 
 
-## 14. Final implementation-candidate CI and artifact evidence
+## 14. Historical implementation-candidate CI and artifact evidence
 
 Implementation candidate: `16c65b8d5bb730d8813124c39a6276df53ea721c`
 
