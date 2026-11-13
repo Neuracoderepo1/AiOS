@@ -69,7 +69,7 @@ begin
   from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid=p.pronamespace
   where n.nspname='private' and p.proname='aios_reap_stale_tasks'
-    and pg_catalog.pg_get_function_identity_arguments(p.oid)='p_max_age interval';
+    and p.pronargs=1 and p.proargtypes[0]='interval'::regtype;
   if v_src is null then
     raise exception 'expected private.aios_reap_stale_tasks(interval) is missing';
   end if;
@@ -122,7 +122,7 @@ begin
     end;';
   if position(v_old in v_src)=0 then raise exception 'phase-one deferred persistence anchor missing'; end if;
   v_src := replace(v_src,v_old,v_new);
-  if position(''v_fail_closed'' in v_src)=0 then raise exception 'phase-one deferred patch failed'; end if;
+  if position('v_fail_closed' in v_src)=0 then raise exception 'phase-one deferred patch failed'; end if;
 
   -- Do not enter public transition processing after a fail-closed Phase 1 failure.
   v_old := '  -- Phase 1 dispositions are persisted only after all row locks have been attempted.';
@@ -334,6 +334,12 @@ revoke all on function private.aios_reap_stale_tasks(interval)
 revoke all on function private.aios_reaper_record_quarantine(uuid,uuid,text,text,text)
   from public, anon, authenticated, service_role;
 
+select cron.schedule(
+  'aios-reap-stale-tasks',
+  '*/5 * * * *',
+  $select private.aios_reap_stale_tasks_scheduled('10 minutes'::interval)$
+);
+
 -- Owner/admin halt clearance mirrors the existing task-quarantine RPC's
 -- auth.uid() + membership-row lock authorization boundary.
 create or replace function public.aios_clear_task_reaper_halt(p_resolution_note text)
@@ -351,10 +357,11 @@ begin
   if p_resolution_note is null or length(btrim(p_resolution_note))<12 then
     raise exception 'resolution note must contain at least 12 characters' using errcode='22023';
   end if;
-  select h.id,h.organization_id into v_halt_id,v_org
-  from private.aios_task_reaper_halt h where h.cleared_at is null
-  for update;
+  select h.organization_id into v_org
+  from private.aios_task_reaper_halt h where h.cleared_at is null;
   if not found then raise exception 'active reaper halt not found' using errcode='P0002'; end if;
+  -- Match the existing owner-resolution linearization order: membership first,
+  -- then the protected halt row.
   select m.role::text into v_role
   from public.aios_organization_members m
   where m.organization_id=v_org and m.user_id=v_actor
@@ -362,6 +369,11 @@ begin
   if not found or v_role not in ('owner','admin','administrator') then
     raise exception 'organization owner/admin authorization required' using errcode='42501';
   end if;
+  select h.id into v_halt_id
+  from private.aios_task_reaper_halt h
+  where h.cleared_at is null and h.organization_id=v_org
+  for update;
+  if not found then raise exception 'active reaper halt changed concurrently' using errcode='40001'; end if;
   update private.aios_task_reaper_halt
   set cleared_at=clock_timestamp(),cleared_by=v_actor,clear_note=btrim(p_resolution_note)
   where id=v_halt_id and cleared_at is null;
