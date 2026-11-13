@@ -70,7 +70,7 @@ On macOS, use `shasum -a 256 -c SHA256SUMS` if `sha256sum` is unavailable. Prese
 
 ## Restore into isolated local PostgreSQL
 
-Use a disposable local PostgreSQL instance, not the hosted project. Install compatible PostgreSQL client/server versions and all required extensions before restore. Read `extensions.tsv` from the export and confirm each extension is available locally. Do not silently omit an extension.
+Use a disposable local PostgreSQL instance, not the hosted project. Install compatible PostgreSQL client/server versions and confirm that every required extension binary/control file is available locally. Read `extensions.tsv` from the export. Do not pre-create extensions in the target database before running the restore script: the archive may contain extension creation entries, and the target must remain empty. The restore will fail closed if the extension cannot be created from the archive. Supabase-specific/provider-managed extensions may not be available in a generic local PostgreSQL installation; use a compatible local Supabase stack or classify that dependency as external.
 
 Create a fresh empty database with a name beginning `aios_restore_`. Example:
 
