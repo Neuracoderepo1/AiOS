@@ -53,6 +53,7 @@ drop function if exists public.l4_wj_test_fn();
 delete from public.aios_backlog_dispositions where organization_id in ('$ORG','$ORG2');
 delete from public.aios_audit_events where organization_id in ('$ORG','$ORG2');
 alter table public.aios_audit_events enable always trigger trg_aios_audit_immutable_delete;
+delete from private.aios_task_reaper_halt where organization_id in ('$ORG','$ORG2');
 delete from private.aios_task_reaper_deferred where task_id in (select id from public.aios_tasks where organization_id in ('$ORG','$ORG2'));
 delete from private.aios_task_reaper_quarantine where task_id in (select id from public.aios_tasks where organization_id in ('$ORG','$ORG2'));
 delete from public.aios_tasks where organization_id in ('$ORG','$ORG2');
@@ -113,6 +114,7 @@ q "create or replace function public.l4_wj_test_fn() returns trigger language pl
        if new.status='failed' and new.id='$T4' then raise exception 'forced transient lock conflict' using errcode='40P01'; end if;
        if new.status='failed' and new.id='$T5' then return null; end if;
        if new.status='blocked_pending_approval' and new.id='$T8' then return null; end if;
+       if new.status='failed' and new.id='$T10' then return null; end if;
        return new;
      end \$t\$;
      create trigger l4_wj_test_trg before update on public.aios_tasks for each row execute function public.l4_wj_test_fn();" >/dev/null
@@ -157,6 +159,44 @@ check "suppressed approval transition leaves mission running" "$([ "$(q "select 
 check "suppressed approval transition creates the exact durable quarantine reason" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T8' and reason='approval_block_rowcount_invariant' and resolved_at is null")" = 1 ] && echo true || echo false)"
 check "suppressed approval transition creates owner-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T8' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
 check "approval transition is not counted as blocked" "$([ "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("blocked_pending_approval", -1))' "$R")" = 0 ] && echo true || echo false)"
+
+echo "== fail-closed wrapper: quarantine write failure persists a durable halt"
+read M9 T9 <<<"$(new_stale halt-before)"
+read M10 T10 <<<"$(new_stale halt-failure)"
+read M11 T11 <<<"$(new_stale halt-after)"
+need_ids "$M9" "$T9" "$M10" "$T10" "$M11" "$T11"
+q "create or replace function private.l4_reaper_halt_fail_fn() returns trigger
+     language plpgsql set search_path='' as \$hf\$
+     begin
+       if new.task_id='$T10'::uuid then
+         raise exception 'injected quarantine persistence failure' using errcode='XX901';
+       end if;
+       return new;
+     end \$hf\$;
+   create trigger l4_reaper_halt_fail_trg
+     before insert or update on private.aios_task_reaper_quarantine
+     for each row execute function private.l4_reaper_halt_fail_fn();" >/dev/null
+HALT_RESULT=$(q "select private.aios_reap_stale_tasks_scheduled('10 minutes'::interval)::text") || { echo "scheduled reaper wrapper raised"; exit 1; }
+check "earlier independent recovery commits before halt" "$([ "$(status "$T9")" = failed ] && echo true || echo false)"
+check "quarantine-write-failing task remains unchanged" "$([ "$(status "$T10")" = running ] && echo true || echo false)"
+check "later task is not processed after fail-closed condition" "$([ "$(status "$T11")" = running ] && echo true || echo false)"
+check "wrapper reports halted_fail_closed" "$([ "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("outcome"))' "$HALT_RESULT")" = halted_fail_closed ] && echo true || echo false)"
+check "durable active halt records the failed task and organization" "$([ "$(q "select count(*) from private.aios_task_reaper_halt where cleared_at is null and task_id='$T10' and organization_id='$ORG'")" = 1 ] && echo true || echo false)"
+NEXT_TICK=$(q "select private.aios_reap_stale_tasks_scheduled('10 minutes'::interval)::text") || { echo "halted tick raised"; exit 1; }
+check "next scheduled tick observes durable halt" "$([ "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("outcome"))' "$NEXT_TICK")" = halted ] && echo true || echo false)"
+check "halted tick leaves later task untouched" "$([ "$(status "$T11")" = running ] && echo true || echo false)"
+q "update public.aios_organization_members set role='owner' where organization_id='$ORG' and user_id='$REQ';
+   select set_config('request.jwt.claim.sub','$REQ',false);
+   select set_config('request.jwt.claims','{\\"sub\\":\\"$REQ\\",\\"role\\":\\"authenticated\\"}',false);
+   select public.aios_clear_task_reaper_halt('Owner reviewed the failed quarantine persistence and authorized retry.');" >/dev/null || { echo "owner halt clearance failed"; exit 1; }
+check "owner clearance is durably audited" "$([ "$(q "select count(*) from private.aios_task_reaper_halt where task_id='$T10' and cleared_at is not null and cleared_by='$REQ' and length(clear_note)>=12")" = 1 ] && echo true || echo false)"
+q "drop trigger l4_reaper_halt_fail_trg on private.aios_task_reaper_quarantine;
+   update public.aios_organization_members set role='member' where organization_id='$ORG' and user_id='$REQ';" >/dev/null
+RETRY_RESULT=$(q "select private.aios_reap_stale_tasks_scheduled('10 minutes'::interval)::text") || { echo "post-clearance retry raised"; exit 1; }
+check "post-clearance retry re-evaluates and quarantines suppressed task" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T10' and reason='Stale-task recovery UPDATE matched no row; task was not transitioned' and resolved_at is null")" = 1 ] && echo true || echo false)"
+check "post-clearance retry recovers later task" "$([ "$(status "$T11")" = failed ] && echo true || echo false)"
+check "post-clearance retry leaves no active global halt" "$([ "$(q "select count(*) from private.aios_task_reaper_halt where cleared_at is null")" = 0 ] && echo true || echo false)"
+check "audit chain valid after fail-closed recovery" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
 check "T5 remains running when a BEFORE UPDATE trigger suppresses its transition" "$([ "$(status "$T5")" = running ] && echo true || echo false)"
 check "suppressed T5 transition is quarantined with P0002" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T5' and resolved_at is null and sqlstate='P0002'")" = 1 ] && echo true || echo false)"
 check "suppressed T5 transition receives one manual-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T5' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
