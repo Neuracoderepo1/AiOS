@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# One run per PR (or per ref). A newer push cancels the superseded PR run; main and manual runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   SUPABASE_CLI_VERSION: "2.122.0"
 
@@ -21,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: supabase/setup-cli@v1
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
@@ -36,13 +43,26 @@ jobs:
           started=0
           for attempt in 1 2 3; do
             { echo "=== attempt $attempt pre-start $(date -u +%FT%TZ)"; ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':54[0-9]{3}$' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
-            if supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector 2>&1 | tee -a /tmp/start.txt; then started=1; break; fi
+            if supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector 2>&1 | sed -E -e 's/sb_(secret|publishable)_[A-Za-z0-9_-]+/[REDACTED_SUPABASE_KEY]/g' -e 's#postgres(ql)?://[^[:space:]]+#[REDACTED_CONNECTION_STRING]#g' | tee -a /tmp/start.txt; then started=1; break; fi
             { echo "=== attempt $attempt FAILED; post-failure listeners"; ss -ltnpH 2>/dev/null | grep -E ':54[0-9]{3}\b' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
             supabase stop --no-backup >> /tmp/start.txt 2>&1 || true
             sleep 5
           done
           echo "::notice title=ET27D supabase start::started=$started after attempt $attempt"
           [ "$started" = 1 ]
+      - name: Verify startup logs contain no unredacted Supabase keys
+        run: |
+          if grep -Eq 'sb_(secret|publishable)_[A-Za-z0-9_-]+|postgres(ql)?://[^[:space:]]+' /tmp/start.txt; then
+            echo "::error::unredacted Supabase credential or DB connection string found in startup log"
+            exit 1
+          fi
+          key_count=$(grep -o '\[REDACTED_SUPABASE_KEY\]' /tmp/start.txt | wc -l | tr -d ' ')
+          connection_count=$(grep -o '\[REDACTED_CONNECTION_STRING\]' /tmp/start.txt | wc -l | tr -d ' ')
+          if [ "$key_count" -lt 1 ] || [ "$connection_count" -lt 1 ]; then
+            echo "::error::expected key and connection-string redactions were not observed"
+            exit 1
+          fi
+          echo "PASS startup log redaction: keys=$key_count connection_strings=$connection_count"
       - name: Run delete protection suite
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
