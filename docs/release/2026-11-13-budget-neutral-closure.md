@@ -155,7 +155,7 @@ After the initial checkpoint, Agent 004 added the following repository artifacts
 | `docs/operations/LOGICAL-EXPORT-RESTORE.md` | Operator runbook, data handling, prerequisites, limitations, restore evidence and cleanup |
 | `.github/workflows/ci.yml` | Runs the recovery script safety self-tests in the migrations/SQL CI job |
 
-The exporter requires an explicit `NONPRODUCTION` or `OWNER_APPROVED_PRODUCTION:<approval-id>` marker, reads secrets only through libpq's protected `PGPASSFILE`, and refuses output inside the repository. The production marker is a guardrail, not a substitute for owner approval. No production export was performed. The restore script accepts only loopback targets and a database name prefixed `aios_restore_`, validates checksums, refuses non-empty targets, and runs `pg_restore` in a single transaction.
+The exporter requires an explicit `NONPRODUCTION` marker restricted to loopback, or an `OWNER_APPROVED_NONPRODUCTION:<approval-id>` / `OWNER_APPROVED_PRODUCTION:<approval-id>` marker for remote sources. It rejects remote `PGHOSTADDR` and libpq service overrides for loopback non-production exports, reads secrets only through libpq's protected `PGPASSFILE`, and refuses output inside the repository. The production marker is a guardrail, not a substitute for owner approval. No production export was performed. The restore script accepts only loopback targets and a database name prefixed `aios_restore_`, validates checksums, refuses non-empty targets, and runs `pg_restore` in a single transaction.
 
 **Verification boundary:** The fail-closed self-test is wired into CI, but no successful real-PostgreSQL export/restore cycle has yet been evidenced. The validator is structural only; it does not by itself prove audit-chain integrity, owner-context authorization, cron reconstruction, application behavior, or measured recovery objectives. Therefore logical recovery is **PARTIALLY IMPLEMENTED / ENGINEERING VERIFICATION PENDING**, not CLOSED.
 
@@ -174,7 +174,7 @@ This inventory improves observability but is not full function-body/hash parity.
 
 ## 12. Current candidate CI boundary
 
-The documentation and recovery-toolkit commits supersede the earlier candidate SHA. The current candidate is `962d99cf0dba95f747e2f413f065119d84e06f88`. Its three exact-head workflows must complete successfully before any prior successful workflow results can be used as current candidate evidence. No artifact or CI result from an earlier SHA is being attributed to this SHA.
+The documentation and recovery-toolkit commits supersede the earlier candidate SHA. The current candidate is `0a7ce7caa64c6a24d9eaf4045a4571b84b1e0eb9`. Its three exact-head workflows must complete successfully before any prior successful workflow results can be used as current candidate evidence. No artifact or CI result from an earlier SHA is being attributed to this SHA.
 
 ## 13. Updated findings register
 
@@ -183,7 +183,7 @@ The documentation and recovery-toolkit commits supersede the earlier candidate S
 | F-2/P1 source review | A. CLOSED | Agent 003 source disposition remains accepted; production certification withheld |
 | Stale migration count | A. CLOSED | Corrected current-state document |
 | Recovery scripts and operator runbook | A. IMPLEMENTED, verification pending | Self-tests wired into CI; end-to-end PostgreSQL export/restore not yet demonstrated |
-| Exact-head CI for latest recovery candidate | E. ENGINEERING BLOCKED pending evidence | Await all three workflows on SHA `962d99cf0dba95f747e2f413f065119d84e06f88` |
+| Exact-head CI for latest recovery candidate | E. ENGINEERING BLOCKED pending evidence | Await all three workflows on SHA `0a7ce7caa64c6a24d9eaf4045a4571b84b1e0eb9` |
 | 11 unapplied hosted migrations and catalog drift | B. OWNER ACTION REQUIRED | Requires separately approved migration plan |
 | Owner-context audit verification | B. OWNER ACTION REQUIRED | Genuine authenticated owner session required |
 | Full branch-protection evidence | B/D. OWNER ACTION / EXTERNAL LIMITATION | Owner export required; dedicated endpoint returns 403 |
@@ -192,3 +192,8 @@ The documentation and recovery-toolkit commits supersede the earlier candidate S
 | Real-PostgreSQL export/restore acceptance | E. ENGINEERING BLOCKED | Requires disposable PostgreSQL/Supabase environment and actual dump/restore execution |
 | External TSA/RFC3161 trust anchor | D. EXTERNAL PLATFORM LIMITATION | Provider/trust-root dependency remains |
 
+
+
+### Recovery guard hardening follow-up
+
+The export approval gate was tightened after source inspection: the bare `NONPRODUCTION` marker is accepted only for loopback sources and is rejected if `PGHOSTADDR`, `PGSERVICE`, or `PGSERVICEFILE` could redirect the connection. Remote non-production and production exports require an explicit approval identifier. The local restore and validator reject remote `PGHOST`/`PGHOSTADDR`, reject libpq service overrides, and verify the password file is present with permissions 0600 or stricter. Safety tests now include these negative cases. These checks are code-level guardrails; they do not replace independent approval or a real PostgreSQL restore test.
