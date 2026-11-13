@@ -140,3 +140,55 @@ Agent 003 is requested to independently review:
 5. The exact-head CI and artifact evidence after this documentation commit completes fresh CI.
 
 Agent 004 does not self-certify production readiness. Production certification remains withheld until Agent 003 independently reviews the final candidate and all owner/platform dependencies are resolved or explicitly accepted under an authorized release decision.
+
+
+## 10. Supplemental engineering execution — logical export and restore
+
+After the initial checkpoint, Agent 004 added the following repository artifacts:
+
+| Path | Purpose |
+|---|---|
+| `scripts/recovery/export_logical.sh` | Approval-gated pg_dump custom archive, schema-only export, extension/source inventory, archive listing, and SHA-256 manifest |
+| `scripts/recovery/restore_local.sh` | Checksum-verified restore into an empty loopback-only `aios_restore_*` database |
+| `scripts/recovery/validate_local_restore.sh` | Structural validation of application tables, RLS, audit triggers, verifier presence, and extension inventory |
+| `tests/recovery/test_scripts.sh` | Shell syntax and fail-closed guard tests |
+| `docs/operations/LOGICAL-EXPORT-RESTORE.md` | Operator runbook, data handling, prerequisites, limitations, restore evidence and cleanup |
+| `.github/workflows/ci.yml` | Runs the recovery script safety self-tests in the migrations/SQL CI job |
+
+The exporter requires an explicit `NONPRODUCTION` or `OWNER_APPROVED_PRODUCTION:<approval-id>` marker, reads secrets only through libpq's protected `PGPASSFILE`, and refuses output inside the repository. The production marker is a guardrail, not a substitute for owner approval. No production export was performed. The restore script accepts only loopback targets and a database name prefixed `aios_restore_`, validates checksums, refuses non-empty targets, and runs `pg_restore` in a single transaction.
+
+**Verification boundary:** The fail-closed self-test is wired into CI, but no successful real-PostgreSQL export/restore cycle has yet been evidenced. The validator is structural only; it does not by itself prove audit-chain integrity, owner-context authorization, cron reconstruction, application behavior, or measured recovery objectives. Therefore logical recovery is **PARTIALLY IMPLEMENTED / ENGINEERING VERIFICATION PENDING**, not CLOSED.
+
+## 11. Supplemental hosted catalog inventory
+
+A focused read-only catalog summary on 2026-11-13 returned:
+- PostgreSQL 17.6; database role `postgres`; `auth.uid() = NULL`.
+- 70 public/private functions; 48 SECURITY DEFINER. All inspected SECURITY DEFINER functions are postgres-owned, use `search_path = ''`, and have no PUBLIC or anon EXECUTE. Five have authenticated EXECUTE and 14 have service_role EXECUTE; these require per-function intent review.
+- 18 public/private application tables, all RLS-enabled; zero FORCE RLS; 38 policies.
+- Seven installed extensions: pg_cron 1.6.4, pg_jsonschema 0.3.3, pg_stat_statements 1.11, pgcrypto 1.3, plpgsql 1.0, supabase_vault 0.3.1, uuid-ossp 1.1.
+- Four audit-table protection triggers remain ORIGIN-enabled. `service_role` retains SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER; no TRUNCATE.
+- Two active cron jobs only: `aios-reap-stale-tasks` and `aios-expire-stale-approvals`, both every five minutes.
+- `aios_restorer` remains absent.
+
+This inventory improves observability but is not full function-body/hash parity. Full candidate-versus-hosted catalog comparison and function-level grant-intent reconciliation remain engineering work.
+
+## 12. Current candidate CI boundary
+
+The documentation and recovery-toolkit commits supersede the earlier candidate SHA. The current candidate is `962d99cf0dba95f747e2f413f065119d84e06f88`. Its three exact-head workflows must complete successfully before any prior successful workflow results can be used as current candidate evidence. No artifact or CI result from an earlier SHA is being attributed to this SHA.
+
+## 13. Updated findings register
+
+| Finding | Classification | Current disposition |
+|---|---|---|
+| F-2/P1 source review | A. CLOSED | Agent 003 source disposition remains accepted; production certification withheld |
+| Stale migration count | A. CLOSED | Corrected current-state document |
+| Recovery scripts and operator runbook | A. IMPLEMENTED, verification pending | Self-tests wired into CI; end-to-end PostgreSQL export/restore not yet demonstrated |
+| Exact-head CI for latest recovery candidate | E. ENGINEERING BLOCKED pending evidence | Await all three workflows on SHA `962d99cf0dba95f747e2f413f065119d84e06f88` |
+| 11 unapplied hosted migrations and catalog drift | B. OWNER ACTION REQUIRED | Requires separately approved migration plan |
+| Owner-context audit verification | B. OWNER ACTION REQUIRED | Genuine authenticated owner session required |
+| Full branch-protection evidence | B/D. OWNER ACTION / EXTERNAL LIMITATION | Owner export required; dedicated endpoint returns 403 |
+| Supabase managed backups/PITR | C. PAID-TIER / BUDGET BLOCKED | Current Free plan excludes scheduled backups; PITR requires paid plan/add-on |
+| Full function definition/hash parity and grant-intent review | E. ENGINEERING BLOCKED | Aggregate catalog captured; exact source-to-hosted parity remains to be completed |
+| Real-PostgreSQL export/restore acceptance | E. ENGINEERING BLOCKED | Requires disposable PostgreSQL/Supabase environment and actual dump/restore execution |
+| External TSA/RFC3161 trust anchor | D. EXTERNAL PLATFORM LIMITATION | Provider/trust-root dependency remains |
+
