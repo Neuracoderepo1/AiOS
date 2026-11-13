@@ -50,6 +50,10 @@ end
 alter table public.aios_audit_events disable trigger trg_aios_audit_immutable_delete;
 drop trigger if exists l4_wj_test_trg on public.aios_tasks;
 drop function if exists public.l4_wj_test_fn();
+drop trigger if exists l4_reaper_task_suppress_trg on public.aios_tasks;
+drop function if exists public.l4_reaper_task_suppress_fn();
+drop trigger if exists l4_reaper_halt_fail_trg on private.aios_task_reaper_quarantine;
+drop function if exists private.l4_reaper_halt_fail_fn();
 delete from public.aios_backlog_dispositions where organization_id in ('$ORG','$ORG2');
 delete from public.aios_audit_events where organization_id in ('$ORG','$ORG2');
 alter table public.aios_audit_events enable always trigger trg_aios_audit_immutable_delete;
@@ -205,6 +209,13 @@ check "post-clearance retry re-evaluates and quarantines suppressed task" "$([ "
 check "post-clearance retry recovers later task" "$([ "$(status "$T11")" = failed ] && echo true || echo false)"
 check "post-clearance retry leaves no active global halt" "$([ "$(q "select count(*) from private.aios_task_reaper_halt where cleared_at is null")" = 0 ] && echo true || echo false)"
 check "audit chain valid after fail-closed recovery" "$( [ "$(verify_chain "$ORG")" = true ] && echo true || echo false)"
+# Remove every test-only object before subsequent runs and before the smoke privilege
+# inventory. A failed assertion still reaches the EXIT cleanup above.
+q "drop trigger if exists l4_reaper_task_suppress_trg on public.aios_tasks;
+   drop function if exists public.l4_reaper_task_suppress_fn();
+   drop trigger if exists l4_reaper_halt_fail_trg on private.aios_task_reaper_quarantine;
+   drop function if exists private.l4_reaper_halt_fail_fn();" >/dev/null
+check "test-only fail-closed triggers and functions are removed" "$([ "$(q "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where (n.nspname='private' and p.proname='l4_reaper_halt_fail_fn') or (n.nspname='public' and p.proname='l4_reaper_task_suppress_fn')")" = 0 ] && echo true || echo false)"
 check "T5 remains running when a BEFORE UPDATE trigger suppresses its transition" "$([ "$(status "$T5")" = running ] && echo true || echo false)"
 check "suppressed T5 transition is quarantined with P0002" "$([ "$(q "select count(*) from private.aios_task_reaper_quarantine where task_id='$T5' and resolved_at is null and sqlstate='P0002'")" = 1 ] && echo true || echo false)"
 check "suppressed T5 transition receives one manual-review disposition" "$([ "$(q "select count(*) from public.aios_backlog_dispositions where entity_id='$T5' and disposition='manual_review'")" = 1 ] && echo true || echo false)"
