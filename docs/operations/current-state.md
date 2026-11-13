@@ -2,6 +2,7 @@
 
 **Snapshot:** 2026-11-13, updated after exact-head engineering verification  
 **Current implementation candidate:** `54a8bfc9daf5638fc25654acb937c6737c6f80d2`  
+**Documentation successor at this checkpoint:** `b6cee309b532256b863b4648167c62c18ccc71ab` (exact-head CI was triggered; this SHA is superseded by the commit containing this update).  
 **Last independently reviewed baseline:** `40f80035e43e12604ad326388772008017171dbf`  
 **Current PR #35 follow-up:** approval-chain concurrency-test repair and evidence-backed documentation reconciliation. The current candidate has green exact-head CI; Agent 003 exact-head review is still required.  
 **Active review:** PR #35, draft and unmerged  
