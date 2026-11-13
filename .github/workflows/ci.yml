@@ -116,6 +116,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
+      - name: Recovery export/restore safety self-tests
+        run: bash tests/recovery/test_scripts.sh
       - name: Migration version uniqueness and ordering
         run: |
           ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | tee /tmp/dups
