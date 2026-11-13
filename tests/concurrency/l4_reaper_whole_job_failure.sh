@@ -106,7 +106,7 @@ STRUCTURAL_MISSION="$(q "insert into public.aios_missions (organization_id,title
 STRUCTURAL_TASK1="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-1','running',now()-interval '60 minutes') returning id" | head -1)"
 STRUCTURAL_TASK2="$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status,updated_at) values ('$ORG','$STRUCTURAL_MISSION','$AGT','f2-structural-2','running',now()-interval '60 minutes') returning id" | head -1)"
 need_ids "$M1" "$T1" "$M2" "$T2" "$M3" "$T3" "$M4" "$T4" "$M5" "$T5" "$STRUCTURAL_MISSION" "$STRUCTURAL_TASK1" "$STRUCTURAL_TASK2" "$M8" "$T8"
-[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5','$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and status='running' and updated_at<now()-interval '10 minutes'")" = 8 ] || { echo "fixture not stale"; exit 2; }
+[ "$(q "select count(*) from public.aios_tasks where id in ('$T1','$T2','$T3','$T4','$T5','$T8','$STRUCTURAL_TASK1','$STRUCTURAL_TASK2') and status='running' and updated_at<now()-interval '10 minutes'")" = 8 ] || { echo "fixture not stale"; exit 2; }
 
 q "create or replace function public.l4_wj_test_fn() returns trigger language plpgsql as \$t\$
      begin
