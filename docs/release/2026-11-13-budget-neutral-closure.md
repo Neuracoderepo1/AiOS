@@ -223,3 +223,39 @@ Downloaded ZIP artifacts and independently recomputed SHA-256:
 All four local SHA-256 computations matched GitHub artifact metadata. AiOS CI included the real PostgreSQL roundtrip and all existing regression/concurrency suites. The candidate passed 46/46 canonical matrix cases, 97/97 behavioral and no-remote tests, 23/23 mutation tests, 5/5 gap probes, three F-2 repetitions, and 86/86 smoke tests.
 
 Production certification remains withheld. Agent 003 independent review is requested; no formal review has been recorded at this checkpoint.
+
+
+## 15. Agent 003 follow-up closure — 13 November 2026
+
+**Last independently reviewed implementation baseline:** `40f80035e43e12604ad326388772008017171dbf`.
+
+All three workflows passed on that exact baseline:
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| AiOS CI | 43404925437 | success, 4/4 jobs |
+| ET27 delete protection | 43404925475 | success |
+| ET27 seal guard | 43404925438 | success |
+
+The four artifacts were downloaded and inspected; independently computed SHA-256 values matched GitHub metadata:
+
+| Artifact | ID | SHA-256 |
+|---|---:|---|
+| AiOS CI evidence | 14026927672 | `9932989e494a90796f31741194da45de7a8384a95493ae8608b6b25568106107` |
+| Behavioral evidence | 14026223969 | `81d639dc68f19c2e032a93ed7a639a627e0b6565cdb036cbdb054fb06451207a` |
+| ET27 delete protection | 14026792248 | `32ec854a7eb9d57cc139bf115327a1ed563068075c1668c1cadbd9b3a6f9baf6` |
+| ET27 seal guard | 14027036762 | `406bb6180a57a252edbadda05605f40f8199bc65f4158465adc7b7d12f673c9f` |
+
+### D1 — restore target preflight and atomicity
+
+The preflight contract is explicitly narrowed to enumerated namespace-local classes. It checks non-system schemas except the standard `public` schema itself; every public relation kind; routines; user-defined types; collations; conversions; operators; operator classes/families; text-search configurations, dictionaries, parsers and templates; and extended statistics. Extension-owned objects are excluded to avoid false positives from installed extensions. The runbook lists non-enumerated database-level classes, including extensions, event triggers, publications/subscriptions, foreign data wrappers/servers, user mappings, casts, transforms, languages, default privileges and roles.
+
+The restore remains non-destructive and uses `pg_restore --exit-on-error --single-transaction`. In addition to the preflight rejection tests for a pre-existing custom schema and partitioned table, the follow-up real-PostgreSQL regression deliberately bypasses only the preflight, creates a duplicate-relation conflict after earlier archive objects have begun restoring, and asserts that the earlier schema/extension are rolled back while the pre-existing table and its sentinel row remain unchanged. This is synthetic disposable-database evidence only. Fresh CI on the successor commit is required before D1 is marked accepted.
+
+### D2 — documentation reconciliation
+
+This checkpoint and `docs/operations/current-state.md` now identify `40f80035...` as the last independently reviewed baseline, preserve its exact workflow/artifact evidence, and explicitly distinguish that baseline from the new unverified documentation/test successor. The successor's exact SHA is the current PR #35 head and must be taken from GitHub after the final commit; no prior SHA's CI is substituted.
+
+### Release boundary remains unchanged
+
+Production certification remains **WITHHELD / NOT CERTIFIED**. The 11 unapplied hosted migrations, audit trigger/grant drift, missing hosted restorer role, owner-context verification, branch-governance evidence, complete source-to-hosted function parity, production recovery exercise, measured RPO/RTO, and external TSA/trust-root dependency remain open. No hosted migration, production write/export/restore, deployment, billing change, paid upgrade, or merge is authorized by this checkpoint. PR #35 must remain draft and unmerged pending fresh exact-head CI and independent Agent 003 review.
