@@ -11,14 +11,22 @@ command -v psql >/dev/null || fail "psql is required"
 
 tmp="$(mktemp -d /tmp/aios-recovery-roundtrip.XXXXXX)"
 chmod 700 "$tmp"
+created_export_fixture=0
+created_restore_fixture=0
 cleanup() {
   rc=$?
   set +e
   if [[ -f "$tmp/connection.env" ]]; then
     # shellcheck disable=SC1090
     source "$tmp/connection.env"
-    PGUSER=supabase_admin PGDATABASE=postgres dropdb --if-exists aios_restore_ci >/dev/null 2>&1
-    PGUSER=supabase_admin PGDATABASE=postgres dropdb --if-exists aios_export_fixture >/dev/null 2>&1
+    # Remove only databases this invocation successfully created. Never pre-drop
+    # or clean up a pre-existing local database with a matching fixture name.
+    if [[ "$created_restore_fixture" == 1 ]]; then
+      PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_restore_ci >/dev/null 2>&1
+    fi
+    if [[ "$created_export_fixture" == 1 ]]; then
+      PGUSER=supabase_admin PGDATABASE=postgres dropdb aios_export_fixture >/dev/null 2>&1
+    fi
   fi
   rm -rf "$tmp"
   exit "$rc"
@@ -54,11 +62,12 @@ with open(os.path.join(base,"connection.env"),"w",encoding="utf-8") as f:
 PY
 # shellcheck disable=SC1091
 source "$tmp/connection.env"
-# Only disposable local CI databases are created/dropped by this test.
-dropdb --if-exists aios_export_fixture >/dev/null 2>&1 || true
-dropdb --if-exists aios_restore_ci >/dev/null 2>&1 || true
+# Never delete pre-existing databases. Creation must fail closed on a name
+# collision; cleanup removes only databases created successfully below.
 createdb --owner=postgres aios_export_fixture
+created_export_fixture=1
 createdb aios_restore_ci
+created_restore_fixture=1
 
 PGUSER=postgres PGDATABASE=aios_export_fixture psql -X -v ON_ERROR_STOP=1 <<'SQL'
 create extension if not exists pgcrypto;
