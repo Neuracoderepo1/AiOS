@@ -36,57 +36,13 @@ jobs:
           set -o pipefail
           ls supabase/migrations | wc -l | tee /tmp/migration_count.txt
           : > /tmp/start.txt; : > /tmp/ports.txt
-          # Infrastructure-only retry. A runner can occasionally retain a conflicting Supabase-range port/container
-          # before the database starts. Capture diagnostics, stop any partial stack, and retry startup only.
-          # The seal-guard SQL suite below is still executed exactly once and is never retried or modified.
+          # Infrastructure-only retry. Capture diagnostics, stop partial stacks, and retry startup only.
+          # The seal-guard SQL suite below is executed exactly once and is never retried or modified.
           started=0
           for attempt in 1 2 3; do
-            { echo "=== attempt $attempt pre-start $(date -u +%FT%TZ)"; ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':54[0-9]{3}
-      - name: Verify startup logs contain no unredacted Supabase keys
-        run: |
-          if grep -Eq 'sb_(secret|publishable)_[A-Za-z0-9_-]+|postgres(ql)?://[^[:space:]]+' /tmp/start.txt; then
-            echo "::error::unredacted Supabase credential or DB connection string found in startup log"
-            exit 1
-          fi
-          key_count=$(grep -o '\[REDACTED_SUPABASE_KEY\]' /tmp/start.txt | wc -l | tr -d ' ')
-          connection_count=$(grep -o '\[REDACTED_CONNECTION_STRING\]' /tmp/start.txt | wc -l | tr -d ' ')
-          if [ "$key_count" -lt 1 ] || [ "$connection_count" -lt 1 ]; then
-            echo "::error::expected key and connection-string redactions were not observed"
-            exit 1
-          fi
-          echo "PASS startup log redaction: keys=$key_count connection_strings=$connection_count"
-      - name: Run seal guard suite
-        run: |
-          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          set +e
-          psql "$DB_URL" -v ON_ERROR_STOP=1 -X -A -t -f tests/sql/10_invocation_seal_guard.sql > /tmp/et27.txt 2>&1
-          rc=$?
-          echo "psql exit code: $rc" | tee -a /tmp/et27.txt
-          enc() { sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g'; }
-          echo "::notice title=ET27 migrations replayed::$(cat /tmp/migration_count.txt) migration files applied by supabase start on a fresh database"
-          echo "::notice title=ET27 summary::$(grep -E 'ET27_SUMMARY|psql exit code' /tmp/et27.txt | enc)"
-          echo "::notice title=ET27 mutants::$(grep 'ET27_MUTANT' /tmp/et27.txt | cut -d'|' -f2- | enc)"
-          echo "::notice title=ET27 coverage::$(grep 'ET27_COVERAGE' /tmp/et27.txt | cut -d'|' -f2- | enc)"
-          echo "::notice title=ET27 results FAIL rows::$(grep 'ET27_RESULT' /tmp/et27.txt | grep -c '|FAIL|') failing; $(grep 'ET27_RESULT' /tmp/et27.txt | grep -c '|PASS|') passing"
-          grep 'ET27_RESULT' /tmp/et27.txt | grep '|FAIL|' | head -20 | cut -c1-300
-          exit $rc
-      - name: Upload evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: et27-seal-guard-evidence
-          path: |
-            /tmp/et27.txt
-            /tmp/start.txt
-            /tmp/ports.txt
-            /tmp/migration_count.txt
-          retention-days: 90
-      - name: Stop
-        if: always()
-        run: supabase stop --no-backup
- || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
+            { echo "=== attempt $attempt pre-start $(date -u +%FT%TZ)"; ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':54[0-9]{3}([[:space:]]|$)' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
             if supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector 2>&1 | sed -E -e 's/sb_(secret|publishable)_[A-Za-z0-9_-]+/[REDACTED_SUPABASE_KEY]/g' -e 's#postgres(ql)?://[^[:space:]]+#[REDACTED_CONNECTION_STRING]#g' | tee -a /tmp/start.txt; then started=1; break; fi
-            { echo "=== attempt $attempt FAILED; post-failure listeners"; ss -ltnpH 2>/dev/null | grep -E ':54[0-9]{3}\\b' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
+            { echo "=== attempt $attempt FAILED; post-failure listeners"; ss -ltnpH 2>/dev/null | grep -E ':54[0-9]{3}([[:space:]]|$)' || echo "no 54xxx listeners"; docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' || true; } >> /tmp/ports.txt 2>&1
             supabase stop --no-backup >> /tmp/start.txt 2>&1 || true
             sleep 5
           done
@@ -128,6 +84,7 @@ jobs:
           path: |
             /tmp/et27.txt
             /tmp/start.txt
+            /tmp/ports.txt
             /tmp/migration_count.txt
           retention-days: 90
       - name: Stop
