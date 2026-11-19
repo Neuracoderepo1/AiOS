@@ -15,6 +15,9 @@ begin
   perform nextval('mx.cnt');
   insert into mx.results(id, domain, ok, detail) values (p_id, p_domain, coalesce(p_ok, false), p_detail);
   raise notice 'MXRES|%|%|%|%', case when coalesce(p_ok, false) then 'PASS' else 'FAIL' end, p_id, p_domain, replace(left(coalesce(p_detail, ''), 160), E'\n', ' ');
+  if p_domain = 'rollback' then
+    raise notice 'ROLLBACK_PROOF|%|%|%', case when coalesce(p_ok, false) then 'PASS' else 'FAIL' end, p_id, replace(left(coalesce(p_detail, ''), 160), E'\n', ' ');
+  end if;
   if not coalesce(p_ok, false) then raise exception 'CHECK FAILED: % [%] %', p_id, p_domain, left(coalesce(p_detail, ''), 300); end if;
 end $$;
 -- run SQL, return 'OK' or sqlstate:message
@@ -223,6 +226,10 @@ do $$ declare o uuid := '0a0a0a0a-0000-4000-8000-0000000000d1'; begin
   perform mx.rec('D04.8', 'window', (select event_hash from public.aios_audit_events where organization_id = o) = 'restored-hash-2', 'hash trigger disabled: restore hashes are preserved, updates permitted');
 end $$;
 rollback to s_restore;
+select mx.rec('D04.8.rollback', 'rollback',
+  not exists (select 1 from public.aios_organizations where id = '0a0a0a0a-0000-4000-8000-0000000000d1')
+  and not exists (select 1 from public.aios_audit_events where organization_id = '0a0a0a0a-0000-4000-8000-0000000000d1'),
+  'restoration-window organization and audit fixture are absent after savepoint rollback');
 
 -- ================================================================== D04 close: success path
 set session authorization mx_owner;

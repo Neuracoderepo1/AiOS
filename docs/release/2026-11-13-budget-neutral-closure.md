@@ -405,3 +405,17 @@ The release-evidence request remains open in [issue #38](https://github.com/Neur
 ### 17.6 Stacked PR order
 
 The implementation is stacked: PR #29 (main) → PR #31 → PR #34 → PR #35. Preserve this dependency chain. PR #35 must not be merged directly to main while omitting its parent work. Agent 004 implements; Agent 003 independently reviews. Production certification remains withheld.
+
+
+## 19. Harness reporting and CI credential-redaction closure — 19 November 2026
+
+The previous exact-head candidate 51916161800c718c3f3ab86a57678583cd54e088 completed all required workflows:
+- AiOS CI run 44513144929: SUCCESS, all four jobs; post-lock approval-binding revalidation passed 10/10 independently reset and fully migrated PostgreSQL databases.
+- ET27 delete-protection run 44513144856: SUCCESS; 66 checks passed, 10/10 mutation cases detected.
+- ET27 seal-guard run 44513145150: SUCCESS; 303 checks passed, 48/48 mutation cases detected.
+
+A subsequent inspection of the raw ET27 logs/artifacts found that local Supabase Storage access and secret keys were not covered by the existing startup-log redaction. Those runs used disposable local Supabase stacks and no production credentials or data; nevertheless, the logs/artifacts are marked TAINTED and are not accepted as clean release evidence. The successor adds redaction and leak assertions for Storage credentials, JWTs, Supabase API keys and database URLs in all three workflows. The main CI stack startup also uses the supported mailpit service name and bounded infrastructure-only retry. Fresh exact-head runs must generate clean replacement evidence.
+
+The local Part D/E harness also had a collector defect: it did not parse PostgreSQL MXRES NOTICE records or explicit rollback-proof notices, and it misclassified successful static-check and golden-vector records. The successor parses MXRES and ROLLBACK_PROOF records into machine-readable result files, emits explicit rollback-proof markers for the Part D restoration savepoint and Part E non-UTC append fixture, corrects static/golden status parsing, and adds a parser self-test to CI and tests/harness/run_all.sh.
+
+These are candidate-only changes until the new exact SHA passes all required workflows. The prior 5191616... green results do not certify the new successor. No hosted production changes were performed.

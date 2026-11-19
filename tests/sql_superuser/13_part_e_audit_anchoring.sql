@@ -16,6 +16,9 @@ begin
   perform nextval('mx.cnt');
   insert into mx.results(id, domain, ok, detail) values (p_id, p_domain, coalesce(p_ok, false), p_detail);
   raise notice 'MXRES|%|%|%|%', case when coalesce(p_ok, false) then 'PASS' else 'FAIL' end, p_id, p_domain, replace(left(coalesce(p_detail, ''), 160), E'\n', ' ');
+  if p_domain = 'rollback' then
+    raise notice 'ROLLBACK_PROOF|%|%|%', case when coalesce(p_ok, false) then 'PASS' else 'FAIL' end, p_id, replace(left(coalesce(p_detail, ''), 160), E'\n', ' ');
+  end if;
   if not coalesce(p_ok, false) then raise exception 'CHECK FAILED: % [%] %', p_id, p_domain, left(coalesce(p_detail, ''), 300); end if;
 end $$;
 create function mx.try(p_sql text) returns text language plpgsql as $$ begin execute p_sql; return 'OK'; exception when others then return sqlstate || ':' || sqlerrm; end $$;
@@ -94,6 +97,10 @@ reset timezone;
 select mx.rec('E02.8', 'golden', (private.aios_audit_verify_chain_v2(:C) ->> 'valid')::boolean and (private.aios_audit_verify_chain_v2(:C) ->> 'reason') is null, 'audit append under Asia/Tokyo remains verifiable because the trigger pins UTC');
 select mx.rec('E02.8a', 'golden', exists (select 1 from pg_proc p, unnest(coalesce(p.proconfig, '{}'::text[])) setting where p.oid = 'private.aios_audit_append()'::regprocedure and lower(setting) = 'timezone=utc'), 'audit trigger function pins timezone=UTC');
 rollback to s_tz;
+select mx.rec('E02.8.rollback', 'rollback',
+  not exists (select 1 from public.aios_organizations where id = :C)
+  and not exists (select 1 from public.aios_audit_events where organization_id = :C),
+  'non-UTC append organization and audit fixture are absent after savepoint rollback');
 reset timezone;   -- the savepoint was taken while TimeZone was Asia/Tokyo; restore UTC for the rest of the suite
 select mx.org(:C), mx.ev(:C, 'single.event');
 
