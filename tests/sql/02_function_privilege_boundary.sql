@@ -60,13 +60,38 @@ begin
     execute 'reset role';
   end loop;
 
-  begin
-    set local role anon;
-    perform public.aios_current_org_role(gen_random_uuid());
-    reset role;
-    raise exception 'anon was able to call public.aios_current_org_role';
-  exception when insufficient_privilege then
-    reset role;
-  end;
+  -- E. All three public SECURITY DEFINER wrappers are authenticated-only; anon must be denied
+  -- at the privilege boundary, not merely receive an empty/error payload.
+  foreach q in array array[
+    'select public.aios_current_org_role(gen_random_uuid())',
+    'select public.aios_public_metrics(gen_random_uuid())',
+    'select public.aios_agent_trust_explain(gen_random_uuid())'
+  ] loop
+    begin
+      set local role anon;
+      execute q;
+      execute 'reset role';
+      raise exception 'anon was able to execute public wrapper: %', q;
+    exception when insufficient_privilege then
+      execute 'reset role';
+    end;
+  end loop;
+
+  -- F. The intentionally exposed wrappers remain SECURITY DEFINER, pin search_path,
+  -- are executable by authenticated, and never inherit EXECUTE from PUBLIC/anon.
+  select string_agg(p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', ', ' order by p.proname)
+    into v
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='public'
+     and p.proname in ('aios_current_org_role','aios_public_metrics','aios_agent_trust_explain')
+     and (not p.prosecdef
+          or not exists (select 1 from unnest(coalesce(p.proconfig,'{}')) setting where setting like 'search_path=%')
+          or not has_function_privilege('authenticated',p.oid,'execute')
+          or has_function_privilege('anon',p.oid,'execute')
+          or p.proacl is null
+          or exists (select 1 from aclexplode(p.proacl) a where a.grantee=0 and a.privilege_type='EXECUTE'));
+  if v is not null then
+    raise exception 'authenticated wrapper security contract violated: %', v;
+  end if;
 end $$;
 select 'ok: function privilege boundary' as result;
