@@ -56,7 +56,9 @@ echo "  PASS 12 opposite-order concurrent batches completed without deadlock or 
 # after their row-lock pre-phase, before entering phase two.
 q "select
   position('aios_prelock_audit_organizations' in pg_get_functiondef('private.aios_expire_stale_approvals()'::regprocedure)) > 0
-  and position('aios_prelock_audit_organizations' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
+  and position('pg_try_advisory_xact_lock' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
+  and position('hashtextextended' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
+  and position('order by x.organization_id' in pg_get_functiondef('private.aios_reap_stale_tasks(interval)'::regprocedure)) > 0
   and position('order by x.organization_id' in pg_get_functiondef('private.aios_prelock_audit_organizations(uuid[])'::regprocedure)) > 0" | grep -qx t
-echo "  PASS expiry and reaper pre-acquire globally ordered organization audit locks"
+echo "  PASS expiry uses sorted audit prelock; reaper uses matching non-blocking organization audit key"
 echo "== cross-organization audit lock ordering: PASS"

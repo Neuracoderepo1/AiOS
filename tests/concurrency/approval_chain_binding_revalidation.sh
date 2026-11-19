@@ -6,7 +6,87 @@
 set -euo pipefail
 DB="$1"
 D=$(mktemp -d)
-trap 'rm -rf "$D"' EXIT
+EVIDENCE_DIR="${AIOS_BINDING_EVIDENCE_DIR:-}"
+CLEANUP_DONE=0
+
+cleanup() {
+  local rc=$?
+  local remaining=""
+  local termination=""
+  if [[ "$CLEANUP_DONE" -eq 1 ]]; then
+    return "$rc"
+  fi
+  CLEANUP_DONE=1
+  trap - EXIT
+  set +e
+
+  if [[ "$rc" -ne 0 ]]; then
+    echo "== approval-chain diagnostic capture (exit=$rc) =="
+    for f in blocker.out blocker.err worker.out worker.err blocker.rc worker.rc; do
+      echo "-- $f --"
+      cat "$D/$f" 2>/dev/null || true
+    done
+    echo "-- named blocker/worker sessions --"
+    q "select pid,application_name,state,wait_event_type,wait_event,pg_blocking_pids(pid) as blocked_by,left(query,500) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>&1 || true
+    echo "-- all non-idle sessions with blocking pids --"
+    q "select pid,application_name,state,wait_event_type,wait_event,pg_blocking_pids(pid) as blocked_by,left(query,200) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and state<>'idle' order by pid" 2>&1 || true
+    echo "-- ungranted locks --"
+    q "select l.pid,l.locktype,l.mode,l.relation::regclass as relation from pg_locks l where not l.granted order by l.pid" 2>&1 || true
+    echo "-- recent cron runs --"
+    if [[ "$(q "select to_regclass('cron.job_run_details') is not null" 2>/dev/null)" == "t" ]]; then
+      q "select jobid,status,start_time,end_time from cron.job_run_details order by start_time desc limit 5" 2>&1 || true
+    else
+      echo "pg_cron diagnostics unavailable: cron.job_run_details does not exist"
+    fi
+  fi
+
+  if termination=$(q "select pid || ':' || pg_terminate_backend(pid)::text from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker') and pid<>pg_backend_pid() order by pid" 2>&1); then
+    if [[ -n "$termination" ]]; then
+      echo "-- targeted backend termination outcomes (pid:terminated) --"
+      printf '%s\n' "$termination"
+      if grep -q ':false$' <<<"$termination"; then
+        echo "FAIL one or more targeted PostgreSQL backends refused termination"
+        rc=1
+      fi
+    else
+      echo "-- targeted backend termination outcomes: no remaining named sessions --"
+    fi
+  else
+    echo "FAIL unable to request targeted PostgreSQL backend termination: $termination"
+    rc=1
+  fi
+
+  for _ in {1..40}; do
+    remaining=$(q "select count(*) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>/dev/null)
+    [[ "$remaining" == "0" ]] && break
+    sleep 0.05
+  done
+  if [[ "$remaining" != "0" ]]; then
+    echo "FAIL targeted PostgreSQL sessions remain after termination attempt (count=${remaining:-unknown})"
+    q "select pid,application_name,state,wait_event_type,wait_event,left(query,300) from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" 2>&1 || true
+    rc=1
+  else
+    echo "PASS targeted PostgreSQL sessions absent after cleanup"
+  fi
+
+  # Backend termination is authoritative; stop and reap the parent subshells too.
+  kill "${BLOCKER:-}" "${WORKER:-}" 2>/dev/null || true
+  wait "${BLOCKER:-}" "${WORKER:-}" 2>/dev/null || true
+
+  if [[ "$rc" -ne 0 ]]; then
+    if [[ -n "$EVIDENCE_DIR" ]]; then
+      mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+      cp -a "$D/." "$EVIDENCE_DIR/" 2>/dev/null || true
+      echo "Failure diagnostics preserved at: $EVIDENCE_DIR"
+    else
+      echo "Failure diagnostics preserved at: $D"
+      D=""
+    fi
+  fi
+  [[ -z "$D" ]] || rm -rf "$D"
+  exit "$rc"
+}
+trap cleanup EXIT
 
 ORG=ab030101-0000-4000-8000-000000000001
 AGT=ab030101-0000-4000-8000-000000000002
@@ -54,14 +134,15 @@ APPROVAL=$(q "select approval_id from public.aios_tool_invocations where id='$IN
 [[ "$(q "select task_id from public.aios_tool_invocations where id='$INV'")" = "$T1" ]] || { echo "FAIL invocation/task fixture binding missing"; exit 2; }
 [[ "$(q "select private.aios_resolve_approval_invocation('$APPROVAL')")" = "$INV" ]] || { echo "FAIL shared resolver did not select fixture invocation"; exit 2; }
 
-# B owns the original mission and task rows. The lock-chain worker will read the old binding,
-# then wait here before it can acquire the mission/task/invocation/approval chain.
+# B holds FOR UPDATE on the original mission and task rows. This conflicts with every row-lock
+# strength the lock-chain worker can request, including FOR KEY SHARE. The worker must therefore
+# be observed waiting before B commits the task_id change.
 (
   PGAPPNAME=aios-binding-blocker psql "$DB" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose >"$D/blocker.out" 2>"$D/blocker.err" <<SQL
 begin;
-select 1 from public.aios_missions where id='$M1' for no key update;
-select 1 from public.aios_tasks where id='$T1' for no key update;
-select pg_sleep(3);
+select 1 from public.aios_missions where id='$M1' for update;
+select 1 from public.aios_tasks where id='$T1' for update;
+select pg_sleep(15);
 update public.aios_tool_invocations set task_id='$T2' where id='$INV';
 commit;
 SQL
@@ -69,8 +150,17 @@ SQL
 ) &
 BLOCKER=$!
 i=0
-until [ "$(q "select count(*) from pg_stat_activity where query like '%pg_sleep(3)%' and state='active'")" = 1 ]; do
-  i=$((i+1)); [ "$i" -gt 100 ] && { echo "FAIL blocker did not acquire original mission row"; exit 2; }; sleep 0.05
+until [ "$(q "select count(*) from pg_stat_activity where application_name='aios-binding-blocker' and state='active' and query like '%pg_sleep(15)%'")" = 1 ]; do
+  if [[ -s "$D/blocker.rc" ]]; then
+    echo "FAIL blocker exited before reaching lock-holding phase (rc=$(cat "$D/blocker.rc"))"
+    exit 2
+  fi
+  i=$((i+1))
+  if [ "$i" -gt 400 ]; then
+    echo "FAIL blocker did not reach lock-holding phase within 20 seconds"
+    exit 2
+  fi
+  sleep 0.05
 done
 
 (
@@ -80,14 +170,17 @@ done
 WORKER=$!
 i=0
 until [ "$(q "select count(*) from pg_stat_activity where application_name='aios-binding-worker' and wait_event_type='Lock'")" = 1 ]; do
-  i=$((i+1)); [ "$i" -gt 100 ] && {
-    echo "FAIL chain-lock worker did not block on the original mission"
-    echo "approval=$APPROVAL resolver=$(q "select coalesce(private.aios_resolve_approval_invocation('$APPROVAL')::text,'NULL')")"
-    q "select application_name,state,wait_event_type,wait_event,query from pg_stat_activity where application_name in ('aios-binding-blocker','aios-binding-worker')" || true
-    cat "$D/blocker.out" "$D/blocker.err" "$D/worker.err" "$D/worker.out" 2>/dev/null || true
-    kill "$BLOCKER" "$WORKER" 2>/dev/null || true
+  if [[ -s "$D/worker.rc" ]]; then
+    echo "FAIL chain-lock worker exited instead of waiting for original mission lock (rc=$(cat "$D/worker.rc"))"
     exit 2
-  }; sleep 0.05
+  fi
+  i=$((i+1))
+  if [ "$i" -gt 400 ]; then
+    echo "FAIL chain-lock worker did not block on original mission within 20 seconds"
+    echo "approval=$APPROVAL resolver=$(q "select coalesce(private.aios_resolve_approval_invocation('$APPROVAL')::text,'NULL')")"
+    exit 2
+  fi
+  sleep 0.05
 done
 
 wait "$BLOCKER" || true

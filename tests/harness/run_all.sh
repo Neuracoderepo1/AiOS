@@ -6,6 +6,7 @@ set -u; cd "$(dirname "$0")/../.."; OUT="$1"; CONN="$2"; mkdir -p "$OUT"; OUT=$(
 DENO="${DENO:-$(command -v deno || true)}"; rc=0
 note() { echo "== $*"; }
 note "repository state"; { git rev-parse HEAD; git status --short --branch; git log -3 --oneline; } > "$OUT/repository-state.txt" 2>&1
+note "collector parser self-test"; python3 tests/harness/test_collect_results.py > "$OUT/collector-selftest.log" 2>&1 || rc=1
 ls supabase/migrations > "$OUT/migration-inventory.txt"
 note "static checks + mutation self-test"; python3 tests/static/check_part_de.py > "$OUT/static.log" 2>&1 || rc=1; bash tests/static/selftest.sh > "$OUT/static-selftest.log" 2>&1 || rc=1
 note "goldens (guard registry, pinned functions)"; bash tests/golden/dump_goldens.sh --check "$CONN" > "$OUT/goldens.log" 2>&1 || rc=1

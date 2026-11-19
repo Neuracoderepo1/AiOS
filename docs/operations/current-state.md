@@ -1,38 +1,97 @@
-# AiOS baseline: current state
+# AiOS current state and release boundary
 
-Status: **database migrations and Edge Function source captured; live certification NOT performed.**
+**Snapshot:** 2026-11-19 11:06 UTC  
+**Implementation candidate before this successor:** 318f561a475a23e731e8d4e8d55ffb1d9d49075c  
+**Candidate branch:** agent004/f2-reaper-record-isolation (PR #35; this commit adds security-boundary regression coverage and reconciles the release record)  
+**Default branch HEAD:** 377e641c77245d4b093e82b6597c5efd55f764d9  
+**Hosted project:** jtkcdwhiduixoiodhbfn, Project AiOS, PostgreSQL 17.6, Supabase Free  
+**Release status:** PRODUCTION CERTIFICATION WITHHELD / NOT CERTIFIED
 
-## What is captured
+## Engineering candidate and independent review
 
-- `supabase/migrations/`: 96 files, one per row of `supabase_migrations.schema_migrations` on project `jtkcdwhiduixoiodhbfn`, named `<version>_<name>.sql`, original chronology preserved. Content is the exact recorded SQL (compared by md5 after trimming trailing whitespace).
-- `supabase/functions/`: source of the deployed Edge Functions, compared byte-for-byte (trailing whitespace trimmed) with the deployed source.
+PR #35 is open, draft, and unmerged. It is a stacked candidate, not a standalone branch: PR #29 (base main) → PR #31 → PR #34 → PR #35. Preserve this dependency order when preparing any merge. Do not merge a child branch directly to main while omitting its parent changes.
 
-| Function | Deployed version |
-|---|---|
-| execute-task | 9 |
-| invoke-tool | 5 |
-| launch-mission | 5 |
-| review-approval | 8 |
+Agent 003 independently reviewed exact candidate 318f561a475a23e731e8d4e8d55ffb1d9d49075c on 16 November 2026. The F-2 per-record stale-task reaper behavior and associated engineering evidence were accepted. This is implementation acceptance only; Agent 003 explicitly withheld production certification and directed that PR #35 remain draft and unmerged.
 
-All four have `verify_jwt = true`.
+## Exact-head engineering evidence for implementation baseline
 
-## What this verification does and does not prove
+All three required workflows passed on exact SHA 318f561a475a23e731e8d4e8d55ffb1d9d49075c:
 
-- Proves: each migration file equals the SQL the live migration history recorded.
-- Does NOT prove: that replaying the files reproduces the live catalog. Objects changed outside the migration history (dashboard edits, ad-hoc SQL) are not detected. A catalog-level diff (tables, functions, triggers, policies, grants) is part of the later certification phase.
+| Workflow | Run | Result |
+|---|---:|---|
+| AiOS CI | [43468907258](https://github.com/Neuracoderepo1/AiOS/actions/runs/43468907258) | SUCCESS, 4/4 jobs |
+| ET27 delete protection | [43468907181](https://github.com/Neuracoderepo1/AiOS/actions/runs/43468907181) | SUCCESS |
+| ET27 seal guard | [43468907207](https://github.com/Neuracoderepo1/AiOS/actions/runs/43468907207) | SUCCESS, retry attempt 2 |
 
-## Observations (documented, deliberately not acted on)
+Agent 003 rechecked the exact-head run/job/artifact metadata on 16 November. The recorded artifacts are AiOS CI 14061205972, behavioral 14059004405, ET27 delete 14058874965, and ET27 seal 14068064046. The seal guard's successful result is retry attempt 2. These runs validate SHA 318f561... only. The security-test/documentation successor created by this update requires fresh exact-head workflows; no earlier run is substituted for it.
 
-- Two migration names appear twice with different versions: `restrict_platform_metrics_to_service_role` (20260822125047, 20260822125056) and `aios_grant_hygiene_and_credential_column_lockdown` (20260826133412, 20260826133828; identical content). `aios_audit_reseal_legacy_chain` / `aios_audit_reseal_after_clock` (20260825123242 / 20260825123427) are also identical in content.
-- Some migrations embed environment-specific identifiers (a test auth user id, demo organization ids, one agent id). They are identifiers, not credentials, but they make a clean-room replay data-dependent.
-- Several migrations contain data updates keyed to those ids and will no-op or fail on an empty database.
-- Early migrations (001-010) use unqualified table names and later ones move logic into a `private` schema; replay order matters.
-- `aios_platform_metrics()` grants flipped several times (anon restored 20260824094834, revoked again 20260831171518). Current intent for anonymous landing-page use should be confirmed before certification.
-- Secrets are not stored in the repository. `ANTHROPIC_API_KEY` is read from Edge Function secrets at runtime.
+## Migration parity
 
-## Approval convergence (2026-11-02)
+A fresh candidate-tree inventory contains **129 SQL migration files**. The hosted migration history contains **117 applied versions**, latest 20261108130000. The candidate is therefore **12 migrations ahead** of hosted history.
 
-- `private.aios_expire_stale_approvals()` validates organization bindings first (`private.aios_approval_binding_defect`), skips and reports invalid records untouched, isolates each transition in a subtransaction, and appends a `manual_review` disposition (append-only). Live as migration `20261101232313` (captured in this repo).
-- `public.aios_backlog_effective_dispositions` resolves the latest disposition per entity. Private-schema tables have deny-by-default RLS (invariant 9).
-- Production applied 2026-11-02 via the Supabase connector, so production versions for the view/RLS migrations carry connector timestamps, not the repo filenames.
-- Open: one pending approval with a cross-organization agent binding (quarantined, owner review); two queued manual-review items (owner decision); 46-case matrix, concurrency test and audit-chain verification not yet run. AiOS remains open for production certification.
+| Version | Candidate migration | Hosted state |
+|---|---|---|
+| 20261108140000 | execution lock order and task terminal cascade | Unapplied |
+| 20261108150000 | approval paths global lock order | Unapplied |
+| 20261109120000 | restoration Part D | Unapplied |
+| 20261109130000 | audit anchoring Part E | Unapplied |
+| 20261110100000 | batch prelock before audit | Unapplied |
+| 20261111170000 | shared approval/invocation resolver | Unapplied |
+| 20261111190000 | restorer allowlist and mission reconciliation | Unapplied |
+| 20261111200000 | mission reconciliation schedule registry | Unapplied |
+| 20261111210000 | mission reconciliation trigger | Unapplied |
+| 20261111220000 | approval binding and audit lock order | Unapplied |
+| 20261111230000 | stale-task reaper per-record isolation | Unapplied |
+| 20261113160000 | stale-task reaper fail-closed hardening | Unapplied |
+
+The candidate passes clean-room migration replay in CI. This does not prove hosted catalog parity or authorize applying these 12 migrations. No hosted migration has been applied as part of this work.
+
+## Hosted production observations (read-only)
+
+The Supabase project is ACTIVE_HEALTHY. Read-only SQL on 19 November confirmed:
+
+- aios_restorer is absent.
+- Six non-internal triggers exist on public.aios_audit_events: four audit-protection triggers and two organization-validation triggers. All six are ORIGIN-enabled; none are ENABLE ALWAYS.
+- service_role retains SELECT, INSERT, UPDATE, DELETE, REFERENCES, and TRIGGER on public.aios_audit_events; TRUNCATE is not granted.
+- Only two active AiOS cron jobs are present: stale-task reaper and stale-approval expiry, each scheduled every five minutes. The deployed reaper command still calls private.aios_reap_stale_tasks('10 minutes'::interval) directly rather than the candidate's serialized fail-closed scheduled wrapper.
+- The authenticated owner-context audit verifier has not been evidenced through the connected SQL session.
+
+These are material candidate-to-hosted differences. They are not permission to normalize hosted state with ad-hoc SQL.
+
+## Supabase advisor triage (19 November)
+
+The live security advisor reports:
+
+| Finding | Level | Disposition |
+|---|---|---|
+| private.aios_trusted_executors has RLS but no policies | INFO | Intentional server-only, deny-by-default table; explicit regression coverage and rationale added in this successor |
+| Three authenticated-callable SECURITY DEFINER RPCs | WARN | Intentional authenticated wrappers with membership/self-role checks; explicit ACL, search-path and anonymous-denial regression coverage added in this successor |
+| Leaked-password protection disabled | WARN | Owner-controlled Auth configuration; not changed by SQL or this PR |
+
+The three wrappers are public.aios_agent_trust_explain(uuid), public.aios_current_org_role(uuid), and public.aios_public_metrics(uuid). Their intended security boundary is documented in docs/security/CLIENT-EXPOSED-RPC-BOUNDARY.md. The 24 unused-index performance notices are informational candidates only; no index is removed without workload and query-plan evidence.
+
+## Recovery, audit and governance blockers
+
+- Supabase Free does not provide managed scheduled backups; PITR requires a paid plan/add-on. No paid upgrade is authorized.
+- No managed backup timestamp, production export, production-copy restore, measured RPO/RTO, or full recovery exercise is evidenced.
+- GitHub reports main protected with required checks evidence-integrity, functions-typecheck, and migrations-and-sql-tests. The detailed branch-protection endpoint returns HTTP 403 to the connected integration; inherited organization rulesets, CODEOWNERS enforcement, stale-review dismissal, bypass actors, and administrator exemptions remain not fully verified.
+- Full candidate-to-hosted function-definition/hash parity, function grant-intent reconciliation, hosted cron/reconciliation parity, and authenticated owner-context audit verification remain open.
+- External TSA/RFC3161 trust-root lifecycle and measured RPO/RTO remain unproven.
+- Owner evidence requested in issue #38 remains outstanding.
+
+## Release boundary
+
+Keep PRs #34 and #35 draft and unmerged until the stacked candidate is independently reviewed and owner-controlled release evidence is supplied. Do not apply the 12 unapplied migrations, alter hosted grants/RLS/Auth/roles/triggers/cron, export or restore production data, deploy Edge Functions, change billing, or upgrade the plan without a separate explicit owner-approved release operation and a reviewed migration/recovery plan.
+
+Agent 004 implements and supplies evidence. Agent 003 independently reviews. Agent 004 does not self-certify production readiness. Scope is AiOS only; Armadillon and Arbitron are excluded.
+
+
+## Engineering follow-up: harness evidence and CI credential safety
+
+The candidate successor after 19 November adds two further engineering closures:
+- The Part D/E result collector now parses the actual PostgreSQL MXRES NOTICE format and explicit ROLLBACK_PROOF notices. It no longer misclassifies successful static-check and golden-vector output. A parser self-test runs in CI and the local run_all harness.
+- All three local Supabase workflows redact and check API keys, JWTs, database URLs, and generated Storage access/secret keys before logs or artifacts are retained. The main CI stack startup uses mailpit, bounded startup retries, and port/container diagnostics.
+
+The preceding exact-head runs on 51916161800c718c3f3ab86a57678583cd54e088 completed successfully: AiOS CI 44513144929 (4/4 jobs, including 10/10 fresh-database binding revalidations), ET27 delete protection 44513144856 (66 checks, 10/10 mutants detected), and ET27 seal guard 44513145150 (303 checks, 48/48 mutants detected). Their evidence artifacts were generated before the Storage credential redaction correction and must be treated as tainted, not as clean release evidence. The credentials were generated by disposable local Supabase stacks; there is no evidence of production credentials or production data exposure. The new successor requires fresh exact-head CI and clean replacement artifacts.
+
+This does not change the production boundary: 12 migrations remain unapplied to the hosted project, and production certification remains withheld.
