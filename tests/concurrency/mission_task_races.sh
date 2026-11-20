@@ -115,7 +115,8 @@ res=$(q "begin; $(as_service) select 'OK' from (select public.aios_kernel_author
 check "kernel refuses to execute for a cancelled task (got: $(echo "$res" | cut -c1-70))" "$(echo "$res" | grep -qi 'not executable\|invocation' && echo true || echo false)"
 
 echo "== R3: task INSERT racing authenticated mission cancellation (parent FOR SHARE barrier)"
-M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-cancel-race','mtr','queued') returning id" | tail -1); need_ids "$M"
+# psql prints the "INSERT 0 1" command tag AFTER the RETURNING row, so the id is the FIRST line (tail -1 captured the tag).
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-cancel-race','mtr','queued') returning id" | head -1); need_ids "$M"
 open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
 # Match the RPC lock order: membership FOR SHARE, then mission FOR UPDATE.
 step A 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$USR' for share; select id from public.aios_missions where id='$M' for update;" >/dev/null
