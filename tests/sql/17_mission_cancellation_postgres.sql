@@ -46,11 +46,11 @@ on conflict (organization_id,user_id) do update set role=excluded.role;
 
 insert into public.aios_missions(id,organization_id,title,objective,status,completed_at)
 values
- ('60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','terminal failed','test','failed',null),
- ('60000000-0000-4000-8000-000000000002','50000000-0000-4000-8000-000000000001','terminal cancelled','test','cancelled',null),
- ('60000000-0000-4000-8000-000000000003','50000000-0000-4000-8000-000000000001','terminal completed','test','completed',null),
- ('60000000-0000-4000-8000-000000000004','50000000-0000-4000-8000-000000000001','terminal expired','test','expired',null),
- ('60000000-0000-4000-8000-000000000005','50000000-0000-4000-8000-000000000001','terminal succeeded','test','succeeded',null),
+ ('60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','terminal failed','test','running',null),
+ ('60000000-0000-4000-8000-000000000002','50000000-0000-4000-8000-000000000001','terminal cancelled','test','running',null),
+ ('60000000-0000-4000-8000-000000000003','50000000-0000-4000-8000-000000000001','terminal completed','test','running',null),
+ ('60000000-0000-4000-8000-000000000004','50000000-0000-4000-8000-000000000001','terminal expired','test','running',null),
+ ('60000000-0000-4000-8000-000000000005','50000000-0000-4000-8000-000000000001','terminal succeeded','test','running',null),
  ('60000000-0000-4000-8000-000000000006','50000000-0000-4000-8000-000000000001','owner active','test','running',null),
  ('60000000-0000-4000-8000-000000000007','50000000-0000-4000-8000-000000000001','admin active','test','queued',null);
 
@@ -86,6 +86,25 @@ values
  ('90000000-0000-4000-8000-000000000005','50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000009','70000000-0000-4000-8000-000000000005','support.export_customer_data','support.export_customer_data','{"scope":"cancel-test","format":"csv"}','low','10000000-0000-4000-8000-000000000001',gen_random_uuid(),'cancel-test-5','approved','80000000-0000-4000-8000-000000000005'),
  ('90000000-0000-4000-8000-000000000006','50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000009','70000000-0000-4000-8000-000000000006','support.export_customer_data','support.export_customer_data','{"scope":"cancel-test","format":"csv"}','low','10000000-0000-4000-8000-000000000001',gen_random_uuid(),'cancel-test-6','approved','80000000-0000-4000-8000-000000000006'),
  ('90000000-0000-4000-8000-000000000007','50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000009','70000000-0000-4000-8000-000000000007','support.export_customer_data','support.export_customer_data','{"scope":"cancel-test","format":"csv"}','low','10000000-0000-4000-8000-000000000001',gen_random_uuid(),'cancel-test-7','approved','80000000-0000-4000-8000-000000000007');
+
+-- Create dependent fixtures while their parent missions are active. The task gate
+-- rejects all task writes under terminal parents, regardless of the task's own status.
+-- Transition the five parents only after their dependent fixtures have been created.
+update public.aios_missions
+   set status = case id
+     when '60000000-0000-4000-8000-000000000001' then 'failed'
+     when '60000000-0000-4000-8000-000000000002' then 'cancelled'
+     when '60000000-0000-4000-8000-000000000003' then 'completed'
+     when '60000000-0000-4000-8000-000000000004' then 'expired'
+     when '60000000-0000-4000-8000-000000000005' then 'succeeded'
+   end
+ where id in (
+   '60000000-0000-4000-8000-000000000001',
+   '60000000-0000-4000-8000-000000000002',
+   '60000000-0000-4000-8000-000000000003',
+   '60000000-0000-4000-8000-000000000004',
+   '60000000-0000-4000-8000-000000000005'
+ );
 
 set local role authenticated;
 
