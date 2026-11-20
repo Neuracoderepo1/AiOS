@@ -2,6 +2,49 @@
 -- Successful completed tasks remain completed; residual live invocations and approvals
 -- are closed, and no new live task may be attached to a succeeded mission.
 
+-- The RPC already treats succeeded as terminal. Make that state reachable only
+-- from an active execution path, with the same completed-task precondition as completed.
+create or replace function private.aios_mission_status_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $f$
+begin
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    if not (
+      (old.status = 'queued' and new.status in ('running','cancelled','expired'))
+      or (old.status = 'running' and new.status in ('blocked_pending_approval','completed','failed','cancelled','expired','succeeded'))
+      or (old.status = 'blocked_pending_approval' and new.status in ('running','completed','failed','cancelled','expired','succeeded'))
+    ) then
+      raise exception 'invalid mission state transition: % -> %', old.status, new.status;
+    end if;
+  end if;
+
+  if new.status = 'completed' and exists (
+    select 1 from public.aios_tasks t
+     where t.mission_id = new.id and t.status <> 'completed'
+  ) then
+    raise exception 'mission cannot complete while tasks remain incomplete';
+  end if;
+
+  if new.status = 'succeeded' and exists (
+    select 1 from public.aios_tasks t
+     where t.mission_id = new.id and t.status <> 'completed'
+  ) then
+    raise exception 'mission cannot succeed while tasks remain incomplete';
+  end if;
+
+  if new.status = 'running' and new.started_at is null then
+    new.started_at = now();
+  end if;
+  if new.status in ('completed','succeeded','failed','cancelled','expired') and new.completed_at is null then
+    new.completed_at = now();
+  end if;
+  return new;
+end
+$f$;
+
 create or replace function private.aios_mission_terminal_cascade()
 returns trigger language plpgsql security definer set search_path = '' as $f$
 begin
