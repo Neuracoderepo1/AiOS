@@ -115,20 +115,33 @@ res=$(q "begin; $(as_service) select 'OK' from (select public.aios_kernel_author
 check "kernel refuses to execute for a cancelled task (got: $(echo "$res" | cut -c1-70))" "$(echo "$res" | grep -qi 'not executable\|invocation' && echo true || echo false)"
 
 echo "== R3: task INSERT racing authenticated mission cancellation (parent FOR SHARE barrier)"
-# psql prints the "INSERT 0 1" command tag AFTER the RETURNING row, so the id is the FIRST line (tail -1 captured the tag).
+# Hold the same lock order as the RPC while running as the database owner, then
+# switch to authenticated before invoking the real RPC. This avoids RLS visibility
+# from silently turning the intended row locks into zero-row SELECTs.
 M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-cancel-race','mtr','queued') returning id" | head -1); need_ids "$M"
 open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
-# Match the RPC lock order: membership FOR SHARE, then mission FOR UPDATE.
-step A 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$USR' for share; select id from public.aios_missions where id='$M' for update;" >/dev/null
+step A 3 "begin; select 'MEMBER_LOCKED='||user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$USR' for share; select 'MISSION_LOCKED='||id from public.aios_missions where id='$M' for update; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true);" >/dev/null
+if ! grep -q "MEMBER_LOCKED=$USR" "$D/A.out" || ! grep -q "MISSION_LOCKED=$M" "$D/A.out"; then
+  echo "  fixture failed: session A did not acquire both membership and mission locks"
+  cat "$D/A.out"
+  fail=1
+else
+  echo "  barrier owner: membership FOR SHARE and mission FOR UPDATE acquired"
+fi
 fire 4 "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status) values ('$ORG','$M','$AGT','racing task','queued'); select 'INSERT_DONE';"
-blocked "$PB" && echo "  barrier: task INSERT is waiting on the mission FOR SHARE lock" || { echo "  barrier never reached"; fail=1; }
+blocked "$PB" && echo "  barrier: task INSERT is waiting on mission FOR SHARE (observed in pg_stat_activity)" || { echo "  barrier never reached"; cat "$D/B.out"; fail=1; }
 step A 3 "select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
+if ! grep -q "CANCEL_RESULT=cancelled" "$D/A.out"; then
+  echo "  cancellation RPC did not commit its expected outcome"
+  cat "$D/A.out"
+  fail=1
+fi
 step A 3 "commit;" >/dev/null
-wait_out B "INSERT_DONE" 400 || fail=1
+wait_out B "INSERT_DONE" 400 || { echo "  task worker did not reach its post-insert sentinel"; cat "$D/B.out"; fail=1; }
 exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
 insert_errors=$(grep -c "parent mission is terminal" "$D/B.out" || true)
-remaining=$(q "select count(*) from public.aios_tasks where mission_id='$M'")
-echo "  terminal-insert-errors=$insert_errors committed-task-rows=$remaining"
+remaining=$(q "select count(*) from public.aios_tasks where mission_id='$M' and status in ('queued','assigned','ready','running','approved','blocked_pending_approval')")
+echo "  terminal-insert-errors=$insert_errors committed-live-task-rows=$remaining"
 check "task INSERT waits for cancellation then rejects terminal parent" "$([ "$insert_errors" -ge 1 ] && [ "$remaining" = 0 ] && echo true || echo false)"
 
 echo "== mission/task races: $([ $fail = 0 ] && echo ALL PASS || echo FAILURES)"
