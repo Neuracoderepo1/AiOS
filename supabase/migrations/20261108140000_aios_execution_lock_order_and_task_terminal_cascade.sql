@@ -40,7 +40,7 @@ returns trigger language plpgsql security definer set search_path = '' as $f$
 begin
   -- When the parent mission is itself terminal, the mission cascade owns the attribution (MISSION_TERMINAL); do not pre-empt it.
   if new.status in ('cancelled','failed','expired','completed') and old.status is distinct from new.status
-     and coalesce((select m.status from public.aios_missions m where m.id = new.mission_id), 'running') not in ('cancelled','failed','expired','completed') then
+     and coalesce((select m.status from public.aios_missions m where m.id = new.mission_id), 'running') not in ('cancelled','failed','expired','completed','succeeded') then
     update public.aios_tool_invocations i set status = 'cancelled', completed_at = now(),
            error_code = 'TASK_TERMINAL', error_message = 'task became ' || new.status
      where i.task_id = new.id and i.organization_id = new.organization_id and i.status in ('requires_approval','approved');
