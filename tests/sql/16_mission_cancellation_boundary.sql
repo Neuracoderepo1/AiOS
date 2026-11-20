@@ -39,8 +39,10 @@ begin
     raise exception 'cancellation actor must come from auth.uid(), never a caller-supplied UUID';
   end if;
   if position('public.aios_organization_members' in v_def) = 0
-     or position('for update' in lower(v_def)) = 0 then
-    raise exception 'cancellation must lock and revalidate the authenticated organization membership';
+     or position('for share' in lower(v_def)) = 0
+     or position('for update' in lower(v_def)) = 0
+     or position('for share' in lower(v_def)) >= position('for update' in lower(v_def)) then
+    raise exception 'cancellation must lock membership FOR SHARE before locking the mission FOR UPDATE';
   end if;
   if position('already_terminal' in v_def) = 0
      or position('failed' in v_def) = 0
