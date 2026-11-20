@@ -25,8 +25,9 @@ begin
     raise exception 'mission_id is required' using errcode = '22023';
   end if;
 
-  -- Discover tenant without taking the mission lock. Lock membership first so
-  -- concurrent role revocation and cancellation have a deterministic winner.
+  -- Discover tenant without taking the mission lock. A shared row lock
+  -- blocks concurrent role revocation/deletion while allowing independent
+  -- cancellations by the same administrator to proceed concurrently.
   select m.organization_id
     into v_organization_id
     from public.aios_missions m
@@ -40,7 +41,7 @@ begin
     from public.aios_organization_members om
    where om.organization_id = v_organization_id
      and om.user_id = v_actor
-   for update;
+   for share;
   if not found or v_role not in ('owner', 'admin', 'administrator') then
     raise exception 'organization owner/admin authorization required' using errcode = '42501';
   end if;
