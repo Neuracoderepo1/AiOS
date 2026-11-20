@@ -135,11 +135,11 @@ export function createClient(_url: string, _key: string, opts?: { global?: { hea
         const missionId = (args as { p_mission_id?: string })?.p_mission_id;
         const mission = (world.tables.aios_missions ?? []).find((m) => m.id === missionId);
         if (!mission) return { data: { outcome: "not_found", mission_id: missionId }, error: null };
-        if (["completed", "failed", "cancelled", "expired"].includes(mission.status)) {
+        if (["completed", "succeeded", "failed", "cancelled", "expired"].includes(mission.status)) {
           return { data: { outcome: "already_terminal", mission_id: missionId, status: mission.status }, error: null };
         }
         const previous = mission.status;
-        if (!["queued", "running", "blocked_pending_approval"].includes(previous)) {
+        if (!["pending", "queued", "running", "blocked_pending_approval"].includes(previous)) {
           return { data: { outcome: "not_cancellable", mission_id: missionId, status: previous }, error: null };
         }
         mission.status = "cancelled";
