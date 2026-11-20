@@ -39,7 +39,7 @@ blocked() { # blocked <pid>: true once that backend is waiting on a heavyweight 
 ORG=c5c5c5c5-0000-4000-8000-000000000001; AGT=c5c5c5c5-0000-4000-8000-000000000002; USR=c5c5c5c5-0000-4000-8000-000000000003
 q "insert into auth.users (id, aud, role, email) values ('$USR','authenticated','authenticated','mtr@example.test') on conflict do nothing;
    insert into public.aios_organizations (id,name) values ('$ORG','mtr-org') on conflict do nothing;
-   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$USR','member') on conflict do nothing;
+   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$USR','owner') on conflict (organization_id,user_id) do update set role='owner';
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','mtr-agent','mtr','mtr','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.search_tickets\"],\"limits\":{}}') on conflict do nothing;
    insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium','[\"support.search_tickets\"]','{}',true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null || { echo "fixture failed"; exit 1; }
 
@@ -113,6 +113,22 @@ echo "  after task cancel: mission/task/invocation = $(state $M $T $I)"
 check "no orphaned 'approved' invocation remains once its task is cancelled" "$([ "$(q "select status from public.aios_tool_invocations where id='$I'")" != approved ] && echo true || echo false)"
 res=$(q "begin; $(as_service) select 'OK' from (select public.aios_kernel_authorize_invocation('$I')) x; commit;" 2>&1 | tail -1)
 check "kernel refuses to execute for a cancelled task (got: $(echo "$res" | cut -c1-70))" "$(echo "$res" | grep -qi 'not executable\|invocation' && echo true || echo false)"
+
+echo "== R3: task INSERT racing authenticated mission cancellation (parent FOR SHARE barrier)"
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-cancel-race','mtr','queued') returning id" | tail -1); need_ids "$M"
+open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
+# Match the RPC lock order: membership FOR SHARE, then mission FOR UPDATE.
+step A 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$USR' for share; select id from public.aios_missions where id='$M' for update;" >/dev/null
+fire 4 "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status) values ('$ORG','$M','$AGT','racing task','queued'); select 'INSERT_DONE';"
+blocked "$PB" && echo "  barrier: task INSERT is waiting on the mission FOR SHARE lock" || { echo "  barrier never reached"; fail=1; }
+step A 3 "select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
+step A 3 "commit;" >/dev/null
+wait_out B "INSERT_DONE" 400 || fail=1
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+insert_errors=$(grep -c "parent mission is terminal" "$D/B.out" || true)
+remaining=$(q "select count(*) from public.aios_tasks where mission_id='$M'")
+echo "  terminal-insert-errors=$insert_errors committed-task-rows=$remaining"
+check "task INSERT waits for cancellation then rejects terminal parent" "$([ "$insert_errors" -ge 1 ] && [ "$remaining" = 0 ] && echo true || echo false)"
 
 echo "== mission/task races: $([ $fail = 0 ] && echo ALL PASS || echo FAILURES)"
 exit $fail
