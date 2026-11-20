@@ -35,13 +35,15 @@ for (const status of ["queued", "running", "blocked_pending_approval"]) {
   });
 }
 
-Deno.test("cancel-mission: non-admin is rejected before the privileged cancellation RPC", async () => {
+Deno.test("cancel-mission: non-admin is rejected by the authenticated database RPC", async () => {
   fresh({ aios_missions: [baseMission("running")] });
   world.isAdmin = false;
   const response = await call("cancel-mission", { mission_id: MISSION_ID });
   assert(response.status === 403, "non-admin receives 403");
   assert(mission().status === "running", "mission is unchanged");
-  assert(!world.rpcs.some((r) => r.name === "aios_cancel_mission"), "privileged RPC is not called");
+  const rpc = world.rpcs.find((r) => r.name === "aios_cancel_mission");
+  assert(!!rpc, "authenticated cancellation RPC is called");
+  assert(Object.keys(rpc.args as Record<string, unknown>).join(",") === "p_mission_id", "caller cannot supply or spoof actor identity");
 });
 
 Deno.test("cancel-mission: invalid mission id is rejected before database access", async () => {
