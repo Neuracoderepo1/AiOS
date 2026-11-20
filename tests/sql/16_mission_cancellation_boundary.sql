@@ -27,7 +27,8 @@ begin
   end if;
   if has_function_privilege('anon', v_oid, 'execute')
      or has_function_privilege('service_role', v_oid, 'execute')
-     or has_function_privilege('public', v_oid, 'execute') then
+     or exists (select 1 from aclexplode((select proacl from pg_proc where oid = v_oid)) a
+                where a.grantee = 0 and a.privilege_type = 'EXECUTE') then
     raise exception 'cancellation RPC must not be executable by anon, service_role, or PUBLIC';
   end if;
   if not has_function_privilege('authenticated', v_oid, 'execute') then
