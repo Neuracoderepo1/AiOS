@@ -94,6 +94,18 @@ update public.aios_approvals
    set status = 'expired'
  where id = '80000000-0000-4000-8000-000000000005';
 
+-- The invocation insert path normalizes new rows to requires_approval regardless of the
+-- status supplied, so the succeeded fixture's invocation is still live at this point. Bring it
+-- to its terminal state through the same requires_approval -> cancelled transition the
+-- mission/task cascades perform, so the succeeded mission is seeded with terminal children only.
+update public.aios_tool_invocations
+   set status = 'cancelled',
+       completed_at = now(),
+       error_code = 'MISSION_TERMINAL',
+       error_message = 'fixture: succeeded mission seeded with terminal children'
+ where id = '90000000-0000-4000-8000-000000000005'
+   and status in ('requires_approval','approved');
+
 -- Create dependent fixtures while their parent missions are active. The task gate
 -- rejects live task writes under terminal parents. The succeeded fixture is seeded
 -- directly terminal with terminal children, so this test does not invent a new transition.
