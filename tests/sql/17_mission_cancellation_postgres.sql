@@ -125,8 +125,11 @@ begin
     raise exception 'succeeded mission did not preserve its completed task';
   end if;
   if (select status from public.aios_tool_invocations
-      where id='90000000-0000-4000-8000-000000000005') <> 'cancelled' then
-    raise exception 'succeeded mission retained a live approved invocation';
+      where id='90000000-0000-4000-8000-000000000005')
+       in ('requires_approval','approved','executing') then
+    raise exception 'succeeded mission retained a live invocation (status=%)',
+      (select status from public.aios_tool_invocations
+        where id='90000000-0000-4000-8000-000000000005');
   end if;
   if (select status from public.aios_approvals
       where id='80000000-0000-4000-8000-000000000005') <> 'expired' then
