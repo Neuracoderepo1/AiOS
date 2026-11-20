@@ -20,11 +20,36 @@ Deno.serve(async (req: Request) => {
 
   const authorization = req.headers.get("Authorization");
   if (!authorization) return json({ error: "Missing Authorization header" }, 401);
-  if (Number(req.headers.get("content-length") ?? 0) > 16384) return json({ error: "Request too large" }, 413);
+  const MAX_BODY_BYTES = 16384;
+  const declaredLength = req.headers.get("content-length");
+  if (declaredLength !== null) {
+    if (!/^(0|[1-9][0-9]*)$/.test(declaredLength)) return json({ error: "Invalid Content-Length" }, 400);
+    if (!Number.isSafeInteger(Number(declaredLength)) || Number(declaredLength) > MAX_BODY_BYTES) return json({ error: "Request too large" }, 413);
+  }
 
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    const reader = req.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_BODY_BYTES) {
+          await reader.cancel();
+          return json({ error: "Request too large" }, 413);
+        }
+        chunks.push(value);
+      }
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ error: "Invalid JSON body" }, 400);
+    body = parsed as Record<string, unknown>;
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
