@@ -163,5 +163,27 @@ check "no deadlock between the reaper and authenticated cancellation RPC" "$([ "
 check "every mission ends terminal after reaper/RPC race" "$([ "$(for c in "${ch[@]}"; do read M _ <<<"$c"; q "select status from public.aios_missions where id='$M'"; done | grep -cE 'cancelled|failed')" = $PAIRS ] && echo true || echo false)"
 check "reaper/RPC race has no SQL errors" "$([ "$rpc_errors" = 0 ] && echo true || echo false)"
 
+echo "== L5: concurrent repeated authenticated cancellation RPC ($PAIRS pairs)"
+ch=(); W=()
+for k in $(seq 1 $PAIRS); do
+  read M T <<<"$(new_stale l5$k)"
+  ch+=("$M $T x x")
+  W+=("$(CANCEL $M)" "$(CANCEL $M)")
+done
+gate_run l5 "${W[@]}"
+rpc_errors=$(cat "$EVID"/workers/l5_*.err "$EVID"/workers/l5_*.out | grep -c 'ERROR')
+result_rows=$(grep -h '"outcome":' "$EVID"/workers/l5_*.out | wc -l | tr -d ' ')
+bad_audit=0
+for c in "${ch[@]}"; do
+  read M _ <<<"$c"
+  [ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] || bad_audit=$((bad_audit+1))
+  [ "$(q "select count(*) from public.aios_audit_events where mission_id='$M' and event_type='mission_cancellation_requested'")" = 1 ] || bad_audit=$((bad_audit+1))
+done
+echo "  deadlocks=$DEAD rpc_errors=$rpc_errors recognized_results=$result_rows/$((PAIRS*2)) bad_mission_or_audit_oracles=$bad_audit"
+check "no deadlock between concurrent repeated cancellation requests" "$([ "$DEAD" = 0 ] && echo true || echo false)"
+check "both calls per mission return a stable cancellation outcome" "$([ "$result_rows" = $((PAIRS*2)) ] && echo true || echo false)"
+check "each mission is cancelled with exactly one cancellation audit event" "$([ "$bad_audit" = 0 ] && echo true || echo false)"
+check "concurrent repeated cancellation has no SQL errors" "$([ "$rpc_errors" = 0 ] && echo true || echo false)"
+
 echo "== approval lock-order races: $([ $fail = 0 ] && echo ALL PASS || echo FAILURES)"
 exit $fail
