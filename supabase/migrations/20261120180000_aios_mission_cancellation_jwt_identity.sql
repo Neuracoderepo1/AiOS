@@ -66,7 +66,7 @@ begin
     );
   end if;
 
-  if v_status not in ('pending', 'queued', 'running', 'blocked_pending_approval') then
+  if v_status not in ('queued', 'running', 'blocked_pending_approval') then
     return jsonb_build_object(
       'outcome', 'not_cancellable',
       'mission_id', p_mission_id,
