@@ -36,31 +36,13 @@ Deno.serve(async (req: Request) => {
 
   const url = Deno.env.get("SUPABASE_URL")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const user = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
   const { data: userData, error: userError } = await user.auth.getUser();
   if (userError || !userData?.user) return json({ error: "Invalid or expired session" }, 401);
 
-  // Resolve the organization without granting the caller a service-role read path.
-  const admin = createClient(url, serviceKey);
-  const { data: mission, error: missionError } = await admin
-    .from("aios_missions")
-    .select("id,organization_id")
-    .eq("id", missionId)
-    .maybeSingle();
-  if (missionError) return json({ error: "Mission lookup failed" }, 500);
-  if (!mission) return json({ error: "Mission not found" }, 404);
-
-  const { data: isAdmin, error: roleError } = await user.rpc("aios_is_org_admin", {
-    org_id: mission.organization_id,
-  });
-  if (roleError) return json({ error: "Authorization check failed" }, 500);
-  if (!isAdmin) return json({ error: "Only an organization owner/admin may cancel a mission" }, 403);
-
-  // The database RPC repeats the role check under the mission row lock. This closes the lookup/authorization race.
-  const { data: result, error: cancelError } = await admin.rpc("aios_cancel_mission", {
+  // The database derives the actor from auth.uid(). No service-role call accepts a caller-supplied actor UUID.
+  const { data: result, error: cancelError } = await user.rpc("aios_cancel_mission", {
     p_mission_id: missionId,
-    p_actor_user_id: userData.user.id,
   });
   if (cancelError) {
     const status = cancelError.code === "42501" ? 403 : cancelError.code === "40001" ? 409 : 500;
