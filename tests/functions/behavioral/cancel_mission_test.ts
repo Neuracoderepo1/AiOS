@@ -7,10 +7,10 @@ const baseMission = (status: string) => ({
   organization_id: "org-1",
   status,
   metadata: { original: "preserve-me" },
-  completed_at: status === "queued" || status === "running" ? null : "2026-01-01T00:00:00Z",
+  completed_at: status === "pending" || status === "queued" || status === "running" ? null : "2026-01-01T00:00:00Z",
 });
 
-for (const status of ["failed", "cancelled", "completed", "expired"]) {
+for (const status of ["failed", "cancelled", "completed", "succeeded", "expired"]) {
   Deno.test(`cancel-mission: ${status} is an idempotent already_terminal no-op`, async () => {
     fresh({ aios_missions: [baseMission(status)] });
     const before = structuredClone(mission());
@@ -23,7 +23,7 @@ for (const status of ["failed", "cancelled", "completed", "expired"]) {
   });
 }
 
-for (const status of ["queued", "running", "blocked_pending_approval"]) {
+for (const status of ["pending", "queued", "running", "blocked_pending_approval"]) {
   Deno.test(`cancel-mission: active ${status} transitions once to cancelled`, async () => {
     fresh({ aios_missions: [baseMission(status)] });
     const first = await call("cancel-mission", { mission_id: MISSION_ID });
