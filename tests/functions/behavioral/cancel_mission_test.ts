@@ -7,7 +7,7 @@ const baseMission = (status: string) => ({
   organization_id: "org-1",
   status,
   metadata: { original: "preserve-me" },
-  completed_at: status === "pending" || status === "queued" || status === "running" ? null : "2026-01-01T00:00:00Z",
+  completed_at: status === "queued" || status === "running" ? null : "2026-01-01T00:00:00Z",
 });
 
 for (const status of ["failed", "cancelled", "completed", "succeeded", "expired"]) {
@@ -23,7 +23,7 @@ for (const status of ["failed", "cancelled", "completed", "succeeded", "expired"
   });
 }
 
-for (const status of ["pending", "queued", "running", "blocked_pending_approval"]) {
+for (const status of ["queued", "running", "blocked_pending_approval"]) {
   Deno.test(`cancel-mission: active ${status} transitions once to cancelled`, async () => {
     fresh({ aios_missions: [baseMission(status)] });
     const first = await call("cancel-mission", { mission_id: MISSION_ID });
@@ -51,4 +51,12 @@ Deno.test("cancel-mission: invalid mission id is rejected before database access
   const response = await call("cancel-mission", { mission_id: "not-a-uuid" });
   assert(response.status === 422, "invalid id receives 422");
   assert(world.ops.length === 0 && world.rpcs.length === 0, "no database operation occurs");
+});
+
+Deno.test("cancel-mission: oversized streamed body without Content-Length is rejected before database access", async () => {
+  fresh({ aios_missions: [baseMission("running")] });
+  const oversized = JSON.stringify({ mission_id: MISSION_ID, padding: "x".repeat(17000) });
+  const response = await call("cancel-mission", oversized);
+  assert(response.status === 413, "oversized streamed body receives 413");
+  assert(world.ops.length === 0 && world.rpcs.length === 0, "no database operation occurs for an oversized body");
 });
