@@ -110,7 +110,7 @@ update public.aios_missions
 -- A succeeded mission is terminal without cancelling already-completed work.
 -- Residual approved invocations and pending approvals must be closed, and live
 -- task creation under the succeeded parent must fail closed.
-do $
+do $succeeded_integrity$
 declare
   v_denied boolean := false;
 begin
@@ -168,7 +168,7 @@ begin
     raise exception 'task gate allowed a live task under a succeeded mission';
   end if;
 end
-$;
+$succeeded_integrity$;
 
 set local role authenticated;
 
