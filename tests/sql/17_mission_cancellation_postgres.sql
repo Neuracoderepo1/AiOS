@@ -106,6 +106,70 @@ update public.aios_missions
    '60000000-0000-4000-8000-000000000005'
  );
 
+
+-- A succeeded mission is terminal without cancelling already-completed work.
+-- Residual approved invocations and pending approvals must be closed, and live
+-- task creation under the succeeded parent must fail closed.
+do $
+declare
+  v_denied boolean := false;
+begin
+  if (select status from public.aios_tasks
+      where id='70000000-0000-4000-8000-000000000005') <> 'completed' then
+    raise exception 'succeeded mission did not preserve its completed task';
+  end if;
+  if (select status from public.aios_tool_invocations
+      where id='90000000-0000-4000-8000-000000000005') <> 'cancelled' then
+    raise exception 'succeeded mission retained a live approved invocation';
+  end if;
+  if (select status from public.aios_approvals
+      where id='80000000-0000-4000-8000-000000000005') <> 'expired' then
+    raise exception 'succeeded mission retained a pending approval';
+  end if;
+  if exists (
+    select 1 from public.aios_tasks
+     where mission_id='60000000-0000-4000-8000-000000000005'
+       and status in ('queued','assigned','ready','running','approved','blocked_pending_approval')
+  ) then
+    raise exception 'succeeded mission retained a live task';
+  end if;
+  if exists (
+    select 1 from public.aios_tool_invocations i
+    join public.aios_tasks t on t.id=i.task_id
+     where t.mission_id='60000000-0000-4000-8000-000000000005'
+       and i.status in ('requires_approval','approved')
+  ) then
+    raise exception 'succeeded mission retained a live invocation';
+  end if;
+  if exists (
+    select 1 from public.aios_approvals ap
+    join public.aios_tasks t on t.id=ap.task_id
+     where t.mission_id='60000000-0000-4000-8000-000000000005'
+       and ap.status='pending'
+  ) then
+    raise exception 'succeeded mission retained a pending approval';
+  end if;
+
+  begin
+    insert into public.aios_tasks(
+      id,organization_id,mission_id,assigned_agent_id,title,status
+    ) values (
+      '70000000-0000-4000-8000-000000000008',
+      '50000000-0000-4000-8000-000000000001',
+      '60000000-0000-4000-8000-000000000005',
+      '50000000-0000-4000-8000-000000000009',
+      'forbidden live task under succeeded mission',
+      'queued'
+    );
+  exception when insufficient_privilege then
+    v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'task gate allowed a live task under a succeeded mission';
+  end if;
+end
+$;
+
 set local role authenticated;
 
 do $$
