@@ -67,6 +67,11 @@ q "insert into auth.users (id,aud,role,email) values ('$REQ','authenticated','au
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','alo-agent','alo','alo','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.export_customer_data\"],\"limits\":{}}') on conflict do nothing;
    insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium','[\"support.export_customer_data\"]','{}',true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null || { echo "fixture failed"; exit 2; }
 
+# Fixture precondition (fail closed): the cancelling identity must hold owner/admin rights in EVERY org these races use (only $ORG).
+[ "$(q "select count(*) from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM' and role in ('owner','admin')")" = 1 ] \
+  || { echo "  FIXTURE FAILED: ADM lacks owner/admin in $ORG; refusing to report any result"; exit 2; }
+
+
 need_ids() { for x in "$@"; do [[ "$x" =~ ^[0-9a-f-]{36}$ ]] || { echo "  FIXTURE FAILED (empty/invalid id): refusing to report any result"; exit 2; }; done; }
 as_service() { echo "set local role service_role; select set_config('request.jwt.claims','{\"role\":\"service_role\"}',true);"; }
 
