@@ -31,7 +31,12 @@ fire() { # fire <fd> <sql>: send WITHOUT waiting (used for a statement that is e
   printf '%s\n' "$2" >&"$1"
 }
 wait_out() { local i=0; until grep -q "$2" "$D/$1.out" 2>/dev/null; do i=$((i+1)); [ $i -gt $3 ] && { echo "  TIMEOUT waiting for $2 in $1"; return 1; }; sleep 0.05; done; }
-pid_of() { step "$1" "$2" "select 'PID='||pg_backend_pid();" >/dev/null; grep -o 'PID=[0-9]*' "$D/$1.out" | tail -1 | cut -d= -f2; }
+pid_of() { # Use a session-unique sentinel; command substitution would discard step()'s global counter update.
+  local tag="PID_READY_$1"
+  printf "select 'PID='||pg_backend_pid();\\nselect '%s';\\n" "$tag" >&"$2"
+  wait_out "$1" "$tag" 600 || return 1
+  grep -o 'PID=[0-9]*' "$D/$1.out" | tail -1 | cut -d= -f2
+}
 blocked() { # blocked <pid>: true once that backend is waiting on a heavyweight lock
   local i=0; until [ "$(q "select count(*) from pg_stat_activity where pid=$1 and wait_event_type='Lock'")" = 1 ]; do i=$((i+1)); [ $i -gt 400 ] && return 1; sleep 0.05; done; return 0; }
 
