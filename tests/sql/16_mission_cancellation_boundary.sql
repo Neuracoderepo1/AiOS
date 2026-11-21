@@ -1,9 +1,9 @@
 -- Cancellation RPC security boundary. Runs on the clean, real-PostgreSQL migration replay.
 create or replace function pg_temp.membership_share_locked(def text) returns boolean language sql immutable as $f$
-  select lower(def) ~ 'from public\\.aios_organization_members om[^;]*for share\\s*;'
+  select lower(def) ~ 'from public\.aios_organization_members om[^;]*for share\s*;'
 $f$;
 create or replace function pg_temp.mission_update_locked(def text) returns boolean language sql immutable as $f$
-  select lower(def) ~ 'from public\\.aios_missions m\\s+where m\\.id = p_mission_id\\s+for update\\s*;'
+  select lower(def) ~ 'from public\.aios_missions m\s+where m\.id = p_mission_id\s+for update\s*;'
 $f$;
 
 do $$
