@@ -36,10 +36,10 @@ blocked() { # blocked <pid>: true once that backend is waiting on a heavyweight 
   local i=0; until [ "$(q "select count(*) from pg_stat_activity where pid=$1 and wait_event_type='Lock'")" = 1 ]; do i=$((i+1)); [ $i -gt 400 ] && return 1; sleep 0.05; done; return 0; }
 
 # ---- fixture ----------------------------------------------------------------------------------------------------------
-ORG=c5c5c5c5-0000-4000-8000-000000000001; AGT=c5c5c5c5-0000-4000-8000-000000000002; USR=c5c5c5c5-0000-4000-8000-000000000003
-q "insert into auth.users (id, aud, role, email) values ('$USR','authenticated','authenticated','mtr@example.test') on conflict do nothing;
+ORG=c5c5c5c5-0000-4000-8000-000000000001; AGT=c5c5c5c5-0000-4000-8000-000000000002; USR=c5c5c5c5-0000-4000-8000-000000000003; ADM=c5c5c5c5-0000-4000-8000-000000000004
+q "insert into auth.users (id, aud, role, email) values ('$USR','authenticated','authenticated','mtr@example.test'),('$ADM','authenticated','authenticated','mtr-admin@example.test') on conflict do nothing;
    insert into public.aios_organizations (id,name) values ('$ORG','mtr-org') on conflict do nothing;
-   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$USR','owner') on conflict (organization_id,user_id) do update set role='owner';
+   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$USR','owner'),('$ORG','$ADM','admin') on conflict (organization_id,user_id) do update set role=excluded.role;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','mtr-agent','mtr','mtr','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.search_tickets\"],\"limits\":{}}') on conflict do nothing;
    insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium','[\"support.search_tickets\"]','{}',true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null || { echo "fixture failed"; exit 1; }
 
@@ -143,6 +143,48 @@ insert_errors=$(grep -c "parent mission is terminal" "$D/B.out" || true)
 remaining=$(q "select count(*) from public.aios_tasks where mission_id='$M' and status in ('queued','assigned','ready','running','approved','blocked_pending_approval')")
 echo "  terminal-insert-errors=$insert_errors committed-live-task-rows=$remaining"
 check "task INSERT waits for cancellation then rejects terminal parent" "$([ "$insert_errors" -ge 1 ] && [ "$remaining" = 0 ] && echo true || echo false)"
+
+
+echo "== R4: membership downgrade waits behind authenticated cancellation FOR SHARE"
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-downgrade-race','mtr','queued') returning id" | head -1); need_ids "$M"
+open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
+step A 3 "begin; select 'MEMBER_LOCKED='||user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM' for share; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
+grep -q "CANCEL_RESULT=cancelled" "$D/A.out" || { echo "  cancellation did not complete while holding membership FOR SHARE"; cat "$D/A.out"; fail=1; }
+fire 4 "begin; update public.aios_organization_members set role='member' where organization_id='$ORG' and user_id='$ADM'; select 'DOWNGRADE_DONE';"
+blocked "$PB" && echo "  barrier: role downgrade waits behind membership FOR SHARE" || { echo "  downgrade did not block on cancellation membership lock"; cat "$D/B.out"; fail=1; }
+step A 3 "commit;" >/dev/null
+wait_out B "DOWNGRADE_DONE" 400 || { echo "  downgrade did not resume after cancellation commit"; cat "$D/B.out"; fail=1; }
+step B 4 "commit;" >/dev/null
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+check "cancellation wins when its membership FOR SHARE lock is first" "$([ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] && echo true || echo false)"
+check "role downgrade commits only after cancellation transaction" "$([ "$(q "select role from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'")" = member ] && echo true || echo false)"
+
+echo "== R5: membership deletion commits first; cancellation rejects without mission/audit mutation"
+q "update public.aios_organization_members set role='admin' where organization_id='$ORG' and user_id='$ADM'" >/dev/null
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-delete-first','mtr','queued') returning id" | head -1); need_ids "$M"
+audit_before=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG' and event_type='mission_cancellation_requested'")
+q "delete from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'" >/dev/null
+denied=$(q "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select public.aios_cancel_mission('$M'); commit;" 2>&1 || true)
+echo "$denied" | grep -q '42501' || { echo "  expected SQLSTATE 42501 after membership deletion; got: $(echo "$denied" | tail -2)"; fail=1; }
+audit_after=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG' and event_type='mission_cancellation_requested'")
+check "deleted member cannot cancel and mission remains queued" "$([ "$(q "select status from public.aios_missions where id='$M'")" = queued ] && echo true || echo false)"
+check "rejected cancellation leaves audit stream unchanged" "$([ "$audit_after" = "$audit_before" ] && echo true || echo false)"
+q "insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$ADM','admin') on conflict (organization_id,user_id) do update set role='admin'" >/dev/null
+
+echo "== R6: task INSERT commits first while cancellation waits; cancellation cascades the committed task"
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-first-cancel-second','mtr','queued') returning id" | head -1); need_ids "$M"
+T=ddddd000-0000-4000-8000-000000000001
+open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
+step B 4 "begin; insert into public.aios_tasks (id,organization_id,mission_id,assigned_agent_id,title,status) values ('$T','$ORG','$M','$AGT','insert commits before cancellation','queued');" >/dev/null
+fire 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');"
+blocked "$PA" && echo "  barrier: cancellation waits behind the task INSERT's parent FOR SHARE lock" || { echo "  cancellation did not wait for uncommitted task insert"; cat "$D/A.out"; fail=1; }
+step B 4 "commit;" >/dev/null
+wait_out A "CANCEL_RESULT=cancelled" 400 || { echo "  cancellation did not resume after task commit"; cat "$D/A.out"; fail=1; }
+step A 3 "commit;" >/dev/null
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+task_status=$(q "select status from public.aios_tasks where id='$T' and mission_id='$M'")
+echo "  committed task status after cancellation=$task_status"
+check "task INSERT commits first and is then terminalized by cancellation cascade" "$([ "$task_status" = cancelled ] && [ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] && echo true || echo false)"
 
 echo "== mission/task races: $([ $fail = 0 ] && echo ALL PASS || echo FAILURES)"
 exit $fail
