@@ -1,4 +1,11 @@
 -- Cancellation RPC security boundary. Runs on the clean, real-PostgreSQL migration replay.
+create or replace function pg_temp.membership_share_locked(def text) returns boolean language sql immutable as $f$
+  select lower(def) ~ 'from public\\.aios_organization_members om[^;]*for share\\s*;'
+$f$;
+create or replace function pg_temp.mission_update_locked(def text) returns boolean language sql immutable as $f$
+  select lower(def) ~ 'from public\\.aios_missions m\\s+where m\\.id = p_mission_id\\s+for update\\s*;'
+$f$;
+
 do $$
 declare
   v_oid oid;
@@ -38,11 +45,24 @@ begin
      or position('p_actor_user_id' in v_def) > 0 then
     raise exception 'cancellation actor must come from auth.uid(), never a caller-supplied UUID';
   end if;
-  if position('public.aios_organization_members' in v_def) = 0
-     or position('for share' in lower(v_def)) = 0
-     or position('for update' in lower(v_def)) = 0
-     or position('for share' in lower(v_def)) >= position('for update' in lower(v_def)) then
-    raise exception 'cancellation must lock membership FOR SHARE before locking the mission FOR UPDATE';
+  -- Assert the REAL locks, not just that the words appear somewhere: membership is share-locked
+  -- (so concurrent cancels by one admin do not serialize, while role revocation does), and the
+  -- mission row is update-locked. A bare 'for update' substring check passes on the mission lock alone.
+  if not pg_temp.membership_share_locked(v_def) then
+    raise exception 'cancellation must share-lock and revalidate the authenticated organization membership';
+  end if;
+  if not pg_temp.mission_update_locked(v_def) then
+    raise exception 'cancellation must update-lock the mission row before changing state';
+  end if;
+  -- Mutants: each predicate must reject a definition with its lock removed or weakened.
+  if pg_temp.membership_share_locked(replace(lower(v_def), 'for share', '')) then
+    raise exception 'MUTANT SURVIVED: membership lock removed but predicate still passes';
+  end if;
+  if pg_temp.membership_share_locked(replace(lower(v_def), 'for share', 'for update')) then
+    raise exception 'MUTANT SURVIVED: membership lock strengthened to update but predicate still passes';
+  end if;
+  if pg_temp.mission_update_locked(replace(lower(v_def), 'where m.id = p_mission_id' || chr(10) || '   for update', 'where m.id = p_mission_id')) then
+    raise exception 'MUTANT SURVIVED: mission lock removed but predicate still passes';
   end if;
   if position('already_terminal' in v_def) = 0
      or position('failed' in v_def) = 0
