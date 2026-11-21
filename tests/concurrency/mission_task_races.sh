@@ -162,11 +162,11 @@ check "role downgrade commits only after cancellation transaction" "$([ "$(q "se
 echo "== R5: membership deletion commits first; cancellation rejects without mission/audit mutation"
 q "update public.aios_organization_members set role='admin' where organization_id='$ORG' and user_id='$ADM'" >/dev/null
 M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-delete-first','mtr','queued') returning id" | head -1); need_ids "$M"
-audit_before=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG' and event_type='mission_cancellation_requested'")
+audit_before=$(q "select coalesce(jsonb_agg(to_jsonb(a) order by a.ctid), '[]'::jsonb) from public.aios_audit_events a where a.organization_id='$ORG'")
 q "delete from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'" >/dev/null
 denied=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -c "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select public.aios_cancel_mission('$M'); commit;" 2>&1 || true)
 echo "$denied" | grep -q '42501' || { echo "  expected SQLSTATE 42501 after membership deletion; got: $(echo "$denied" | tail -2)"; fail=1; }
-audit_after=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG' and event_type='mission_cancellation_requested'")
+audit_after=$(q "select coalesce(jsonb_agg(to_jsonb(a) order by a.ctid), '[]'::jsonb) from public.aios_audit_events a where a.organization_id='$ORG'")
 check "deleted member cannot cancel and mission remains queued" "$([ "$(q "select status from public.aios_missions where id='$M'")" = queued ] && echo true || echo false)"
 check "rejected cancellation leaves audit stream unchanged" "$([ "$audit_after" = "$audit_before" ] && echo true || echo false)"
 q "insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$ADM','admin') on conflict (organization_id,user_id) do update set role='admin'" >/dev/null
