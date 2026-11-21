@@ -1,9 +1,13 @@
--- Keep the succeeded terminal state consistent across mission cascades and task writes.
--- Successful completed tasks remain completed; residual live invocations and approvals
--- are closed, and no new live task may be attached to a succeeded mission.
-
--- The RPC already treats succeeded as terminal. Make that state reachable only
--- from an active execution path, with the same completed-task precondition as completed.
+-- Keep the legacy 'succeeded' mission state consistent across mission cascades and task writes.
+--
+-- State-machine decision (F-40-07): 'succeeded' is a LEGACY, SEED-ONLY terminal state. 'completed'
+-- is the sole success terminal reachable by transition, and nothing in the repository (Edge
+-- Functions, RPCs, reaper) writes mission status 'succeeded'. A mission can exist in 'succeeded'
+-- only by direct INSERT (historical/seeded rows). This migration therefore does NOT add an
+-- active -> succeeded transition: the guard below rejects every transition INTO 'succeeded' and
+-- every transition OUT of it. What it guarantees is that a mission already in 'succeeded' is
+-- treated as terminal everywhere: residual live invocations/approvals are closed by the cascade
+-- and no new live task may be attached to it (task gate). tests/sql/19 pins both facts.
 create or replace function private.aios_mission_status_guard()
 returns trigger
 language plpgsql
@@ -26,13 +30,6 @@ begin
      where t.mission_id = new.id and t.status <> 'completed'
   ) then
     raise exception 'mission cannot complete while tasks remain incomplete';
-  end if;
-
-  if new.status = 'succeeded' and exists (
-    select 1 from public.aios_tasks t
-     where t.mission_id = new.id and t.status <> 'completed'
-  ) then
-    raise exception 'mission cannot succeed while tasks remain incomplete';
   end if;
 
   if new.status = 'running' and new.started_at is null then
@@ -83,10 +80,16 @@ begin
      and (tg_op = 'INSERT' or new.status is distinct from old.status or new.mission_id is distinct from old.mission_id) then
     -- INSERT serializes with mission cancellation before the FK check. Cancellation
     -- holds FOR UPDATE; FOR SHARE makes the insert either visible to the cascade or
-    -- reject against the committed terminal state. Do not lock the parent on UPDATE:
-    -- the task row is already locked there, which would invert mission -> task order.
+    -- reject against the committed terminal state.
+    -- Re-parenting a live task (mission_id change) must also serialize with cancellation of
+    -- the destination mission, otherwise it could slip past the cascade. The task row is
+    -- already locked in UPDATE, so a blocking parent lock would invert the global
+    -- mission -> task order. FOR SHARE NOWAIT fails closed (55P03) instead of waiting, so
+    -- it cannot deadlock. Plain status transitions keep the unlocked read.
     if tg_op = 'INSERT' then
       select status into v_ms from public.aios_missions where id = new.mission_id for share;
+    elsif new.mission_id is distinct from old.mission_id then
+      select status into v_ms from public.aios_missions where id = new.mission_id for share nowait;
     else
       select status into v_ms from public.aios_missions where id = new.mission_id;
     end if;
