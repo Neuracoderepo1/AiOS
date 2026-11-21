@@ -8,6 +8,55 @@
 -- every transition OUT of it. What it guarantees is that a mission already in 'succeeded' is
 -- treated as terminal everywhere: residual live invocations/approvals are closed by the cascade
 -- and no new live task may be attached to it (task gate). tests/sql/19 pins both facts.
+-- Pre-existing 'succeeded' rows with live children are NOT swept: the migration aborts instead
+-- (see the precondition below; tests/sql/20).
+--
+-- Fail-closed precondition for historical data. The cascade below fires only on a status CHANGE and
+-- the task gate only on task writes, so a mission that is ALREADY 'succeeded' keeps any live
+-- children it has. Refuse to apply this migration over such rows rather than silently mutating
+-- historical data during a hosted migration; an operator must resolve them first (the error
+-- reports the counts). Hosted baseline at authoring time: zero 'succeeded' missions.
+-- This check is invoker-rights and executable by no client role.
+create or replace function private.aios_assert_no_residual_succeeded_children()
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $f$
+declare
+  v_tasks bigint;
+  v_inv bigint;
+  v_appr bigint;
+begin
+  select count(*) into v_tasks
+    from public.aios_tasks t
+    join public.aios_missions m on m.id = t.mission_id
+   where m.status = 'succeeded'
+     and t.status in ('queued','assigned','ready','running','approved','blocked_pending_approval');
+
+  select count(*) into v_inv
+    from public.aios_tool_invocations i
+    join public.aios_tasks t on t.id = i.task_id
+    join public.aios_missions m on m.id = t.mission_id
+   where m.status = 'succeeded'
+     and i.status not in ('succeeded','failed','denied','cancelled','expired');
+
+  select count(*) into v_appr
+    from public.aios_approvals a
+    join public.aios_tasks t on t.id = a.task_id
+    join public.aios_missions m on m.id = t.mission_id
+   where m.status = 'succeeded'
+     and a.status = 'pending';
+
+  if v_tasks + v_inv + v_appr > 0 then
+    raise exception 'succeeded missions have residual live children (tasks=%, invocations=%, approvals=%): resolve them before applying this migration',
+      v_tasks, v_inv, v_appr using errcode = '55000';
+  end if;
+end
+$f$;
+revoke all on function private.aios_assert_no_residual_succeeded_children() from public, anon, authenticated, service_role;
+select private.aios_assert_no_residual_succeeded_children();
+
 create or replace function private.aios_mission_status_guard()
 returns trigger
 language plpgsql
