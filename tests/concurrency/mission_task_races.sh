@@ -195,16 +195,16 @@ echo "== R7: live task re-parented under a mission whose cancellation is in flig
 M1=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-reparent-src','mtr','queued') returning id" | head -1)
 M2=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-reparent-dst','mtr','queued') returning id" | head -1); need_ids "$M1" "$M2"
 T=$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status) values ('$ORG','$M1','$AGT','reparent victim','queued') returning id" | head -1); need_ids "$T"
-open_sess G 3; open_sess H 4; PA=$(pid_of G 3); PB=$(pid_of H 4)
+open_sess G 3; open_sess H 4; printf '\\set VERBOSITY verbose\n' >&4; PA=$(pid_of G 3); PB=$(pid_of H 4)
 # Cancellation (uncommitted) holds the destination mission FOR UPDATE, as the RPC does.
 step G 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M2')->>'outcome');" >/dev/null
 grep -q "CANCEL_RESULT=cancelled" "$D/G.out" || { echo "  fixture failed: cancellation did not run"; cat "$D/G.out"; fail=1; }
 step H 4 "update public.aios_tasks set mission_id='$M2' where id='$T';" >/dev/null
-check "re-parent fails closed (55P03) while destination cancellation is in flight" "$(grep -qi 'could not obtain lock' "$D/H.out" && echo true || echo false)"
+check "re-parent fails closed with SQLSTATE 55P03 while destination cancellation is in flight" "$(grep -q '55P03' "$D/H.out" && grep -qi 'could not obtain lock' "$D/H.out" && echo true || echo false)"
 check "task still belongs to its original mission after the refused re-parent" "$([ "$(q "select mission_id from public.aios_tasks where id='$T'")" = "$M1" ] && echo true || echo false)"
 step G 3 "commit;" >/dev/null
 step H 4 "update public.aios_tasks set mission_id='$M2' where id='$T';" >/dev/null
-check "re-parent under the now-terminal mission is rejected (42501)" "$(grep -q 'parent mission is terminal (cancelled)' "$D/H.out" && echo true || echo false)"
+check "re-parent under the now-terminal mission is rejected with SQLSTATE 42501" "$(grep -q '42501' "$D/H.out" && grep -q 'parent mission is terminal (cancelled)' "$D/H.out" && echo true || echo false)"
 exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
 check "no live task is attached to the cancelled destination mission" "$([ "$(q "select count(*) from public.aios_tasks where mission_id='$M2' and status in ('queued','assigned','ready','running','approved','blocked_pending_approval')")" = 0 ] && echo true || echo false)"
 
