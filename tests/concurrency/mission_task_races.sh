@@ -147,14 +147,14 @@ check "task INSERT waits for cancellation then rejects terminal parent" "$([ "$i
 
 echo "== R4: membership downgrade waits behind authenticated cancellation FOR SHARE"
 M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-downgrade-race','mtr','queued') returning id" | head -1); need_ids "$M"
-open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
-step A 3 "begin; select 'MEMBER_LOCKED='||user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM' for share; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
-grep -q "CANCEL_RESULT=cancelled" "$D/A.out" || { echo "  cancellation did not complete while holding membership FOR SHARE"; cat "$D/A.out"; fail=1; }
+open_sess C 3; open_sess D 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
+step C 3 "begin; select 'MEMBER_LOCKED='||user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM' for share; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
+grep -q "CANCEL_RESULT=cancelled" "$D/C.out" || { echo "  cancellation did not complete while holding membership FOR SHARE"; cat "$D/C.out"; fail=1; }
 fire 4 "begin; update public.aios_organization_members set role='member' where organization_id='$ORG' and user_id='$ADM'; select 'DOWNGRADE_DONE';"
-blocked "$PB" && echo "  barrier: role downgrade waits behind membership FOR SHARE" || { echo "  downgrade did not block on cancellation membership lock"; cat "$D/B.out"; fail=1; }
-step A 3 "commit;" >/dev/null
-wait_out B "DOWNGRADE_DONE" 400 || { echo "  downgrade did not resume after cancellation commit"; cat "$D/B.out"; fail=1; }
-step B 4 "commit;" >/dev/null
+blocked "$PB" && echo "  barrier: role downgrade waits behind membership FOR SHARE" || { echo "  downgrade did not block on cancellation membership lock"; cat "$D/D.out"; fail=1; }
+step C 3 "commit;" >/dev/null
+wait_out B "DOWNGRADE_DONE" 400 || { echo "  downgrade did not resume after cancellation commit"; cat "$D/D.out"; fail=1; }
+step D 4 "commit;" >/dev/null
 exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
 check "cancellation wins when its membership FOR SHARE lock is first" "$([ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] && echo true || echo false)"
 check "role downgrade commits only after cancellation transaction" "$([ "$(q "select role from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'")" = member ] && echo true || echo false)"
@@ -174,13 +174,13 @@ q "insert into public.aios_organization_members (organization_id,user_id,role) v
 echo "== R6: task INSERT commits first while cancellation waits; cancellation cascades the committed task"
 M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-first-cancel-second','mtr','queued') returning id" | head -1); need_ids "$M"
 T=$(q "select gen_random_uuid()")
-open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
-step B 4 "begin; insert into public.aios_tasks (id,organization_id,mission_id,assigned_agent_id,title,status) values ('$T','$ORG','$M','$AGT','insert commits before cancellation','queued');" >/dev/null
+open_sess E 3; open_sess F 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
+step F 4 "begin; insert into public.aios_tasks (id,organization_id,mission_id,assigned_agent_id,title,status) values ('$T','$ORG','$M','$AGT','insert commits before cancellation','queued');" >/dev/null
 fire 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');"
-blocked "$PA" && echo "  barrier: cancellation waits behind the task INSERT's parent FOR SHARE lock" || { echo "  cancellation did not wait for uncommitted task insert"; cat "$D/A.out"; fail=1; }
-step B 4 "commit;" >/dev/null
-wait_out A "CANCEL_RESULT=cancelled" 400 || { echo "  cancellation did not resume after task commit"; cat "$D/A.out"; fail=1; }
-step A 3 "commit;" >/dev/null
+blocked "$PA" && echo "  barrier: cancellation waits behind the task INSERT's parent FOR SHARE lock" || { echo "  cancellation did not wait for uncommitted task insert"; cat "$D/E.out"; fail=1; }
+step F 4 "commit;" >/dev/null
+wait_out A "CANCEL_RESULT=cancelled" 400 || { echo "  cancellation did not resume after task commit"; cat "$D/E.out"; fail=1; }
+step E 3 "commit;" >/dev/null
 exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
 task_status=$(q "select status from public.aios_tasks where id='$T' and mission_id='$M'")
 echo "  committed task status after cancellation=$task_status"
