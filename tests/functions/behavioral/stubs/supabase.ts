@@ -139,7 +139,7 @@ export function createClient(_url: string, _key: string, opts?: { global?: { hea
           return { data: { outcome: "already_terminal", mission_id: missionId, status: mission.status }, error: null };
         }
         const previous = mission.status;
-        if (!["pending", "queued", "running", "blocked_pending_approval"].includes(previous)) {
+        if (!["queued", "running", "blocked_pending_approval"].includes(previous)) {
           return { data: { outcome: "not_cancellable", mission_id: missionId, status: previous }, error: null };
         }
         mission.status = "cancelled";
