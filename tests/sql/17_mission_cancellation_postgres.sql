@@ -231,9 +231,14 @@ declare
   i integer;
   v_before jsonb;
   v_after jsonb;
-  v_task_before jsonb;
-  v_inv_before jsonb;
-  v_ap_before jsonb;
+  v_tasks_before jsonb;
+  v_tasks_after jsonb;
+  v_invocations_before jsonb;
+  v_invocations_after jsonb;
+  v_approvals_before jsonb;
+  v_approvals_after jsonb;
+  v_audit_chain_before jsonb;
+  v_audit_chain_after jsonb;
   v_audit_before bigint;
   v_denied boolean;
   v_result jsonb;
@@ -263,9 +268,22 @@ begin
   perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
   for i in 1..array_length(v_ids,1) loop
     select to_jsonb(m) into v_before from public.aios_missions m where m.id=v_ids[i];
-    select to_jsonb(t) into v_task_before from public.aios_tasks t where t.id=v_task_ids[i];
-    select to_jsonb(x) into v_inv_before from public.aios_tool_invocations x where x.id=v_inv_ids[i];
-    select to_jsonb(a) into v_ap_before from public.aios_approvals a where a.id=v_ap_ids[i];
+    -- Snapshot every related child row, not only the originally seeded IDs.
+    -- Full audit rows include any hash/digest/linkage columns maintained by the chain.
+    select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb)
+      into v_tasks_before from public.aios_tasks t where t.mission_id=v_ids[i];
+    select coalesce(jsonb_agg(to_jsonb(x) order by x.id), '[]'::jsonb)
+      into v_invocations_before
+      from public.aios_tool_invocations x
+      join public.aios_tasks t on t.id=x.task_id where t.mission_id=v_ids[i];
+    select coalesce(jsonb_agg(to_jsonb(a) order by a.id), '[]'::jsonb)
+      into v_approvals_before
+      from public.aios_approvals a
+      join public.aios_tasks t on t.id=a.task_id where t.mission_id=v_ids[i];
+    select coalesce(jsonb_agg(to_jsonb(a) order by a.ctid), '[]'::jsonb)
+      into v_audit_chain_before
+      from public.aios_audit_events a
+     where a.organization_id='50000000-0000-4000-8000-000000000001';
     select count(*) into v_audit_before from public.aios_audit_events
       where organization_id='50000000-0000-4000-8000-000000000001'
         and event_type='mission_cancellation_requested';
@@ -281,12 +299,32 @@ begin
 
     select to_jsonb(m) into v_after from public.aios_missions m where m.id=v_ids[i];
     if v_after is distinct from v_before then raise exception 'terminal mission row mutated: %',v_ids[i]; end if;
-    select to_jsonb(t) into v_after from public.aios_tasks t where t.id=v_task_ids[i];
-    if v_after is distinct from v_task_before then raise exception 'terminal task mutated: %',v_task_ids[i]; end if;
-    select to_jsonb(x) into v_after from public.aios_tool_invocations x where x.id=v_inv_ids[i];
-    if v_after is distinct from v_inv_before then raise exception 'terminal invocation mutated: %',v_ids[i]; end if;
-    select to_jsonb(a) into v_after from public.aios_approvals a where a.id=v_ap_ids[i];
-    if v_after is distinct from v_ap_before then raise exception 'terminal approval mutated: %',v_ids[i]; end if;
+    select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb)
+      into v_tasks_after from public.aios_tasks t where t.mission_id=v_ids[i];
+    if v_tasks_after is distinct from v_tasks_before then
+      raise exception 'terminal mission child-task set mutated: %',v_ids[i];
+    end if;
+    select coalesce(jsonb_agg(to_jsonb(x) order by x.id), '[]'::jsonb)
+      into v_invocations_after
+      from public.aios_tool_invocations x
+      join public.aios_tasks t on t.id=x.task_id where t.mission_id=v_ids[i];
+    if v_invocations_after is distinct from v_invocations_before then
+      raise exception 'terminal mission child-invocation set mutated: %',v_ids[i];
+    end if;
+    select coalesce(jsonb_agg(to_jsonb(a) order by a.id), '[]'::jsonb)
+      into v_approvals_after
+      from public.aios_approvals a
+      join public.aios_tasks t on t.id=a.task_id where t.mission_id=v_ids[i];
+    if v_approvals_after is distinct from v_approvals_before then
+      raise exception 'terminal mission child-approval set mutated: %',v_ids[i];
+    end if;
+    select coalesce(jsonb_agg(to_jsonb(a) order by a.ctid), '[]'::jsonb)
+      into v_audit_chain_after
+      from public.aios_audit_events a
+     where a.organization_id='50000000-0000-4000-8000-000000000001';
+    if v_audit_chain_after is distinct from v_audit_chain_before then
+      raise exception 'terminal no-op changed audit-chain rows or digest state: %',v_ids[i];
+    end if;
     if (select count(*) from public.aios_audit_events
         where organization_id='50000000-0000-4000-8000-000000000001'
           and event_type='mission_cancellation_requested') <> v_audit_before then
