@@ -164,7 +164,7 @@ q "update public.aios_organization_members set role='admin' where organization_i
 M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-delete-first','mtr','queued') returning id" | head -1); need_ids "$M"
 audit_before=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG' and event_type='mission_cancellation_requested'")
 q "delete from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'" >/dev/null
-denied=$(q "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select public.aios_cancel_mission('$M'); commit;" 2>&1 || true)
+denied=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -c "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select public.aios_cancel_mission('$M'); commit;" 2>&1 || true)
 echo "$denied" | grep -q '42501' || { echo "  expected SQLSTATE 42501 after membership deletion; got: $(echo "$denied" | tail -2)"; fail=1; }
 audit_after=$(q "select count(*) from public.aios_audit_events where organization_id='$ORG' and event_type='mission_cancellation_requested'")
 check "deleted member cannot cancel and mission remains queued" "$([ "$(q "select status from public.aios_missions where id='$M'")" = queued ] && echo true || echo false)"
@@ -173,7 +173,7 @@ q "insert into public.aios_organization_members (organization_id,user_id,role) v
 
 echo "== R6: task INSERT commits first while cancellation waits; cancellation cascades the committed task"
 M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-first-cancel-second','mtr','queued') returning id" | head -1); need_ids "$M"
-T=ddddd000-0000-4000-8000-000000000001
+T=$(q "select gen_random_uuid()")
 open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
 step B 4 "begin; insert into public.aios_tasks (id,organization_id,mission_id,assigned_agent_id,title,status) values ('$T','$ORG','$M','$AGT','insert commits before cancellation','queued');" >/dev/null
 fire 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');"
