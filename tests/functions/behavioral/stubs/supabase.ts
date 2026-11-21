@@ -21,11 +21,12 @@ export interface World {
   failRpcs: Record<string, string>; // RPC name -> injected error
   validSession: boolean;
   isMember: boolean;
+  isAdmin: boolean;
   // Called at the start of every operation, before it is applied. Lets a test change the world "between" a handler's read
   // and its next write (for example to simulate another execution winning a task claim).
   onOp: ((op: Op) => void) | null;
 }
-export const world: World = { tables: {}, ops: [], rpcs: [], fail: {}, failRpcs: {}, validSession: true, isMember: true, onOp: null };
+export const world: World = { tables: {}, ops: [], rpcs: [], fail: {}, failRpcs: {}, validSession: true, isMember: true, isAdmin: true, onOp: null };
 export function resetWorld(tables: Record<string, any[]> = {}) {
   world.tables = structuredClone(tables);
   world.ops = [];
@@ -34,6 +35,7 @@ export function resetWorld(tables: Record<string, any[]> = {}) {
   world.failRpcs = {};
   world.validSession = true;
   world.isMember = true;
+  world.isAdmin = true;
   world.onOp = null;
 }
 export const writes = () => world.ops.filter((o) => o.mode !== "select");
@@ -126,6 +128,23 @@ export function createClient(_url: string, _key: string, opts?: { global?: { hea
           if (tasks.length > 0 && tasks.every((t) => t.status === "completed")) mission.status = "completed";
         }
         return { data: mission?.status ?? "missing", error: null };
+      }
+      if (name === "aios_is_org_admin") return { data: world.isAdmin, error: null };
+      if (name === "aios_cancel_mission") {
+        if (!world.isAdmin) return { data: null, error: { code: "42501", message: "owner or admin authorization required" } };
+        const missionId = (args as { p_mission_id?: string })?.p_mission_id;
+        const mission = (world.tables.aios_missions ?? []).find((m) => m.id === missionId);
+        if (!mission) return { data: { outcome: "not_found", mission_id: missionId }, error: null };
+        if (["completed", "succeeded", "failed", "cancelled", "expired"].includes(mission.status)) {
+          return { data: { outcome: "already_terminal", mission_id: missionId, status: mission.status }, error: null };
+        }
+        const previous = mission.status;
+        if (!["queued", "running", "blocked_pending_approval"].includes(previous)) {
+          return { data: { outcome: "not_cancellable", mission_id: missionId, status: previous }, error: null };
+        }
+        mission.status = "cancelled";
+        mission.completed_at ??= "2026-01-02T00:00:00Z";
+        return { data: { outcome: "cancelled", mission_id: missionId, status: "cancelled", previous_status: previous }, error: null };
       }
       return { data: name === "aios_is_org_member" ? world.isMember : name === "aios_kernel_authorize_invocation" ? { status: "executing" } : name === "aios_record_evaluation" ? { id: "eval-1" } : null, error: null };
     },
