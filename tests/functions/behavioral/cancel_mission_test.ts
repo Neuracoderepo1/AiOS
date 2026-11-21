@@ -23,6 +23,14 @@ for (const status of ["failed", "cancelled", "completed", "succeeded", "expired"
   });
 }
 
+Deno.test("cancel-mission: pending is not an accepted cancellation state", async () => {
+  fresh({ aios_missions: [baseMission("pending")] });
+  const before = structuredClone(mission());
+  const response = await call("cancel-mission", { mission_id: MISSION_ID });
+  assert(response.status === 409 && response.json.outcome === "not_cancellable", "pending mission receives not_cancellable");
+  assert(JSON.stringify(mission()) === JSON.stringify(before), "pending mission remains unchanged");
+});
+
 for (const status of ["queued", "running", "blocked_pending_approval"]) {
   Deno.test(`cancel-mission: active ${status} transitions once to cancelled`, async () => {
     fresh({ aios_missions: [baseMission(status)] });
