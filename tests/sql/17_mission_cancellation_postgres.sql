@@ -88,11 +88,16 @@ values
  ('90000000-0000-4000-8000-000000000007','50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000009','70000000-0000-4000-8000-000000000007','support.export_customer_data','support.export_customer_data','{"scope":"cancel-test","format":"csv"}','low','10000000-0000-4000-8000-000000000001',gen_random_uuid(),'cancel-test-7','approved','80000000-0000-4000-8000-000000000007');
 
 -- Approvals can only be INSERTed pending (private.aios_validate_approval_integrity) and are
--- resolved by transition. Bring the succeeded fixture's approval to its terminal state through
+-- resolved by transition. Bring the succeeded fixture's approvals to their terminal state through
 -- the sanctioned pending -> expired transition; no guard is bypassed and no transition is added.
+-- The invocation insert trigger (private.aios_enforce_agent_authority) also creates its own
+-- pending approval for this tool and rebinds the invocation to it, so the explicitly inserted
+-- approval 80...05 is not the only pending approval on the task. Expire every pending approval
+-- of the succeeded fixture's task, not just the one seeded by id.
 update public.aios_approvals
    set status = 'expired'
- where id = '80000000-0000-4000-8000-000000000005';
+ where task_id = '70000000-0000-4000-8000-000000000005'
+   and status = 'pending';
 
 -- The invocation insert path normalizes new rows to requires_approval regardless of the
 -- status supplied, so the succeeded fixture's invocation is still live at this point. Bring it
