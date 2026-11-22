@@ -665,3 +665,27 @@ The following remain separate release gates (section 17.5) and are unchanged by 
 ### 22.4 Boundary and successor rule
 
 The closure above was granted on `f1e4597e55b7f8338608029d4abd9392ca47d3e1`. The commit that adds this section is a documentation-only successor with its own workflow runs, reported in the PR #40 comment for that exact SHA; Agent 003's review does not cover it. No hosted migration, deployment, merge, production data change, privilege/security/configuration change, secret change or billing change is authorized or was performed by this record. **Access is not authority.**
+
+## 23. F-40-10 authenticated owner audit verification implementation — 22 November 2026
+
+Agent 004 added a tenant-scoped authenticated owner verification path in Part E of `20261109130000_aios_audit_anchoring_part_e.sql` and regression test `tests/sql/22_authenticated_owner_audit_verification.sql`.
+
+- `public.aios_audit_verify_owner(uuid)` derives identity from `auth.uid()`, locks the caller's membership row `FOR SHARE`, and requires owner/admin/administrator membership for the requested organization.
+- The response is tenant-scoped; it does not expose the global organization inventory or other organizations' event details.
+- Successful calls create append-only verification history with `kind = 'owner'` and the authenticated `actor_user_id`.
+- Only `authenticated` receives EXECUTE on the public wrapper. `anon`, `service_role`, PUBLIC and authenticated direct access to the private implementation/global verifier are denied.
+- The result remains explicitly non-certification-grade (`service_role_asserted`, `certification_grade = false`).
+
+The first exact-head CI attempt identified a D01.2 namespace collision with the existing single-global-verifier invariant. The private function was renamed to `private.aios_owner_audit_verify(uuid)`, preserving the guard and all existing verifier pins.
+
+SQL test 22 covers actor binding, owner/member authorization, cross-organization denial, grants, response scope and append-only actor attribution in disposable CI PostgreSQL. This is regression evidence only; it does not replace genuine hosted owner-session verification.
+
+### 23.1 Evidence identity and workflow status
+
+The implementation and documentation changes are in PR #40 on `agent004/mission-cancellation-contract`. The latest documentation successor receives its own AiOS CI, ET27 seal guard and ET27 delete protection runs. Earlier candidate workflow results are not transferable to this exact head. The latest exact-head workflow URLs and outcomes are recorded in the PR handoff after completion.
+
+### 23.2 Production release determination
+
+F-40-10's code-level owner-verification gap is addressed in the candidate, pending exact-head CI and independent Agent 003 review. Production owner-session proof remains outstanding. External attestation/trust-root validation, fresh hosted schema/function/grant parity, approved staged migration execution, managed backup/recovery evidence, and owner-level branch-governance evidence remain separate release gates.
+
+No hosted migration, deployment, merge, production data write, role/grant/RLS/trigger/cron/Auth change, export/restore, secret change or billing change was performed or authorized. PR #40 remains open and unmerged. **Access is not authority.**
