@@ -689,3 +689,76 @@ The implementation and documentation changes are in PR #40 on `agent004/mission-
 F-40-10's code-level owner-verification gap is addressed in the candidate, pending exact-head CI and independent Agent 003 review. Production owner-session proof remains outstanding. External attestation/trust-root validation, fresh hosted schema/function/grant parity, approved staged migration execution, managed backup/recovery evidence, and owner-level branch-governance evidence remain separate release gates.
 
 No hosted migration, deployment, merge, production data write, role/grant/RLS/trigger/cron/Auth change, export/restore, secret change or billing change was performed or authorized. PR #40 remains open and unmerged. **Access is not authority.**
+
+
+## 24. AiOS final hosted observation and staged release gates — 22 November 2026
+
+**Evidence-bearing candidate:** `58a67702efa2167c2060bb3e40d37880b7b6b00d` on `agent004/mission-cancellation-contract`; [PR #40](https://github.com/Neuracoderepo1/AiOS/pull/40), OPEN / NON-DRAFT / UNMERGED.  
+**Decision:** engineering evidence accepted for F-40-08 and F-40-10 at candidate source/CI level; F-40-09 closed at the previously reviewed documentation checkpoint. **Production certification remains WITHHELD / NOT CERTIFIED.**
+
+### 24.1 Exact-head workflow results
+
+All required workflows passed on the identical exact SHA `58a67702efa2167c2060bb3e40d37880b7b6b00d`:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| AiOS CI | [45049001169](https://github.com/Neuracoderepo1/AiOS/actions/runs/45049001169) | SUCCESS, 4/4 jobs |
+| ET27 seal guard | [45049001172](https://github.com/Neuracoderepo1/AiOS/actions/runs/45049001172) | SUCCESS, 303/303 checks; 48/48 mutants detected |
+| ET27 delete protection | [45049001252](https://github.com/Neuracoderepo1/AiOS/actions/runs/45049001252) | SUCCESS, 66/66 checks; 10/10 mutants detected |
+
+The AiOS CI job set passed: evidence integrity, behavioral suite, Edge Function typecheck, and migrations/SQL tests. The latter passed the 131-migration replay, real-PostgreSQL export/isolated restore, SQL tests 21 and 22, 46-case canonical matrix, mission/task and approval concurrency, audit-lock interleavings, 86/86 smoke self-test, and 10/10 fresh-database approval-chain binding revalidations. The Part E log records E02.8/E02.8a passing. SQL test 22 passed in disposable CI PostgreSQL; it does not constitute a real hosted owner session.
+
+### 24.2 Artifact identity
+
+The following unexpired artifacts are bound by GitHub workflow metadata to the exact SHA above. Digests are GitHub-reported and were not independently recomputed in this checkpoint.
+
+| Workflow | Artifact | ID | SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | 14764379287 | `591052b40ecb1fb3b9b7aebe714035a6bbf4a6f93eca78c84772b06f651b2f20` |
+| AiOS CI | `behavioral-evidence` | 14765021178 | `81dcbba7f7c4566dddd65e48b177a2cdba96ca9c3138f04de9963a0860b2fa72` |
+| ET27 seal guard | `et27-seal-guard-evidence` | 14764946686 | `4975a6c92cbf91c206252bf526104c3d2bbadce084ce6a6d5d3485a89629fe90` |
+| ET27 delete protection | `et27-delete-protection-evidence` | 14765006490 | `92814ecfeff486bc78e0d4a59e4ed4e8cbc954878aa8dbc9dfbf1067d4d6b882` |
+
+### 24.3 Fresh hosted read-only observation — approximately 19:58 UTC
+
+Project `jtkcdwhiduixoiodhbfn`: 117 applied migration versions, latest `20261108130000`; candidate tree 131 migrations, leaving 14 unapplied. RLS is enabled on all 17 public base tables and the one private base table. The two existing five-minute cron jobs, `aios-reap-stale-tasks` and `aios-expire-stale-approvals`, are active.
+
+Security advisor observations: three previously tracked authenticated SECURITY DEFINER warnings; leaked-password protection disabled as a budget deferral; and an informational no-policy RLS finding on `private.aios_trusted_executors`, intentionally deny-by-default. Sixteen client-executable functions were inventoried. All SECURITY DEFINER functions have empty pinned search paths; confirm the intended exposure of invoker `public.aios_risk_rank` to anon with `search_path=public` and `public.verify_audit_chain` to authenticated.
+
+The 14 unapplied versions, in order: `20261108140000`, `20261108150000`, `20261109120000`, `20261109130000`, `20261110100000`, `20261111170000`, `20261111190000`, `20261111200000`, `20261111210000`, `20261111220000`, `20261111230000`, `20261113160000`, `20261120180000`, `20261120190000`.
+
+At observation time, succeeded missions with live tasks/invocations/approvals were 0/0/0; succeeded missions overall 0; tasks outside the allowed status set 0; running tasks 0. In-flight work was 10 queued tasks, 3 queued missions, 1 pending approval, 4 requested invocations and 2 requires-approval invocations. These are point-in-time facts and must be rechecked immediately before a migration window.
+
+A clean-replay comparison of hosted schema, function definitions and grants has not yet been completed. It is scheduled after authorized migration execution. This observation does not establish hosted catalog parity.
+
+### 24.4 Material migration delta
+
+Migration `20261109130000_aios_audit_anchoring_part_e.sql` gained 245 lines after the prior evidence checkpoint `03495472bf7ec40a2ca4e4fec8e63fb42a34224e`. The current 58a677 exact-head CI replay and Part E SQL tests pass. The evidence for the added content is the exact-head workflow set and artifacts in 24.1–24.2; older workflow evidence must not be substituted.
+
+### 24.5 Owner decisions
+
+1. **External attestation:** retain `EXTERNAL_DEPENDENCY_BLOCKED` as documented residual risk for this candidate. Release language may claim internal verification only. Do not claim external or certification-grade attestation until an RFC 3161/TSA trust root is selected and exercised.
+2. **Backup/recovery:** re-scope to budget-neutral evidence. Supabase Free has no managed backups or PITR; no paid upgrade is authorized. Before migration, take a schema-and-data logical dump, restore it into a disposable local stack, compare against freshly captured content fingerprints, and record measured RTO. This exercise is not yet complete. Only after successful exercise may release language say: **“No managed backup or PITR; logical-dump recovery exercised once.”** PITR purchase trigger: first paying customer or any non-demo tenant data.
+3. **Staged migrations:** approve the version-ordered 14-migration plan as a plan only; execution remains held. The intended path is merge through the existing Supabase deploy pipeline to preserve migration version parity. No MCP or SQL-editor application.
+
+### 24.6 Gates
+
+| Gate | Required action | Authority |
+|---|---|---|
+| G1 | Freeze head; all three workflows pass on one exact SHA with clean artifacts | Agent |
+| G2 | Written independent disposition on that exact SHA | Agent 003 |
+| G3 | Pre-migration logical dump and isolated restore, fingerprint comparison and measured RTO | Human Director controls |
+| G4 | Immediately-before-window check: zero running tasks; record queued work and pending approval | Agent |
+| G5 | Merge PR #40 through the approved deploy pipeline, applying the 14 migrations | Human Director only |
+| G6 | Post-deploy migration count/head, clean-replay catalog diff, cron/advisor/fingerprint checks, 46-case matrix and smoke | Agent |
+| G7 | Real owner sign-in and F-40-10 procedure; record actual actor ID, org ID, JWT subject and result | Human Director only |
+
+G1 has passed on 58a677. Agent 003 reviewed that exact candidate and accepted the engineering evidence, while identifying the stale documentation status now corrected by this checkpoint. The documentation successor must receive its own three exact-head workflows and Agent 003 re-review. G3, the immediate G4 check, G5, G6 and G7 remain outstanding. G2 must be refreshed for the final documentation successor.
+
+### 24.7 Remaining owner evidence and production boundary
+
+The Human Director must supply current branch-protection and organization-ruleset evidence, including required reviews, bypass actors and administrator enforcement. Earlier API observations are not a substitute for complete owner-level evidence.
+
+There are no down-migrations. Recovery is forward-fix or restoration from the G3 dump. Stop on any error and do not proceed to the next migration. No production dump, restore, migration or write has been performed in this checkpoint.
+
+PR #40 remains OPEN / NON-DRAFT / UNMERGED. Production certification remains **WITHHELD / NOT CERTIFIED**. No merge, deployment, hosted migration, production data write/export/restore, role/grant/RLS/policy/trigger/cron/Auth change, secret change, billing change, paid upgrade or production configuration change is authorized or performed. **Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies.
