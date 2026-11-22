@@ -413,7 +413,7 @@ alter table private.aios_audit_verification_runs
   add constraint aios_audit_verification_runs_kind_check
   check (kind in ('internal', 'scheduled', 'external', 'owner'));
 
-create or replace function private.aios_final_verify_owner(p_organization_id uuid)
+create or replace function private.aios_owner_audit_verify(p_organization_id uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -623,7 +623,7 @@ begin
 end
 $fn$;
 
-revoke all on function private.aios_final_verify_owner(uuid) from public, anon, authenticated, service_role, aios_restorer;
+revoke all on function private.aios_owner_audit_verify(uuid) from public, anon, authenticated, service_role, aios_restorer;
 
 create or replace function public.aios_audit_verify_owner(p_organization_id uuid)
 returns jsonb
@@ -631,7 +631,7 @@ language sql
 security definer
 set search_path = ''
 as $fn$
-  select private.aios_final_verify_owner(p_organization_id)
+  select private.aios_owner_audit_verify(p_organization_id)
 $fn$;
 
 revoke all on function public.aios_audit_verify_owner(uuid) from public, anon, service_role;
@@ -639,8 +639,8 @@ grant execute on function public.aios_audit_verify_owner(uuid) to authenticated;
 
 insert into private.aios_function_pins(function_signature, fingerprint)
 values (
-  'private.aios_final_verify_owner(uuid)',
-  private.aios_function_fingerprint('private.aios_final_verify_owner(uuid)'::regprocedure)
+  'private.aios_owner_audit_verify(uuid)',
+  private.aios_function_fingerprint('private.aios_owner_audit_verify(uuid)'::regprocedure)
 )
 on conflict(function_signature) do update
 set fingerprint = excluded.fingerprint, pinned_at = clock_timestamp();
