@@ -492,7 +492,7 @@ GitHub artifact metadata for each run binds the artifacts to the reference SHA. 
 
 ### 25.3 PR stack reconciliation
 
-The following metadata was read from GitHub PR records on 22 November 2026. The base/head SHA links confirm the intended dependency chain; no PR state or base was changed.
+The following metadata was read from GitHub PR records immediately before this documentation successor was created on 22 November 2026. The table records the pre-successor branch heads; this documentation successor becomes the new PR #40 head and is identified by its own commit SHA in the handoff. No PR state or base was changed.
 
 | PR | Base → head branch | Base SHA | Head SHA | State | Stack role |
 |---:|---|---|---|---|---|
@@ -500,11 +500,13 @@ The following metadata was read from GitHub PR records on 22 November 2026. The 
 | #31 | `feat/aios-restoration-audit-anchoring` → `agent004/p1-restoration-role-repair` | `4275c70021bae9c65752916578c9f2cd3615200f` | `b4543ebfe2accc191cf08a7e4f1b2976f0d7b664` | OPEN / NON-DRAFT / UNMERGED | Child of #29 |
 | #34 | `agent004/p1-restoration-role-repair` → `agent004/p0-p1-integrated-candidate` | `b4543ebfe2accc191cf08a7e4f1b2976f0d7b664` | `8c7307b537062a87bd819ccede74e1dfc1eb8f5a` | OPEN / DRAFT / UNMERGED | Integration child of #31 |
 | #35 | `agent004/p0-p1-integrated-candidate` → `agent004/f2-reaper-record-isolation` | `8c7307b537062a87bd819ccede74e1dfc1eb8f5a` | `2b96b281cdea510cf0a5c42df24a53460e549776` | OPEN / DRAFT / UNMERGED | F-2 child of #34 |
-| #40 | `agent004/f2-reaper-record-isolation` → `agent004/mission-cancellation-contract` | `2b96b281cdea510cf0a5c42df24a53460e549776` | `1d6bd3f4115331464e2f91f4089646ad4f752ade` | OPEN / NON-DRAFT / UNMERGED | Mission-cancellation child of #35; three documentation-only successor commits added |
+| #40 | `agent004/f2-reaper-record-isolation` → `agent004/mission-cancellation-contract` | `2b96b281cdea510cf0a5c42df24a53460e549776` | `20dabcae21965a28bc3e3149ba28a9bff0857621` | OPEN / NON-DRAFT / UNMERGED | Mission-cancellation child of #35; pre-successor head |
+
+Current `main` at this snapshot is `377e641c77245d4b093e82b6597c5efd55f764d9`, one commit ahead of PR #29's recorded base SHA `bef031f2e084f9f327611dc5275c0ee56dfe0cb9`. The intervening commit changes only the three GitHub Actions workflow files. PR #29 still targets `main`; this reconciliation does not retarget or merge it.
 
 **Required dependency order:** #29 → #31 → #34 → #35 → #40. Do not merge a child independently or collapse the stack. All five PRs remain open and unmerged; #29, #34 and #35 are drafts; #31 and #40 are non-drafts. This table is a metadata reconciliation, not merge authorization.
 
-PR #40 has since advanced from the reference head `f0f0b203e43166efa312ba9338b5ac59a113b3e1` through three forward documentation-only commits to current head `1d6bd3f4115331464e2f91f4089646ad4f752ade`. The base branch and all parent PR heads remain unchanged.
+From reference head `f0f0b203e43166efa312ba9338b5ac59a113b3e1` to pre-successor head `20dabcae21965a28bc3e3149ba28a9bff0857621`, the branch advanced through five commits: `0096a225d76056a0c2107eb13230c202ea8ff9c3`, `4680bdfbebb50160de90c7abbe5fbd39f7c89ce5`, `1d6bd3f4115331464e2f91f4089646ad4f752ade`, `e177fa9eaa37eabb5074681d72c8a4d5edf7a1d0`, and `20dabcae21965a28bc3e3149ba28a9bff0857621`. The range comparison shows changes only to `docs/operations/current-state.md`, `docs/release/2026-11-13-budget-neutral-closure.md`, and `docs/release/hosted-production-gates-preparation.md`. This commit is the next documentation-only successor. The PR #40 base remains `2b96b281cdea510cf0a5c42df24a53460e549776`; the parent PR heads remain unchanged.
 
 ### 25.4 Release boundary
 
