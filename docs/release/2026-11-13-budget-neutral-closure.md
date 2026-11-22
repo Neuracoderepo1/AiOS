@@ -2,7 +2,7 @@
 
 > **Authoritative update 2026-11-19:** Earlier sections are preserved as historical checkpoints. They are superseded for current-state facts by Section 17. The current candidate inventory is 129 migration files versus 117 hosted-applied versions (12 unapplied), not the historical 128/117/11 figures. The reviewed implementation baseline is PR #35 head 318f561a475a23e731e8d4e8d55ffb1d9d49075c. A successor commit adds security-boundary regression coverage and documentation; it requires fresh exact-head CI before acceptance.
 
-> **Authoritative update 2026-11-22:** Section 21 at the end of this document supersedes the 2026-11-19 banner above for current-state facts. The current candidate inventory is 131 migration files versus 117 hosted-applied versions (14 unapplied), and the PR #40 evidence SHA is `03495472bf7ec40a2ca4e4fec8e63fb42a34224e`. The 129/117/12 figures and the PR #35 baseline named above are historical. Earlier text is preserved and not rewritten.
+> **Authoritative update 2026-11-22:** Section 25 at the end of this document is the latest documentation-successor and PR-stack clarification. Section 21 remains the historical evidence checkpoint at SHA `03495472bf7ec40a2ca4e4fec8e63fb42a34224e`; later exact-head evidence and F-40-09 disposition are recorded in sections 22, 24 and 25. Earlier text is preserved as historical evidence.
 
 **Inspection date:** 2026-11-13  
 **Historical candidate at start of inspection:** `13394941bc31a8005777ee40cf0ce87115e6783a`  
@@ -769,3 +769,45 @@ PR #40 remains OPEN / NON-DRAFT / UNMERGED. Production certification remains **W
 On candidate SHA `d02b00afc8cbb3ca151964374671ba4cfb17104e`, the first ET27 delete-protection attempt failed at disposable local Supabase startup because Docker could not bind host port `54322`; the suite itself did not run. A failed-job-only retry on the same exact SHA succeeded. All 11 steps passed, including migration replay, credential-redaction check, delete-protection suite and evidence upload.
 
 Passing artifact: `et27-delete-protection-evidence`, ID `14772381473`, GitHub-reported SHA-256 `8cb50b64bd1b59eab279f9bdd8854917572c2dbfbd6ca1841c00e4e0c6d21b7f`. The first attempt's diagnostic artifact ID `14770714857` is explicitly excluded as non-passing evidence. All three required workflows therefore have successful results and artifacts on the same `d02b00af...` candidate SHA. Production certification remains WITHHELD / NOT CERTIFIED.
+
+
+## 25. F-40-09 successor reconciliation and PR stack snapshot — 22 November 2026
+
+**Reference head:** `f0f0b203e43166efa312ba9338b5ac59a113b3e1` on `agent004/mission-cancellation-contract`. This section is a documentation-only successor record. It does not rewrite historical evidence or change the production release hold.
+
+### 25.1 F-40-09 disposition clarification
+
+The earlier statement in section 21.4 that F-40-09's independent disposition was pending describes the checkpoint at evidence SHA `03495472bf7ec40a2ca4e4fec8e63fb42a34224e`; it is historical, not the latest disposition. Section 22.1 records Agent 003's later disposition of **F-40-09 CLOSED at documentation-reconciliation level**. Section 24.6 carries that disposition forward while expressly preserving the requirement for Agent 003 to review a later documentation successor.
+
+Accordingly:
+- F-40-09 remains **CLOSED at documentation-reconciliation level** under the recorded Agent 003 disposition.
+- This clarification does not certify the current documentation commit, the new successor, the product, or production.
+- Each documentation successor must receive its own three exact-head workflows and any required Agent 003 re-review. Evidence from `f0f0b203` or earlier SHAs cannot be transferred to its successor.
+- Historical references to `03495472`, `dd72de93`, and the pending disposition are retained as historical checkpoint records; this section is the current interpretive rule.
+
+### 25.2 Exact-head CI on the reference head
+
+The three pull-request workflows associated with reference SHA `f0f0b203e43166efa312ba9338b5ac59a113b3e1` completed successfully:
+- AiOS CI: run `45068329781`, 4/4 jobs successful.
+- ET27 seal guard: run `45068329782`, 1/1 job successful.
+- ET27 delete protection: run `45068329795`, 1/1 job successful.
+
+GitHub artifact metadata for each run binds the artifacts to the reference SHA. These are predecessor evidence only and do not validate the documentation successor created after this checkpoint.
+
+### 25.3 PR stack reconciliation
+
+The following metadata was read from GitHub PR records on 22 November 2026. The base/head SHA links confirm the intended dependency chain; no PR state or base was changed.
+
+| PR | Base → head branch | Base SHA | Head SHA | State | Stack role |
+|---:|---|---|---|---|---|
+| #29 | `main` → `feat/aios-restoration-audit-anchoring` | `bef031f2e084f9f327611dc5275c0ee56dfe0cb9` | `4275c70021bae9c65752916578c9f2cd3615200f` | OPEN / DRAFT / UNMERGED | Root candidate on main |
+| #31 | `feat/aios-restoration-audit-anchoring` → `agent004/p1-restoration-role-repair` | `4275c70021bae9c65752916578c9f2cd3615200f` | `b4543ebfe2accc191cf08a7e4f1b2976f0d7b664` | OPEN / NON-DRAFT / UNMERGED | Child of #29 |
+| #34 | `agent004/p1-restoration-role-repair` → `agent004/p0-p1-integrated-candidate` | `b4543ebfe2accc191cf08a7e4f1b2976f0d7b664` | `8c7307b537062a87bd819ccede74e1dfc1eb8f5a` | OPEN / DRAFT / UNMERGED | Integration child of #31 |
+| #35 | `agent004/p0-p1-integrated-candidate` → `agent004/f2-reaper-record-isolation` | `8c7307b537062a87bd819ccede74e1dfc1eb8f5a` | `2b96b281cdea510cf0a5c42df24a53460e549776` | OPEN / DRAFT / UNMERGED | F-2 child of #34 |
+| #40 | `agent004/f2-reaper-record-isolation` → `agent004/mission-cancellation-contract` | `2b96b281cdea510cf0a5c42df24a53460e549776` | `f0f0b203e43166efa312ba9338b5ac59a113b3e1` | OPEN / NON-DRAFT / UNMERGED | Mission-cancellation child of #35; documentation successor pending |
+
+**Required dependency order:** #29 → #31 → #34 → #35 → #40. Do not merge a child independently or collapse the stack. All five PRs remain open and unmerged; #29, #34 and #35 are drafts; #31 and #40 are non-drafts. This table is a metadata reconciliation, not merge authorization.
+
+### 25.4 Release boundary
+
+The Release Hold Record v2 remains ACTIVE. Hosted database access, migration execution, deployment, merge, production configuration or privilege changes, and any claim that a hosted gate has passed remain outside this work. Production certification remains **WITHHELD / NOT CERTIFIED**. Agent 004 supplies implementation and evidence; Agent 003 independently reviews and certifies.
