@@ -46,3 +46,16 @@ The Supabase rls_enabled_no_policy INFO finding for this table is expected. Do n
 ## Remaining owner-controlled setting
 
 Leaked-password protection is a Supabase Auth configuration setting, not a SQL migration. It remains an owner/security decision and is not changed by these repository tests or documentation. Enablement must be reviewed against the organization's password and sign-in policy before changing hosted Auth configuration.
+## Tenant-scoped authenticated owner audit verification
+
+`public.aios_audit_verify_owner(uuid)` is the only authenticated-client entry point for an owner-scoped audit-chain verification. It does not expose `private.aios_final_verify` or the global organization inventory.
+
+- The private implementation derives the caller exclusively from `auth.uid()`.
+- It takes `FOR SHARE` on the caller's `aios_organization_members` row before checking the role, so membership revocation/downgrade serializes with the verification.
+- Only `owner`, `admin`, or `administrator` membership is accepted for the requested organization.
+- The result is restricted to that organization. Global trigger, schedule and restoration controls are reduced to booleans; other organizations' identifiers, events and diagnostics are not returned.
+- Each accepted invocation writes an append-only verification-run record with `kind = 'owner'` and the authenticated `actor_user_id`.
+- The private implementation and global verifier remain inaccessible to `authenticated`, `anon` and `service_role`. Only the public wrapper is executable by `authenticated`; `anon`, `service_role`, and PUBLIC are denied.
+- The result explicitly reports `external_attestation_trust = 'service_role_asserted'` and `certification_grade = false`. This RPC is an owner-scoped internal verification, not an independent external attestation or production certification.
+
+Regression: `tests/sql/22_authenticated_owner_audit_verification.sql` verifies actor binding, owner/admin boundary, non-owner denial, cross-organization denial, RPC grants, scoped output and actor-attributed verification history. Its JWT subject is set inside the disposable CI database. **This is automated regression evidence, not proof of a genuine hosted owner session.** Production owner-session evidence must still be captured separately using the real owner's authenticated session.
