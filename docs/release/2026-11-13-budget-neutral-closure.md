@@ -804,9 +804,11 @@ The following metadata was read from GitHub PR records on 22 November 2026. The 
 | #31 | `feat/aios-restoration-audit-anchoring` → `agent004/p1-restoration-role-repair` | `4275c70021bae9c65752916578c9f2cd3615200f` | `b4543ebfe2accc191cf08a7e4f1b2976f0d7b664` | OPEN / NON-DRAFT / UNMERGED | Child of #29 |
 | #34 | `agent004/p1-restoration-role-repair` → `agent004/p0-p1-integrated-candidate` | `b4543ebfe2accc191cf08a7e4f1b2976f0d7b664` | `8c7307b537062a87bd819ccede74e1dfc1eb8f5a` | OPEN / DRAFT / UNMERGED | Integration child of #31 |
 | #35 | `agent004/p0-p1-integrated-candidate` → `agent004/f2-reaper-record-isolation` | `8c7307b537062a87bd819ccede74e1dfc1eb8f5a` | `2b96b281cdea510cf0a5c42df24a53460e549776` | OPEN / DRAFT / UNMERGED | F-2 child of #34 |
-| #40 | `agent004/f2-reaper-record-isolation` → `agent004/mission-cancellation-contract` | `2b96b281cdea510cf0a5c42df24a53460e549776` | `f0f0b203e43166efa312ba9338b5ac59a113b3e1` | OPEN / NON-DRAFT / UNMERGED | Mission-cancellation child of #35; documentation successor pending |
+| #40 | `agent004/f2-reaper-record-isolation` → `agent004/mission-cancellation-contract` | `2b96b281cdea510cf0a5c42df24a53460e549776` | `1d6bd3f4115331464e2f91f4089646ad4f752ade` | OPEN / NON-DRAFT / UNMERGED | Mission-cancellation child of #35; three documentation-only successor commits added |
 
 **Required dependency order:** #29 → #31 → #34 → #35 → #40. Do not merge a child independently or collapse the stack. All five PRs remain open and unmerged; #29, #34 and #35 are drafts; #31 and #40 are non-drafts. This table is a metadata reconciliation, not merge authorization.
+
+PR #40 has since advanced from the reference head `f0f0b203e43166efa312ba9338b5ac59a113b3e1` through three forward documentation-only commits to current head `1d6bd3f4115331464e2f91f4089646ad4f752ade`. The base branch and all parent PR heads remain unchanged.
 
 ### 25.4 Release boundary
 
