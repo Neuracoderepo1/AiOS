@@ -419,3 +419,60 @@ A subsequent inspection of the raw ET27 logs/artifacts found that local Supabase
 The local Part D/E harness also had a collector defect: it did not parse PostgreSQL MXRES NOTICE records or explicit rollback-proof notices, and it misclassified successful static-check and golden-vector records. The successor parses MXRES and ROLLBACK_PROOF records into machine-readable result files, emits explicit rollback-proof markers for the Part D restoration savepoint and Part E non-UTC append fixture, corrects static/golden status parsing, and adds a parser self-test to CI and tests/harness/run_all.sh.
 
 These are candidate-only changes until the new exact SHA passes all required workflows. The prior 5191616... green results do not certify the new successor. No hosted production changes were performed.
+
+
+## 20. Agent 003 F-40-08/F-40-09 checkpoint — 22 November 2026
+
+**PR #40:** [AiOS mission cancellation contract](https://github.com/Neuracoderepo1/AiOS/pull/40), OPEN / DRAFT / UNMERGED. It remains stacked on the PR #35 candidate branch; preserve the existing dependency order and do not merge this child independently.
+
+**Previously reviewed exact baseline:** `d875f055d18d84efe5f678c0e5ff160e32b5bffb`. Agent 003 accepted F-40-04 through F-40-07 and the three exact-head workflows, but returned NOT CERTIFIED because F-40-08 and F-40-09 remained P1 blockers.
+
+### Migration inventory and hosted boundary
+
+The candidate tree contains **131 SQL migrations**. The last read-only hosted inventory contains **117 applied versions**, latest `20261108130000`, leaving **14 candidate migrations unapplied**. The two PR #40 additions are:
+
+| Version | Candidate migration | Hosted state |
+|---|---|---|
+| `20261120180000` | `aios_mission_cancellation_jwt_identity.sql` | Unapplied |
+| `20261120190000` | `aios_succeeded_mission_terminal_integrity.sql` | Unapplied |
+
+This inventory is a candidate/hosted count comparison, not authorization to apply migrations. No hosted migration has been applied.
+
+### Exact-head evidence for the reviewed d875 baseline
+
+These results validate only `d875f055...`, not a later successor:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| AiOS CI | [44915756471](https://github.com/Neuracoderepo1/AiOS/actions/runs/44915756471) | SUCCESS, 4/4 jobs |
+| ET27 seal guard | [44915756445](https://github.com/Neuracoderepo1/AiOS/actions/runs/44915756445) | SUCCESS, 303/303 checks, 48/48 mutants detected |
+| ET27 delete protection | [44915756496](https://github.com/Neuracoderepo1/AiOS/actions/runs/44915756496) | SUCCESS, 66/66 checks, 10/10 mutants detected |
+
+Agent 003 independently recomputed these artifact digests during its review:
+
+| Evidence | Artifact ID | SHA-256 |
+|---|---:|---|
+| AiOS CI | 14711617965 | `1850c0da1b519d9e8f621ff251a3f840331357b85dcd8d260c1a9ca2c1fcd68e` |
+| ET27 seal guard | 14711632635 | `b65748bf6fdf6d3ed077a4308e4b71b53ec91eff4685cc9d7528f1b30b15ad05` |
+| ET27 delete protection | 14712026366 | `1a9047ff962bedd592c42b1eb6323986ea3febc8beb39dc35c94ef981fcf2358` |
+
+The AiOS CI artifact records 131 migration files and passing tests 19/20. These historical results do not validate the F-40-08 successor.
+
+### F-40-08 implementation successor
+
+Agent 004 pushed candidate `335052a65540dd09639326e4467728a7fc181f79` to the existing PR #40 branch. It:
+
+- Adds a database CHECK boundary so only the trusted `postgres`/`supabase_admin` database roles can create or modify a mission with status `succeeded`; authenticated, anon and service roles do not receive this exception.
+- Adds a closed CHECK constraint for the recognized task-status set.
+- Leaves the existing terminal-parent task gate and its lock behavior in place. Unknown statuses are rejected by the status constraint; known live statuses under a succeeded parent remain rejected by the existing gate.
+- Adds `tests/sql/21_mission_succeeded_and_task_status_boundary.sql`, exercising authenticated JWT writes, trusted legacy seeding, unknown task statuses, live-task rejection under a succeeded parent, and positive controls.
+
+At the time this checkpoint was authored, the three required workflows had been triggered on `335052a...` and were still running. Their results must not be inferred from the earlier d875 runs. This candidate is **implementation submitted / exact-head validation pending** until the new AiOS CI, ET27 seal and ET27 delete workflows all pass on one identical final SHA.
+
+### Branch-governance evidence qualification
+
+Earlier statements that main is protected are **owner-reported/historical**, not independently verified by this integration. The connected GitHub integration receives HTTP 403 from the detailed branch-protection endpoint; current ruleset inheritance, required-review/CODEOWNERS enforcement, bypass actors and administrator exemptions therefore remain unverified. Obtain current owner-level evidence before treating these controls as established.
+
+### Release boundary
+
+Production certification remains **WITHHELD / NOT CERTIFIED**. Keep PR #40 draft and unmerged pending exact-head CI and Agent 003 re-review. No hosted migration, production write/export/restore, deployment, role/grant/RLS/trigger/cron/Auth change, secret change, billing change or production configuration change is authorized or performed. The 14 unapplied migrations remain unapplied. Scope is AiOS only.
