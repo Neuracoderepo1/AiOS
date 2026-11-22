@@ -57,6 +57,38 @@ $f$;
 revoke all on function private.aios_assert_no_residual_succeeded_children() from public, anon, authenticated, service_role;
 select private.aios_assert_no_residual_succeeded_children();
 
+-- F-40-08: legacy succeeded missions may only be seeded by trusted migration/restore
+-- principals. CHECK constraints evaluate current_user at the write boundary; clients,
+-- including service_role, cannot impersonate either privileged database role.
+alter table public.aios_missions
+  add constraint aios_missions_succeeded_seed_only_ck
+  check (status <> 'succeeded' or current_user in ('postgres', 'supabase_admin'))
+  not valid;
+alter table public.aios_missions
+  validate constraint aios_missions_succeeded_seed_only_ck;
+
+-- Task status is a closed contract. The parent-mission gate below remains separate:
+-- this constraint rejects unknown states, while the existing gate rejects live states
+-- attached to terminal parents. Keep both controls independently enforceable.
+alter table public.aios_tasks
+  add constraint aios_tasks_status_allowed_ck
+  check (status in (
+    'queued',
+    'assigned',
+    'ready',
+    'running',
+    'approved',
+    'blocked_pending_approval',
+    'completed',
+    'failed',
+    'cancelled',
+    'expired'
+  ))
+  not valid;
+alter table public.aios_tasks
+  validate constraint aios_tasks_status_allowed_ck;
+
+
 create or replace function private.aios_mission_status_guard()
 returns trigger
 language plpgsql
