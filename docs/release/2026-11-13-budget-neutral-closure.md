@@ -762,3 +762,10 @@ The Human Director must supply current branch-protection and organization-rulese
 There are no down-migrations. Recovery is forward-fix or restoration from the G3 dump. Stop on any error and do not proceed to the next migration. No production dump, restore, migration or write has been performed in this checkpoint.
 
 PR #40 remains OPEN / NON-DRAFT / UNMERGED. Production certification remains **WITHHELD / NOT CERTIFIED**. No merge, deployment, hosted migration, production data write/export/restore, role/grant/RLS/policy/trigger/cron/Auth change, secret change, billing change, paid upgrade or production configuration change is authorized or performed. **Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies.
+
+
+### 24.8 Final exact-head ET27 delete-protection retry
+
+On candidate SHA `d02b00afc8cbb3ca151964374671ba4cfb17104e`, the first ET27 delete-protection attempt failed at disposable local Supabase startup because Docker could not bind host port `54322`; the suite itself did not run. A failed-job-only retry on the same exact SHA succeeded. All 11 steps passed, including migration replay, credential-redaction check, delete-protection suite and evidence upload.
+
+Passing artifact: `et27-delete-protection-evidence`, ID `14772381473`, GitHub-reported SHA-256 `8cb50b64bd1b59eab279f9bdd8854917572c2dbfbd6ca1841c00e4e0c6d21b7f`. The first attempt's diagnostic artifact ID `14770714857` is explicitly excluded as non-passing evidence. All three required workflows therefore have successful results and artifacts on the same `d02b00af...` candidate SHA. Production certification remains WITHHELD / NOT CERTIFIED.
