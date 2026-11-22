@@ -340,3 +340,32 @@ The following remain separate release gates and are unchanged by this section: f
 ### 22.4 Boundary and successor rule
 
 The closure above was granted on `f1e4597e55b7f8338608029d4abd9392ca47d3e1`. The commit that adds this section is a documentation-only successor with its own workflow runs, reported in the PR #40 comment for that exact SHA; Agent 003's review does not cover it. No hosted migration, deployment, merge, production data change, privilege/security/configuration change, secret change or billing change is authorized or was performed by this record. **Access is not authority.**
+
+## 23. F-40-10 authenticated owner audit verification implementation — 22 November 2026
+
+Agent 004 added a tenant-scoped authenticated owner verification path in Part E of `20261109130000_aios_audit_anchoring_part_e.sql` and regression test `tests/sql/22_authenticated_owner_audit_verification.sql`.
+
+- Public RPC: `public.aios_audit_verify_owner(uuid)`; private implementation: `private.aios_owner_audit_verify(uuid)`.
+- Caller identity is derived from `auth.uid()`. The caller's organization-membership row is locked `FOR SHARE` before the owner/admin role check.
+- Only `owner`, `admin`, or `administrator` can verify the requested organization. The response contains only that organization's audit result and aggregate global-control booleans, not the global organization inventory.
+- Each successful call writes an append-only verification-run row with `kind = 'owner'` and `actor_user_id` bound to the authenticated caller.
+- The private implementation and global verifier remain unavailable to client/service roles. The public wrapper is executable by `authenticated` only; `anon` and `service_role` are denied.
+- The RPC explicitly reports `external_attestation_trust = 'service_role_asserted'` and `certification_grade = false`. It is not an external attestation or production certification.
+
+The initial CI attempt exposed the existing D01.2 canonical-verifier namespace guard: the first private function name was counted as a competing verifier. Agent 004 renamed it to `private.aios_owner_audit_verify(uuid)`; the guard is preserved, not weakened.
+
+Regression test 22 exercises JWT-subject binding, owner/member authorization, cross-organization denial, RPC grants, response scope and actor-attributed verification history. Its JWT claim is set in disposable CI PostgreSQL and is **not** genuine hosted owner-session evidence.
+
+### 23.1 Current exact-head validation
+
+Candidate branch: `agent004/mission-cancellation-contract`. The current documentation successor has its own exact-head AiOS CI, ET27 seal-guard and ET27 delete-protection workflows pending. Results from earlier implementation commits do not transfer to this documentation successor. The PR remains open and unmerged.
+
+### 23.2 Remaining production release gates
+
+- Genuine authenticated owner-session verification using the actual owner account and its real JWT, with actor and organization evidence. Do not use service-role or simulated identity.
+- Independent external attestation and trust-root validation. The current verifier deliberately remains non-certification-grade.
+- Fresh hosted schema/function/grant parity and the separately authorized staged 14-migration execution plan.
+- Genuine managed backup and tested recovery evidence.
+- Owner-level organization ruleset and bypass-actor evidence.
+
+No hosted migration, production data write, grant/role/RLS/trigger/cron/Auth change, deployment, merge, backup/restore, secret change or billing change was performed. PR #40 remains open and unmerged. **Access is not authority.**
