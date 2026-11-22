@@ -29,7 +29,7 @@ jobs:
   evidence-integrity:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify evidence + manifest against pinned hashes
@@ -40,7 +40,7 @@ jobs:
   functions-typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: denoland/setup-deno@v2
@@ -65,7 +65,7 @@ jobs:
     env:
       DENO_RUN: "deno test --import-map=tests/functions/behavioral/import_map.json --allow-env --allow-read"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: denoland/setup-deno@v2
@@ -102,7 +102,7 @@ jobs:
           NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt
       - name: Upload behavioral evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: behavioral-evidence
           path: |
@@ -118,7 +118,7 @@ jobs:
     needs: evidence-integrity   # integrity must pass before the matrix is accepted
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: supabase/setup-cli@v1
@@ -449,7 +449,7 @@ jobs:
 
       - name: Upload test evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: aios-ci-evidence
           path: |
