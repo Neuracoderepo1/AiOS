@@ -458,3 +458,10 @@ The Human Director must supply current owner-level branch-governance evidence (b
 PR #40 remains OPEN / NON-DRAFT / UNMERGED. Production certification remains **WITHHELD / NOT CERTIFIED**. F-40-08 is accepted at source/CI evidence level; F-40-09 is closed at the previously reviewed documentation-reconciliation level; F-40-10 is accepted at candidate source/CI level only. Genuine hosted owner-session proof, G3 recovery exercise, hosted parity after migration, owner-level branch-governance evidence, and the separately authorized migration execution remain outstanding.
 
 No merge, deployment, hosted migration, production export/restore, production data write, role/grant/RLS/policy/trigger/cron/Auth change, secret change, billing change, paid plan upgrade or production configuration change was performed or authorized by this checkpoint. **Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies.
+
+
+### 24.9 Final exact-head ET27 delete-protection retry — 22 November 2026
+
+The first ET27 delete-protection attempt for candidate `d02b00afc8cbb3ca151964374671ba4cfb17104e` failed during disposable local Supabase startup because Docker could not bind `0.0.0.0:54322`; the delete-protection suite did not execute. GitHub's failed-job-only retry then completed successfully on the same exact SHA. All 11 job steps passed, including full 131-migration replay, startup-log credential-redaction verification, the delete-protection suite, evidence upload and cleanup. The retry produced artifact `et27-delete-protection-evidence`, ID `14772381473`, GitHub-reported SHA-256 `8cb50b64bd1b59eab279f9bdd8854917572c2dbfbd6ca1841c00e4e0c6d21b7f`. The earlier failed-attempt diagnostic artifact ID `14770714857` is not passing evidence and is excluded from the release evidence set.
+
+Together with the AiOS CI and ET27 seal-guard runs in 24.1, all three required workflows now have successful results and unexpired artifacts bound to the same exact candidate SHA. This is engineering evidence only; it does not alter the production certification or owner-controlled release gates above.
