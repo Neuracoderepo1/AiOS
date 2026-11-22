@@ -400,6 +400,251 @@ begin
   return v_res;
 end $fn$;
 
+-- 10A. Authenticated, tenant-scoped owner verification -------------------------------------------------------------
+-- The global verifier remains private/service-only. This entry point verifies exactly one
+-- organization after binding the request to auth.uid() and a locked owner/admin membership.
+-- It deliberately does not return the global organization list or global drift diagnostics.
+alter table private.aios_audit_verification_runs
+  add column if not exists actor_user_id uuid;
+
+alter table private.aios_audit_verification_runs
+  drop constraint if exists aios_audit_verification_runs_kind_check;
+alter table private.aios_audit_verification_runs
+  add constraint aios_audit_verification_runs_kind_check
+  check (kind in ('internal', 'scheduled', 'external', 'owner'));
+
+create or replace function private.aios_final_verify_owner(p_organization_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+set timezone = 'UTC'
+as $fn$
+declare
+  v_actor uuid := auth.uid();
+  v_role text;
+  v_policy private.aios_audit_anchor_policy;
+  v_state private.aios_restoration_state;
+  v_anchor private.aios_audit_anchors;
+  v_external private.aios_audit_verification_runs;
+  v_chain jsonb;
+  v_drift jsonb;
+  v_schedule jsonb;
+  v_bad record;
+  v_count bigint := 0;
+  v_head_id uuid;
+  v_head_hash text;
+  v_head_at timestamptz;
+  v_tail bigint := 0;
+  v_oldest timestamptz;
+  v_status text;
+  v_detail jsonb := '{}'::jsonb;
+  v_failed boolean := false;
+  v_incomplete boolean := false;
+  v_controls jsonb;
+  v_ok boolean := false;
+  v_run_id bigint;
+begin
+  if v_actor is null then
+    raise exception 'authenticated user identity required' using errcode = '42501';
+  end if;
+  if p_organization_id is null then
+    raise exception 'organization_id is required' using errcode = '22023';
+  end if;
+
+  -- Membership is locked before reading the organization's audit history. A concurrent
+  -- role downgrade or membership deletion must serialize behind this verification.
+  select om.role into v_role
+  from public.aios_organization_members om
+  where om.organization_id = p_organization_id
+    and om.user_id = v_actor
+  for share;
+
+  if not found or v_role not in ('owner', 'admin', 'administrator') then
+    raise exception 'organization owner/admin authorization required' using errcode = '42501';
+  end if;
+
+  select * into v_policy from private.aios_audit_anchor_policy where id = 1;
+  if not found then
+    raise exception 'audit anchor policy is missing' using errcode = '55000';
+  end if;
+  select * into v_state from private.aios_restoration_state where id = 1;
+  if not found then
+    raise exception 'restoration state is missing' using errcode = '55000';
+  end if;
+
+  select count(*),
+         (array_agg(e.id order by e.created_at desc, e.id desc))[1],
+         (array_agg(e.event_hash order by e.created_at desc, e.id desc))[1],
+         (array_agg(e.created_at order by e.created_at desc, e.id desc))[1]
+    into v_count, v_head_id, v_head_hash, v_head_at
+  from public.aios_audit_events e
+  where e.organization_id = p_organization_id;
+
+  v_chain := private.aios_audit_verify_chain_v2(p_organization_id);
+  if (v_chain ->> 'valid')::boolean is not true then
+    v_status := 'chain_mismatch';
+    v_detail := jsonb_build_object('chain', v_chain);
+  else
+    -- Validate every accepted anchor, not only the newest one.
+    select a.id as anchor_id, a.event_count,
+           (n.rn is null) as beyond_head,
+           (n.rn is not null and
+             (n.id <> a.head_event_id or n.event_hash <> a.head_hash or n.created_at <> a.head_at)) as mismatch
+      into v_bad
+    from private.aios_audit_anchors a
+    left join (
+      select e.id, e.event_hash, e.created_at,
+             row_number() over (order by e.created_at, e.id) as rn
+      from public.aios_audit_events e
+      where e.organization_id = p_organization_id
+    ) n on n.rn = a.event_count
+    where a.organization_id = p_organization_id
+      and (n.rn is null or n.id <> a.head_event_id
+           or n.event_hash <> a.head_hash or n.created_at <> a.head_at)
+    order by a.event_count
+    limit 1;
+
+    if found then
+      v_status := case when v_bad.beyond_head then 'truncated_history' else 'anchor_mismatch' end;
+      v_detail := jsonb_build_object('anchor_id', v_bad.anchor_id, 'anchor_event_count', v_bad.event_count);
+    else
+      select * into v_anchor
+      from private.aios_audit_anchors
+      where organization_id = p_organization_id
+      order by event_count desc, id desc
+      limit 1;
+
+      if not found then
+        v_status := 'valid_unanchored';
+      elsif coalesce(v_anchor.evidence ->> 'class', '') = 'TEST_FIXTURE' then
+        v_status := 'anchor_untrusted_fixture';
+      else
+        v_tail := v_count - v_anchor.event_count;
+        if v_tail > 0 then
+          select e.created_at into v_oldest
+          from public.aios_audit_events e
+          where e.organization_id = p_organization_id
+          order by e.created_at, e.id
+          offset v_anchor.event_count limit 1;
+          v_detail := jsonb_build_object(
+            'unanchored_tail_events', v_tail,
+            'oldest_unanchored_age_seconds', extract(epoch from clock_timestamp() - v_oldest)
+          );
+          if clock_timestamp() - v_oldest > v_policy.max_unanchored_age
+             or (v_policy.max_unanchored_events is not null and v_tail > v_policy.max_unanchored_events) then
+            v_status := 'stale_anchor';
+          end if;
+        end if;
+
+        if v_status is null then
+          select * into v_external
+          from private.aios_audit_verification_runs
+          where organization_id = p_organization_id
+            and kind = 'external'
+            and anchor_id = v_anchor.id
+          order by finished_at desc, id desc
+          limit 1;
+
+          if not found then
+            v_status := 'anchored_unattested';
+          elsif not v_external.ok then
+            v_status := 'external_verification_failed';
+          elsif clock_timestamp() - v_external.finished_at > v_policy.external_verification_max_age then
+            v_status := 'anchored_unattested';
+            v_detail := v_detail || jsonb_build_object('external_verification', 'stale');
+          else
+            v_status := 'verified';
+          end if;
+        end if;
+      end if;
+    end if;
+  end if;
+
+  -- Global integrity controls are reduced to booleans/counts; no other tenant's
+  -- organization identifiers, event data, or diagnostic payload is returned.
+  v_drift := private.aios_guard_drift();
+  v_schedule := private.aios_schedule_check();
+  v_controls := jsonb_build_object(
+    'trigger_drift_clear', coalesce((v_drift ->> 'drift_count')::integer, 1) = 0,
+    'schedule_clear', coalesce((v_schedule ->> 'problem_count')::integer, 1) = 0,
+    'restoration_closed', v_state.status = 'closed'
+  );
+
+  if not (v_controls ->> 'trigger_drift_clear')::boolean
+     or not (v_controls ->> 'schedule_clear')::boolean
+     or v_state.status in ('guard_reenable_failed', 'closed_verification_failed') then
+    v_failed := true;
+  elsif v_state.status = 'open' then
+    v_incomplete := true;
+  end if;
+
+  if v_status in ('chain_mismatch', 'anchor_mismatch', 'truncated_history', 'external_verification_failed', 'verification_error') then
+    v_failed := true;
+  elsif v_status <> 'verified' then
+    v_incomplete := true;
+  end if;
+
+  v_ok := not v_failed and not v_incomplete;
+  insert into private.aios_audit_verification_runs (
+    organization_id, kind, status, ok, event_count, head_hash, details, finished_at, actor_user_id
+  ) values (
+    p_organization_id, 'owner',
+    case when v_failed then 'fail' when v_incomplete then 'incomplete' else 'verified' end,
+    v_ok, v_count, v_head_hash,
+    jsonb_build_object(
+      'organization_status', v_status,
+      'organization_detail', v_detail,
+      'controls', v_controls,
+      'actor_user_id', v_actor,
+      'scope', 'single_authorized_organization'
+    ),
+    clock_timestamp(), v_actor
+  ) returning id into v_run_id;
+
+  return jsonb_build_object(
+    'ok', v_ok,
+    'overall', case when v_failed then 'FAIL' when v_incomplete then 'INCOMPLETE' else 'VERIFIED' end,
+    'scope', 'single_authorized_organization',
+    'organization_id', p_organization_id,
+    'actor_user_id', v_actor,
+    'verification_run_id', v_run_id,
+    'organization_status', v_status,
+    'event_count', v_count,
+    'head_event_id', v_head_id,
+    'head_hash', v_head_hash,
+    'head_at', v_head_at,
+    'detail', v_detail,
+    'controls', v_controls,
+    'external_attestation_trust', 'service_role_asserted',
+    'certification_grade', false,
+    'verified_at', clock_timestamp()
+  );
+end
+$fn$;
+
+revoke all on function private.aios_final_verify_owner(uuid) from public, anon, authenticated, service_role, aios_restorer;
+
+create or replace function public.aios_audit_verify_owner(p_organization_id uuid)
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $fn$
+  select private.aios_final_verify_owner(p_organization_id)
+$fn$;
+
+revoke all on function public.aios_audit_verify_owner(uuid) from public, anon, service_role;
+grant execute on function public.aios_audit_verify_owner(uuid) to authenticated;
+
+insert into private.aios_function_pins(function_signature, fingerprint)
+values (
+  'private.aios_final_verify_owner(uuid)',
+  private.aios_function_fingerprint('private.aios_final_verify_owner(uuid)'::regprocedure)
+)
+on conflict(function_signature) do update
+set fingerprint = excluded.fingerprint, pinned_at = clock_timestamp();
+
 -- 11. Pins, registry, schedule, grants -------------------------------------------------------------------------------------------------------------
 insert into private.aios_function_pins (function_signature, fingerprint)
 select s, private.aios_function_fingerprint(s::regprocedure) from unnest(array[
