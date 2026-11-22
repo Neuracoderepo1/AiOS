@@ -2,6 +2,8 @@
 
 > **Authoritative update 2026-11-19:** Earlier sections are preserved as historical checkpoints. They are superseded for current-state facts by Section 17. The current candidate inventory is 129 migration files versus 117 hosted-applied versions (12 unapplied), not the historical 128/117/11 figures. The reviewed implementation baseline is PR #35 head 318f561a475a23e731e8d4e8d55ffb1d9d49075c. A successor commit adds security-boundary regression coverage and documentation; it requires fresh exact-head CI before acceptance.
 
+> **Authoritative update 2026-11-22:** Section 21 at the end of this document supersedes the 2026-11-19 banner above for current-state facts. The current candidate inventory is 131 migration files versus 117 hosted-applied versions (14 unapplied), and the PR #40 evidence SHA is `03495472bf7ec40a2ca4e4fec8e63fb42a34224e`. The 129/117/12 figures and the PR #35 baseline named above are historical. Earlier text is preserved and not rewritten.
+
 **Inspection date:** 2026-11-13  
 **Historical candidate at start of inspection:** `13394941bc31a8005777ee40cf0ce87115e6783a`  
 **Latest reviewed implementation head:** `0bf79e798f01b77ad665fc1e71873b29c104e5b7`  
@@ -545,3 +547,83 @@ Any earlier statement in this document that PR #40 was draft is stale and supers
 CI success and documentation reconciliation do not constitute Agent 003 certification, production approval, migration readiness, or deployment authorization. Production certification remains **WITHHELD / NOT CERTIFIED** unless and until Agent 003 issues a separate evidence-backed decision and all owner-controlled release gates are satisfied.
 
 No hosted Supabase migration, production data write/export/restore, deployment, Edge Function release, role/grant/RLS/policy/trigger/cron/Auth change, secret change, billing change, plan upgrade, or production configuration change is authorized or performed by this documentation update. Preserve all existing recovery, owner-evidence, migration-parity, branch-governance, and release-approval qualifications. **Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies.
+
+
+## 21. F-40-09 authoritative checkpoint — 22 November 2026
+
+**Disposition:** documentation reconciliation submitted for independent review; not self-certified. This section supersedes, for current-state facts, every earlier PR #40 section in this document (including the section that labels `dd72de937cbdd43b121bb75ec7b6ed393b1d4741` as the implementation/evidence SHA), the 2026-11-19 banner at the top of this document, and the PR #35-era sections 17.1 and 17.2 (129/117/12, candidate `318f561...`). Earlier sections are preserved as historical evidence.
+
+**Evidence SHA:** `03495472bf7ec40a2ca4e4fec8e63fb42a34224e`, the head of `agent004/mission-cancellation-contract` when this checkpoint was verified (before the commit that adds this section).  
+**PR #40:** OPEN / NON-DRAFT / UNMERGED, base `agent004/f2-reaper-record-isolation`. It is a stacked child of PR #35: preserve the stack order and do not merge it independently.
+
+### 21.1 Commit roles on the PR #40 branch
+
+| SHA | Role |
+|---|---|
+| `d875f055` | Baseline reviewed by Agent 003: F-40-04 to F-40-07 accepted; F-40-08 and F-40-09 raised as P1 blockers |
+| `335052a6` | F-40-08 implementation: modifies the unapplied migration `20261120190000` and adds `tests/sql/21_mission_succeeded_and_task_status_boundary.sql` |
+| `1a815696`, `dd72de93`, `8af9935`, `6d6a8aa` | Documentation-only commits from earlier F-40-09 attempts |
+| `5dd75fd` to `03495472` | Six CI commits touching three workflow files only (13 lines changed); no application, migration or test file |
+
+Between `335052a6` and `03495472` the migration `20261120190000` and test 21 are byte-identical (same git blob IDs), so the F-40-08 implementation validated below is the one introduced at `335052a6`.
+
+### 21.2 Exact-head workflow evidence for `03495472`
+
+| Workflow | Run | Result |
+|---|---:|---|
+| AiOS CI | [44986420260](https://github.com/Neuracoderepo1/AiOS/actions/runs/44986420260) | SUCCESS, 4/4 jobs: evidence-integrity 6/6 steps, functions-behavioral 13/13, functions-typecheck 8/8, migrations-and-sql-tests 33/33 |
+| ET27 seal guard | [44986420277](https://github.com/Neuracoderepo1/AiOS/actions/runs/44986420277) | SUCCESS, 1/1 job (11/11 steps) |
+| ET27 delete protection | [44986420266](https://github.com/Neuracoderepo1/AiOS/actions/runs/44986420266) | SUCCESS, 1/1 job (11/11 steps) |
+
+All three runs are `pull_request` events, attempt 1, with `head_sha` equal to the evidence SHA. They are the only workflow runs that exist for this SHA. Run, job and step results were read from the GitHub Actions API on 22 November 2026.
+
+| Workflow | Artifact | Artifact ID | GitHub-reported SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | `14739837907` | `63a1718a682407aed20ea5020105222c22a94b2a6075dcdeeae1f3997b093f43` |
+| AiOS CI | `behavioral-evidence` | `14740032238` | `e61883cdba00176e90653538f1b6467c0a8aecd6068a3d189fa2db024897b81d` |
+| ET27 seal guard | `et27-seal-guard-evidence` | `14739558832` | `436a01b532406eafc07dc16212a55042857c57650cace654c12fe33ec42b5da7` |
+| ET27 delete protection | `et27-delete-protection-evidence` | `14739997312` | `d59422318030ad1103c033842a1ddc4969c3be1515bf1d1154746382f9d53553` |
+
+All four artifacts were unexpired and bound to the evidence SHA by GitHub metadata. The digests are GitHub-reported; the artifact ZIPs were not downloaded or re-hashed in this verification because the artifact download host was not reachable from the verification environment. Agent 003's independent recomputation recorded earlier applies to the `d875f055` artifacts only. Per-suite check and mutant counts recorded for `d875f055` are not restated for this SHA.
+
+The migrations-and-sql-tests job completed these steps successfully: full migration replay from scratch, real-PostgreSQL logical export and isolated restore, the SQL regression and invariant runner (every `tests/sql/*.sql` file, including test 21), the canonical 46-case matrix, mission/task authority races, approval-path and reverse-link lock-order suites, audit-lock forced interleavings, the smoke self-test, and approval-chain binding revalidation across 10 fresh migrated databases.
+
+### 21.3 Migration inventory and hosted boundary
+
+The candidate tree at the evidence SHA contains **131 SQL migration files**. The last read-only hosted observation (19 November, section 17.1; not re-queried for this checkpoint) is **117 applied versions**, latest `20261108130000`. The candidate is therefore **14 migrations ahead**: the 12 listed in section 17.1, plus
+
+| Version | Candidate migration | Hosted state |
+|---|---|---|
+| `20261120180000` | `aios_mission_cancellation_jwt_identity.sql` | Unapplied |
+| `20261120190000` | `aios_succeeded_mission_terminal_integrity.sql` | Unapplied |
+
+`20261120190000` was modified by `335052a6` before any application; it has never been applied anywhere hosted. This inventory is a count comparison, not authorization to apply migrations. No hosted migration has been applied.
+
+### 21.4 Finding dispositions at this checkpoint
+
+- **F-40-04 to F-40-07:** accepted by Agent 003 at `d875f055` (22 November review).
+- **F-40-08:** implementation present from `335052a6`, exercised by SQL test 21 inside the green SQL regression runner at the evidence SHA. Independent disposition **pending Agent 003**; this document does not close it.
+- **F-40-09:** this section is the reconciliation. Independent disposition **pending Agent 003**.
+- Production certification remains **WITHHELD / NOT CERTIFIED**.
+
+### 21.5 Statements superseded by this checkpoint
+
+- PR #40 described as DRAFT (section 20): its status is OPEN / NON-DRAFT / UNMERGED.
+- 129/117/12 and `318f561...` as the current candidate (top banner, sections 17.1 and 17.2): current inventory is 131/117/14 and the PR #40 evidence SHA is `03495472...`.
+- F-40-08 validation described as pending (section 20): see 21.2 and 21.4.
+- `dd72de93` labelled as the implementation/evidence SHA: it is a documentation-only commit; the implementation is `335052a6` and the evidence of record is `03495472`.
+- Section 4 and section 17.5 branch-protection wording: see 21.6.
+
+### 21.6 Branch-protection observation (supersedes the HTTP 403 qualification for the fields listed)
+
+On 22 November 2026, read-only GitHub API calls with this session's credentials returned `main` as protected and returned the branch-protection detail (sections 4 and 17.5 recorded HTTP 403 for the previously connected integration). Observed: required status checks `evidence-integrity`, `functions-typecheck`, `migrations-and-sql-tests` with up-to-date branches required; **required approving reviews: 0**; stale-review dismissal on; code-owner review **not** required; last-push approval not required; administrators **not** enforced; force pushes and deletions disallowed; conversation resolution required; signed commits and linear history not required; repository-level rulesets: empty list.
+
+Earlier statements that `main` is protected should therefore be read as "required status checks, with no required human review and no administrator enforcement". Organization-level rulesets and bypass actors are not established by this observation; owner-level evidence is still required for them. No branch-protection setting was altered.
+
+### 21.7 Release boundary
+
+CI success and this reconciliation are not Agent 003 certification, production approval, migration readiness or deployment authorization. No hosted Supabase migration, production data write/export/restore, deployment, Edge Function release, role/grant/RLS/policy/trigger/cron/Auth change, secret change, billing change, plan upgrade or production configuration change is authorized or was performed. The 14 unapplied migrations remain unapplied. Scope is AiOS only. **Access is not authority.**
+
+### 21.8 Documentation successor rule
+
+A file cannot hold evidence for the commit that contains it. The commit that adds this section receives its own AiOS CI, ET27 seal guard and ET27 delete protection runs; their IDs, conclusions and artifact digests are reported in the PR #40 submission comment for that exact SHA. The results in 21.2 do not transfer to it.
