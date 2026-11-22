@@ -152,3 +152,34 @@ Earlier statements that main is protected are **owner-reported/historical**, not
 ### Release boundary
 
 Production certification remains **WITHHELD / NOT CERTIFIED**. Keep PR #40 draft and unmerged pending exact-head CI and Agent 003 re-review. No hosted migration, production write/export/restore, deployment, role/grant/RLS/trigger/cron/Auth change, secret change, billing change or production configuration change is authorized or performed. The 14 unapplied migrations remain unapplied. Scope is AiOS only.
+
+## F-40-09 final documentation reconciliation — 22 November 2026
+
+**Disposition: documentation reconciliation COMPLETE for the reviewed implementation candidate.** This records the verified evidence for candidate SHA `1a8156965c69fc47c01c5a05be378b9092150180`; it does not certify this documentation update or transfer the earlier candidate's evidence to a later commit.
+
+F-40-08 implementation is present in reviewed candidate `1a8156965c69fc47c01c5a05be378b9092150180`. The three required workflows passed on that exact candidate:
+
+| Workflow | Run | Exact-candidate result |
+|---|---:|---|
+| AiOS CI | [44981765290](https://github.com/Neuracoderepo1/AiOS/actions/runs/44981765290) | SUCCESS, 4/4 jobs |
+| ET27 seal guard | [44981765301](https://github.com/Neuracoderepo1/AiOS/actions/runs/44981765301) | SUCCESS |
+| ET27 delete protection | [44981765246](https://github.com/Neuracoderepo1/AiOS/actions/runs/44981765246) | SUCCESS |
+
+The four corresponding GitHub-reported artifacts are:
+
+| Workflow | Artifact name | Artifact ID | GitHub-reported SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | `14737864849` | `af510b2651c96edc0abc5965cfc99b097a18cbeb5d5aae343538dfd1d65faea1` |
+| AiOS CI | `behavioral-evidence` | `14737614615` | `711d55dcc525ec1610cc378205dc03659e989eddc63b6496e103b41aba5ab244` |
+| ET27 seal guard | `et27-seal-guard-evidence` | `14738047780` | `c93b4aa659c631ccf86b65ac9ca2e77f8bf64d1d514251d400816aff6fc77be2` |
+| ET27 delete protection | `et27-delete-protection-evidence` | `14738420236` | `ba750e0fb39a60edda233236c508cb58c9172761253df12ba7b2a19ce7779b19` |
+
+These run URLs, artifact names, IDs and digests identify evidence for `1a8156965c69fc47c01c5a05be378b9092150180` only. They are not evidence for this later documentation commit. Earlier checkpoint text describing the 335052a successor's workflows as pending is superseded by this verified exact-head result.
+
+### Governance and production boundary
+
+Agent 003's independent certification decision remains a separate governance gate. CI success and documentation reconciliation are not independent certification, production approval, migration readiness, or release approval. Do not describe AiOS as certified, production-approved, or release-closed unless and until Agent 003 issues the corresponding independent decision and all owner-controlled release gates are satisfied.
+
+PR #40 must remain unmerged absent the required authorization. No deployment or hosted Supabase migration is authorized. No production data, roles, grants, RLS policies, triggers, cron jobs, Auth settings, secrets, billing, or configuration may be changed under this directive. No such production operation is authorized by these CI results.
+
+**Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies. Any remaining certification findings must be documented and resolved through the established review process. Preserve all migration-readiness, recovery, owner-evidence, and release-approval qualifications elsewhere in this document.
