@@ -151,7 +151,7 @@ Earlier statements that main is protected are **owner-reported/historical**, not
 
 ### Release boundary
 
-Production certification remains **WITHHELD / NOT CERTIFIED**. Keep PR #40 draft and unmerged pending exact-head CI and Agent 003 re-review. No hosted migration, production write/export/restore, deployment, role/grant/RLS/trigger/cron/Auth change, secret change, billing change or production configuration change is authorized or performed. The 14 unapplied migrations remain unapplied. Scope is AiOS only.
+Production certification remains **WITHHELD / NOT CERTIFIED**. Keep PR #40 open, non-draft, and unmerged pending exact-head CI and Agent 003 re-review. No hosted migration, production write/export/restore, deployment, role/grant/RLS/trigger/cron/Auth change, secret change, billing change or production configuration change is authorized or performed. The 14 unapplied migrations remain unapplied. Scope is AiOS only.
 
 ## F-40-09 final documentation reconciliation — 22 November 2026
 
@@ -183,3 +183,41 @@ Agent 003's independent certification decision remains a separate governance gat
 PR #40 must remain unmerged absent the required authorization. No deployment or hosted Supabase migration is authorized. No production data, roles, grants, RLS policies, triggers, cron jobs, Auth settings, secrets, billing, or configuration may be changed under this directive. No such production operation is authorized by these CI results.
 
 **Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies. Any remaining certification findings must be documented and resolved through the established review process. Preserve all migration-readiness, recovery, owner-evidence, and release-approval qualifications elsewhere in this document.
+
+
+## Final exact-head documentation/evidence reconciliation — 22 November 2026
+
+**Recorded implementation/evidence SHA:** `dd72de937cbdd43b121bb75ec7b6ed393b1d4741`  
+**PR #40 status:** OPEN / NON-DRAFT / UNMERGED. PR #40 is not a draft and must remain unmerged unless separately authorized.  
+**Evidence binding:** GitHub run and artifact metadata associates the following records with exact head SHA `dd72de937cbdd43b121bb75ec7b6ed393b1d4741` on branch `agent004/mission-cancellation-contract`.
+
+| Workflow | Run ID | Exact-head result |
+|---|---:|---|
+| AiOS CI | [44983255375](https://github.com/Neuracoderepo1/AiOS/actions/runs/44983255375) | SUCCESS, 4/4 jobs |
+| ET27 seal guard | [44983255370](https://github.com/Neuracoderepo1/AiOS/actions/runs/44983255370) | SUCCESS |
+| ET27 delete protection | [44983255372](https://github.com/Neuracoderepo1/AiOS/actions/runs/44983255372) | SUCCESS |
+
+### Exact-head artifact inventory
+
+| Workflow | Artifact | Artifact ID | GitHub-reported SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | `14739366654` | `5a276bbb0bac635b72664d5e599cb0c3943f6a6efafde0f2002bcdcac9f113ef` |
+| AiOS CI | `behavioral-evidence` | `14738776890` | `6373b3760a8e98e9ebcf8aa2b280be6fc32f0e13f8c787f25d73f1e429f079d1` |
+| ET27 seal guard | `et27-seal-guard-evidence` | `14739001350` | `6285ff446346a9bbb10b602db79b0e16bf5d999bbc458203d619566d06e6ce8c` |
+| ET27 delete protection | `et27-delete-protection-evidence` | `14738297817` | `57caa2e27db83751642504439bf54d9efaad257951dd5ea30c65144a33e69405` |
+
+The AiOS CI run completed all four jobs successfully: functions-behavioral, functions-typecheck, evidence-integrity, and migrations-and-sql-tests. The migrations/SQL job includes the canonical 46-case matrix, mission/task and approval-path race coverage, audit-lock interleavings, and approval-chain post-lock binding revalidation across ten fresh migrated databases. Both ET27 jobs completed migration replay, credential-redaction checks, their target suites, evidence upload, and cleanup successfully.
+
+Digests above are GitHub-reported artifact digests bound to these workflow runs. They are not represented as independently recomputed local ZIP hashes.
+
+### Migration inventory: preserved historical observation
+
+The PR #40 candidate inventory recorded **14 candidate migrations unapplied** against a read-only hosted baseline of **117 applied migration versions**, with latest recorded version `20261108130000`. This is a historical candidate-versus-hosted observation, not a claim that hosted migration history was freshly queried during this documentation update. The 14 migrations remain unapplied. No migration is authorized or applied by this record.
+
+### PR status correction and release boundary
+
+Any earlier statement in this document that PR #40 was draft is stale and superseded: its verified status is **OPEN / NON-DRAFT / UNMERGED**. This correction does not authorize merging.
+
+CI success and documentation reconciliation do not constitute Agent 003 certification, production approval, migration readiness, or deployment authorization. Production certification remains **WITHHELD / NOT CERTIFIED** unless and until Agent 003 issues a separate evidence-backed decision and all owner-controlled release gates are satisfied.
+
+No hosted Supabase migration, production data write/export/restore, deployment, Edge Function release, role/grant/RLS/policy/trigger/cron/Auth change, secret change, billing change, plan upgrade, or production configuration change is authorized or performed by this documentation update. Preserve all existing recovery, owner-evidence, migration-parity, branch-governance, and release-approval qualifications. **Access is not authority.** Agent 004 implements and supplies evidence; Agent 003 independently reviews and certifies.
