@@ -112,3 +112,14 @@ commit;
 ```
 
 Replace the placeholder with the exact owner-approved login. Verify the resulting complete membership inventory and `private.aios_restorer_boundary_violations() = '[]'::jsonb` before any restoration operation. Never run this procedure for an application, service, authenticator, or Edge Function identity.
+## Authenticated owner audit verification (F-40-10)
+
+After Part E is installed, an organization owner/admin can request an organization-scoped audit verification through `public.aios_audit_verify_owner(p_organization_id)`. The public wrapper is executable by `authenticated` only. The implementation derives identity from `auth.uid()`, locks the caller's membership row `FOR SHARE`, and accepts only owner/admin/administrator membership for the requested organization.
+
+Operational proof must be collected through the application's genuine signed-in owner session, using that user's authenticated Supabase client context to invoke the RPC. Do not run the call from the SQL editor as `postgres`, do not substitute a service-role key, and do not simulate `request.jwt.claim.sub` for production evidence.
+
+Capture the owner account's authenticated user ID (not credentials or JWT), the organization ID, timestamp, RPC result, `verification_run_id`, and the matching append-only `private.aios_audit_verification_runs.actor_user_id` record. Confirm the actor ID equals the authenticated user's ID and the organization ID equals the owner's authorized organization. Redact bearer tokens and secrets from logs and evidence.
+
+The RPC deliberately returns only the requested organization's audit status and aggregate global-control booleans; it does not expose the global organization inventory. `INCOMPLETE` or `FAIL` is not a pass. Even `VERIFIED` is an internal owner-scoped result only: `external_attestation_trust` remains `service_role_asserted` and `certification_grade` remains false until independent external attestation is implemented and verified.
+
+`tests/sql/22_authenticated_owner_audit_verification.sql` is automated regression coverage in disposable CI PostgreSQL. It is not genuine hosted owner-session evidence and must not be presented as such. The production owner-session evidence remains a separate release gate.
