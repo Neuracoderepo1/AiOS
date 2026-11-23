@@ -1,12 +1,12 @@
 # G3 Production Export Authorization Checklist
 
-**Status:** BLOCKED — mandatory owner-controlled prerequisites remain unresolved.  
+**Status:** BLOCKED — owner-side operational prerequisites and independent review remain unresolved.  
 **Source:** AiOS Supabase project `jtkcdwhiduixoiodhbfn`.
 
 | # | Mandatory prerequisite | Current status | Required evidence |
 |---:|---|---|---|
-| 1 | Approved destination | BLOCKED | Explicit owner approval of exact destination |
-| 2 | Owner-controlled storage account | BLOCKED | Owner verifies Drive account identity and control |
+| 1 | Approved destination | OWNER DESIGNATED; operational approval pending | Human Director designated the exact Drive folder; verify account, folder access, jurisdiction and final operational suitability |
+| 2 | Owner-controlled storage account | OWNER ATTESTED; independent verification pending | Human Director confirmed the folder is owned/controlled and authorized for AiOS recovery evidence; verify signed-in identity and access controls directly |
 | 3 | Sufficient storage capacity | BLOCKED | Current quota and local free-space measurement |
 | 4 | Encryption and key custody | PENDING | Age key generated and custody procedure accepted |
 | 5 | Named authorized operator | BLOCKED | Named operator and role recorded |
@@ -34,6 +34,6 @@
 
 ## Decision rule
 
-A prerequisite marked BLOCKED or PENDING prevents production export. The technical exporter marker does not override this checklist. No standing delegation, chat acknowledgement or synthetic test substitutes for destination ownership, owner authentication, or exact operation approval.
+A prerequisite marked BLOCKED or PENDING prevents production export. Owner designation and attestation are recorded, but do not substitute for operational verification. The technical exporter marker does not override this checklist. No standing delegation, chat acknowledgement or synthetic test substitutes for owner authentication, storage verification, or exact operation approval.
 
 **Current decision: production export is NOT AUTHORIZED. G3 is BLOCKED.**
