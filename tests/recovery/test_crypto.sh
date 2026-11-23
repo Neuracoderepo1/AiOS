@@ -41,4 +41,19 @@ if grep -Eiq 'password=|postgres(ql)?://[^[:space:]]+|AGE-SECRET-KEY-' "$TMP/key
 pass "key material absent from captured tool logs"
 grep -q 'NONPRODUCTION' "$ROOT/docs/operations/LOGICAL-EXPORT-RESTORE.md" || fail "export guard documentation missing"
 pass "production export not invoked by crypto tests"
-printf 'All crypto self-tests passed. Fixture contained synthetic data only.\n'
+
+# Exercise exporter dry-run with inert command stubs. No database command may run.
+mkdir -p "$TMP/stubs" "$TMP/export-destination"
+printf '#!/bin/sh\nprintf "called\\n" >> "%s"\nexit 99\n' "$TMP/command-called" > "$TMP/stubs/pg_dump"
+cp "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
+chmod 700 "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
+printf 'localhost:5432:synthetic:synthetic:not-a-real-password\n' > "$TMP/pgpass"
+chmod 600 "$TMP/pgpass"
+PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=127.0.0.1 PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" \
+  bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" > "$TMP/dry-run.log"
+grep -q 'DRY RUN PASS' "$TMP/dry-run.log" || fail "export dry-run did not report success"
+[[ ! -e "$TMP/command-called" ]] || fail "dry-run invoked a database command"
+[[ ! -e "$TMP/export-destination/aios-logical-export" ]] || fail "dry-run created an export"
+pass "export dry-run performs validation without database access or output"
+
+printf 'All crypto and dry-run self-tests passed. Fixture contained synthetic data only.\n'
