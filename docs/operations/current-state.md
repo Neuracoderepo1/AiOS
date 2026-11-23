@@ -575,3 +575,46 @@ The 23 November reconciliation request is to correct the two authoritative docum
 The present documentation commit must receive its own three exact-head workflows, artifact inventory and digest verification. Agent 003 must then issue a written disposition on that exact successor SHA. Until that happens, G1/G2 for the successor are not claimed complete.
 
 **Release boundary:** F-40-09 is a documentation-reconciliation finding, not production certification. PR #40 remains open and unmerged. Production certification remains **WITHHELD / NOT CERTIFIED**. No hosted migration, deployment, production write, owner-session impersonation, backup/restore, branch-governance change, merge, or production configuration change is authorized by this documentation update. **Access is not authority.**
+
+
+## 27. Exact-head CI evidence and artifact integrity — 23 November 2026
+
+**Evidence head:** `532359a15f8d5d6d067909e1ec203a8445682c1e`  
+**Branch:** `agent004/mission-cancellation-contract`  
+**PR #40:** OPEN / NON-DRAFT / UNMERGED at verification time. Base remains `agent004/f2-reaper-record-isolation`.  
+**Scope of latest implementation change:** CI-only mitigation for ephemeral local Supabase database port collision. The workflow selects an unused loopback host port for the disposable CI database before starting Supabase. This does not alter hosted Supabase configuration or production state.
+
+### 27.1 Required exact-head workflows
+
+All three required workflows completed successfully, and GitHub Actions metadata reports the same `head_sha` for each run:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| AiOS CI | [45137836127](https://github.com/Neuracoderepo1/AiOS/actions/runs/45137836127) | SUCCESS, 4/4 jobs |
+| ET27 delete protection | [45137836128](https://github.com/Neuracoderepo1/AiOS/actions/runs/45137836128) | SUCCESS, 1/1 job |
+| ET27 seal guard | [45137836130](https://github.com/Neuracoderepo1/AiOS/actions/runs/45137836130) | SUCCESS, 1/1 job |
+
+AiOS CI jobs `functions-typecheck`, `evidence-integrity`, `functions-behavioral`, and `migrations-and-sql-tests` all passed. The CI evidence records the 46/46 canonical matrix, real-PostgreSQL logical export/isolated restore, 31/31 restore-preflight checks, SQL test 21 (F-40-08 mission/task status boundaries), and SQL test 22 (F-40-10 tenant-scoped authenticated owner audit verification). The behavioral artifact records 109 passed / 0 failed, 5/5 known-gap probes passed, O1–O7 invariants passed, and 23/23 behavioral mutants detected with the unmodified control passing. ET27 seal guard records 303 checks / 0 failures and 48/48 mutants detected / 0 survived. ET27 delete protection records 66 checks / 0 failures and 10/10 mutants detected / 0 survived.
+
+### 27.2 Evidence artifacts and independent ZIP re-hash
+
+All four archives were downloaded from GitHub Actions and SHA-256 was independently computed over the downloaded ZIP bytes. Every local digest exactly matches GitHub's artifact API digest. GitHub metadata binds each artifact to evidence head `532359a15f8d5d6d067909e1ec203a8445682c1e`.
+
+| Workflow | Artifact | ID | Independently recomputed SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | `14801656161` | `d88102b61d59157675c32cb33945a0774d81273be956dd4ca31142466d6f378c` |
+| AiOS CI | `behavioral-evidence` | `14800273088` | `e9092f11df992338cb1b5fe84221cf6d17c5ea03d36fce60423e769906965338` |
+| ET27 seal guard | `et27-seal-guard-evidence` | `14800253430` | `de3cc4335d0b4993c1586447175cfe2aad9485eb59e048a55825862b7e25310f` |
+| ET27 delete protection | `et27-delete-protection-evidence` | `14800946308` | `2a586f754d6a0787b5673b6a292f47532f3b6a8b677d7032d95d15a5fd3165d1` |
+
+The behavioral identity record distinguishes the PR head/checked-out HEAD (`532359a...`) from the GitHub pull-request merge commit (`d39be1f69a6f0d5ef6f3f0945d648e5eb7089fd1`); the PR API reports that same merge commit. The tested checkout and pull-request head fields both identify `532359a...`. This distinction is recorded rather than conflating the synthetic merge commit with the branch head.
+
+### 27.3 G1/G2 disposition and release boundary
+
+**G1 exact-head CI and artifact integrity: PASS for SHA `532359a...`.** This is engineering evidence only. It does not transfer or imply Agent 003's prior dispositions for predecessor SHAs.
+
+**G2 independent review: PENDING.** Agent 003 must independently review the exact head, the four artifacts and the documentation reconciliation, then issue a written successor disposition against the final documentation successor SHA. No predecessor review is represented as a review of this head.
+
+The hosted-production gates remain separate and outstanding: fresh hosted schema/function/grant parity; a reviewed staged plan for the 14 unapplied candidate migrations; genuine authenticated owner-session audit verification; managed backup/recovery evidence; and complete owner-level branch-governance evidence. CI's local PostgreSQL restore test is not a managed production backup or production recovery exercise.
+
+PR #40 remains open and unmerged. Production certification remains **WITHHELD / NOT CERTIFIED**. No merge, deployment, hosted migration, production data write, production role/grant/RLS/trigger/cron/Auth change, secret or billing change, backup/restore, or production configuration change is authorized by this evidence update. **Access is not authority.** Agent 004 supplies implementation and evidence; Agent 003 alone issues independent certification.
