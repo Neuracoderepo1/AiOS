@@ -18,12 +18,63 @@
 --     triggers; TRIGGER would have let service_role attach a trigger to the audit table.)
 
 -- 0. Role -------------------------------------------------------------------------------------------------------------
-do $$ begin
-  if not exists (select 1 from pg_roles where rolname = 'aios_restorer') then
-    create role aios_restorer nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+do $role_bootstrap$
+declare
+  v_role record;
+begin
+  -- Provision only when absent. CREATE ROLE's safe attributes are set at birth; never ALTER an
+  -- existing role because migration runners are not necessarily superusers and must not repair drift.
+  if not exists (select 1 from pg_catalog.pg_roles where rolname = 'aios_restorer') then
+    begin
+      create role aios_restorer
+        nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    exception when insufficient_privilege then
+      raise exception 'insufficient authority to create aios_restorer'
+        using errcode = '42501';
+    end;
   end if;
-end $$;
-alter role aios_restorer nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+
+  select * into v_role from pg_catalog.pg_roles where rolname = 'aios_restorer';
+  if not found then
+    raise exception 'aios_restorer was not created; refusing to continue'
+      using errcode = '42501';
+  end if;
+  if v_role.rolcanlogin
+     or v_role.rolinherit
+     or v_role.rolsuper
+     or v_role.rolcreatedb
+     or v_role.rolcreaterole
+     or v_role.rolreplication
+     or v_role.rolbypassrls then
+    raise exception 'aios_restorer has unsafe role attributes; refusing repair'
+      using errcode = '42501';
+  end if;
+
+  -- The restorer must not inherit privileges from any other role.
+  if exists (
+    select 1 from pg_catalog.pg_auth_members
+    where member = v_role.oid
+  ) then
+    raise exception 'aios_restorer must not be a member of another role'
+      using errcode = '42501';
+  end if;
+
+  -- Reject direct or transitive membership by any application/service identity.
+  if exists (
+    select 1
+    from pg_catalog.pg_roles app
+    where app.rolname in (
+      'anon', 'authenticated', 'service_role', 'authenticator',
+      'supabase_auth_admin', 'supabase_storage_admin', 'supabase_functions_admin'
+    )
+      and not app.rolsuper
+      and pg_catalog.pg_has_role(app.oid, v_role.oid, 'MEMBER')
+  ) then
+    raise exception 'an application/service role is a member of aios_restorer; refusing repair'
+      using errcode = '42501';
+  end if;
+end
+$role_bootstrap$;
 grant usage on schema private to aios_restorer;
 
 -- 1. Harden existing audit protections (reconcile with 20260825*/20261106193358; nothing is duplicated) ------------------
@@ -142,6 +193,7 @@ begin
   select * into r from pg_roles where rolname = 'aios_restorer';
   if not found then return jsonb_build_array('role_missing'); end if;
   if r.rolcanlogin  then v := v || '"restorer_can_login"'::jsonb; end if;
+  if r.rolinherit   then v := v || '"restorer_inherits_roles"'::jsonb; end if;
   if r.rolsuper     then v := v || '"restorer_is_superuser"'::jsonb; end if;
   if r.rolcreaterole or r.rolcreatedb or r.rolreplication or r.rolbypassrls then v := v || '"restorer_has_extra_attributes"'::jsonb; end if;
   if exists (select 1 from pg_auth_members m where m.member = r.oid) then v := v || '"restorer_is_member_of_other_roles"'::jsonb; end if;
