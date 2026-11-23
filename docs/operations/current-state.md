@@ -739,3 +739,37 @@ G3 production export remains NOT STARTED. Before any production export, the owne
 - G7 genuine owner authentication: RESERVED for direct Human Director participation.
 
 No merge, deployment, hosted migration, production export/restore, production write, security-setting change, secret/billing change, or G7 authentication occurred. Production certification remains WITHHELD / NOT CERTIFIED. Access is not authority.
+
+
+### 30. Exact-head G1 completion — 23 November 2026
+
+Candidate implementation/documentation head: `9ec552a7ebfd25fabd58a53b8fbca3b7547133dc` on `agent004/mission-cancellation-contract`, PR #40 (OPEN / NON-DRAFT / UNMERGED), based on PR #35 branch `agent004/f2-reaper-record-isolation`.
+
+All three required pull-request workflows completed successfully on this exact SHA:
+
+- AiOS CI [run 45161476012](https://github.com/Neuracoderepo1/AiOS/actions/runs/45161476012): SUCCESS, 4/4 jobs. Functions type-check, behavioral suite, evidence-integrity checks, migration/SQL tests, real-PostgreSQL logical export/isolated-restore roundtrip, restore preflight, concurrency/lock-order tests, approval-chain revalidation on 10 fresh migrated databases, and evidence upload all passed.
+- ET27 seal guard [run 45161475957](https://github.com/Neuracoderepo1/AiOS/actions/runs/45161475957): SUCCESS.
+- ET27 delete protection [run 45161476081](https://github.com/Neuracoderepo1/AiOS/actions/runs/45161476081): SUCCESS.
+
+GitHub reports the following unexpired artifacts, each bound by workflow metadata to the exact candidate SHA above:
+
+| Workflow | Artifact | ID | GitHub SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | 14814230320 | `59f581f61146e8cb935f9c0c6b22f8712bf4a4e92350ef258d452b26c5933195` |
+| AiOS CI | `behavioral-evidence` | 14809979276 | `c5f44f6d7a62ec056d19c8c3ebd7304efff19c3b359b8c45ab80e17faf085857` |
+| ET27 seal guard | `et27-seal-guard-evidence` | 14811031853 | `81987e84cd422a0df7a3eecab35415a0e963b88ed5bcd44fe2cdff7205192214` |
+| ET27 delete protection | `et27-delete-protection-evidence` | 14811375904 | `6275002a78c4256e55db82de560f432e9dc920725731d3592cb3cd3a7655ea6c` |
+
+These are GitHub-reported artifact ZIP digests; no independent ZIP re-download/re-hash is claimed here. This closes G1 for candidate `9ec552a7...`. It does not transfer G1 to the documentation-only successor commit created to reconcile this record; that successor requires its own exact-head workflows.
+
+### 30.1 Gate disposition after G1
+
+- G1 exact-head CI: PASS for `9ec552a7...`; documentation successor CI remains pending.
+- G2 Agent 003 independent review of the final documentation successor: PENDING.
+- G3 production logical export and isolated restore: NOT STARTED; owner-approved destination, encryption/key custody, retention/deletion, operator, access/transfer controls, acceptance criteria and RPO/RTO record remain incomplete.
+- G4 hosted pre-window parity: BLOCKED / NOT PASS. The 117-applied / 131-candidate / 14-unapplied inventory and hosted audit/restoration/security drift recorded in section 29 remain the latest verified observation; no hosted changes were made.
+- G5 merge/migration: NOT ELIGIBLE. The stacked dependency chain remains intact and must be integrated in order after all prerequisites.
+- G6 post-deployment verification: PENDING G5.
+- G7 genuine owner authentication: RESERVED for direct Human Director participation.
+
+PR #40 remains open, non-draft and unmerged. No merge, deployment, hosted migration, production export/restore, production write, privilege/security/configuration change, secret/billing change, or G7 authentication occurred. Production certification remains WITHHELD / NOT CERTIFIED. Access is not authority.
