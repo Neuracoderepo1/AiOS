@@ -15,6 +15,16 @@ Do not run the production exporter until all items in `G3-AUTHORIZATION-CHECKLIS
 
 The exporter approval marker is a technical guard, not an authorization system. It must never be treated as evidence of owner approval by itself.
 
+## Non-mutating dry-run
+
+Before any export operation, the operator may run the exporter in configuration-only mode against an existing empty destination directory. This validates required environment fields, approval marker syntax, password-file permissions, executable availability, and destination safety. It does not connect to PostgreSQL, create an export directory, or invoke `pg_dump`/`psql`:
+
+```sh
+bash scripts/recovery/export_logical.sh --dry-run "$HOME/secure-backups/aios"
+```
+
+The dry-run is not an export, a source connectivity check, or an authorization substitute. Use only an already-existing destination directory.
+
 ## Controlled sequence after approval
 
 1. Record the approved ticket, named operator, exact project ID, source environment identity, scope, expected database version and source endpoint classification in the owner-controlled execution record.
