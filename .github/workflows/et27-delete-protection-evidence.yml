@@ -10,6 +10,7 @@ on:
       - ".github/workflows/et27-delete-protection-evidence.yml"
   workflow_dispatch:
 
+# Exact-head release-gate documentation successors may touch this file to request a full ET27 evidence replay.
 permissions:
   contents: read
 
