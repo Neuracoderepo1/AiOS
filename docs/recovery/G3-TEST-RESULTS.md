@@ -1,8 +1,8 @@
 # G3 Recovery Test Results
 
 **Evidence date:** 2026-11-23  
-**Repository base:** `fe1fcbea1e9aba02689cb0bb48c0a1180e508504` (PR #42 head)  
-**Latest exact-head validation:** Recovery crypto workflow #5 PASS and full AiOS CI #419 PASS on feature head `9997b328e32a9ac542f914dbdc6d92bf3e34949d`.
+**PR:** #43  
+**Exact validated feature head:** `48e1c23c946f96e75d9b60005b140cdbf2102fc9`
 
 ## Scope boundary
 
@@ -10,22 +10,24 @@ No production export, production credentials, production database writes, produc
 
 ## Automated test commands
 
-The new crypto self-test command is:
+The crypto self-test command is:
 
 ```sh
 bash tests/recovery/test_crypto.sh
 ```
 
-It requires `age` and standard POSIX shell utilities. It creates only a temporary synthetic payload and temporary test identity. It covers:
+It requires `age` and standard POSIX shell utilities. It creates only a temporary synthetic payload and temporary test identity. Coverage includes:
 - authenticated encryption/decryption round trip;
 - wrong-identity rejection;
 - ciphertext tamper detection;
 - SHA-256 manifest success and mismatch;
 - missing input/manifest rejection;
-- incomplete-export and credential-redaction smoke checks;
-- refusal to overwrite existing output paths.
+- insufficient-storage fail-closed simulation;
+- refusal to overwrite existing output paths;
+- key-material absence from captured tool logs;
+- exporter dry-run proof that no database command runs and no export output is created.
 
-The exporter dry-run tests use inert command stubs and verify that dry-run does not invoke database commands or create output artifacts.
+The exporter dry-run tests use inert command stubs. They do not connect to PostgreSQL.
 
 Existing recovery safety tests:
 
@@ -40,30 +42,35 @@ AIOS_TEST_DB_URL='<loopback-only disposable test database>' bash tests/recovery/
 AIOS_TEST_DB_URL='<loopback-only disposable test database>' bash tests/recovery/preflight_matrix.sh
 ```
 
-Do not run these PostgreSQL commands with a hosted/production URL. The test scripts must validate loopback and disposable database identity.
+Never run these PostgreSQL commands with a hosted/production URL. The test scripts must validate loopback and disposable database identity.
 
-## Results
+## Exact-head workflow results
+
+| Workflow | Run | Result | Scope |
+|---|---:|---|---|
+| Full AiOS CI | #421 / 45184608345 | PASS | All four jobs: functions typecheck, evidence integrity, behavioral suite, migrations and SQL tests |
+| Recovery crypto safety | #7 / 45184608305 | PASS | Synthetic encryption/decryption, tamper, key, manifest and exporter dry-run safety tests |
+
+Links:
+- Full AiOS CI #421: https://github.com/Neuracoderepo1/AiOS/actions/runs/45184608345
+- Recovery crypto safety #7: https://github.com/Neuracoderepo1/AiOS/actions/runs/45184608305
+
+The full AiOS CI migration/SQL job included disposable PostgreSQL migration replay and logical export/isolated-restore roundtrip, restoration-role and authorization regressions, Part E audit-anchoring regressions, the 46-case canonical matrix, concurrency/lock-order regressions, and approval-chain post-lock binding revalidation.
+
+## Results and limitations
 
 | Test group | Result | Evidence / limitation |
 |---|---|---|
-| Recovery crypto safety workflow | PASS | Workflow #5, run 45181979802, exact feature head `9997b328e32a9ac542f914dbdc6d92bf3e34949d` |
-| age round trip, wrong-key rejection, tamper detection, SHA-256 verification, missing-file handling, overwrite refusal | PASS | Included in exact-head Recovery crypto workflow #5; synthetic fixtures only |
-| Exporter dry-run / no database side effects | PASS | Included in exact-head full AiOS CI #419 recovery script test coverage; inert command stubs only |
-| Credential-redaction and incomplete-export guards | PASS | Included in exact-head full AiOS CI #419; synthetic sentinel values and guard tests only |
-| Full AiOS CI | PASS | Run 45181979825; all four jobs passed: `functions-behavioral`, `evidence-integrity`, `functions-typecheck`, `migrations-and-sql-tests` |
-| Isolated PostgreSQL CI validation | PASS | Full AiOS CI #419 migration/SQL test job passed, including disposable test database stages; not a production-equivalent restore |
-| Google Drive upload/download round trip | NOT RUN | No authenticated Drive integration available to this agent |
-| Human Director local FileVault, free space, PostgreSQL inventory | NOT VERIFIED | Owner device is not accessible from this execution environment |
-| Production export and isolated production-artifact restore | NOT STARTED | Explicitly unauthorized while G3 prerequisites remain unresolved |
-| Agent 003 independent review | PENDING | Exact-head review requested; no submitted review disposition recorded at this checkpoint |
+| Exact-head AiOS CI | PASS | Run 45184608345 on exact head `48e1c23c946f96e75d9b60005b140cdbf2102fc9` |
+| Exact-head recovery crypto suite | PASS | Run 45184608305 on the same exact head |
+| Synthetic PostgreSQL export/restore | PASS | Disposable CI fixture only; not production-equivalent recovery |
+| Google Drive upload/download round trip | NOT RUN | No authenticated Drive integration available to this execution environment |
+| Owner device FileVault, free space and PostgreSQL inventory | NOT VERIFIED | Owner device is not accessible from this execution environment |
+| Production export and isolated production-artifact restore | NOT STARTED | G3 prerequisites remain blocked; no exact-operation authorization recorded |
+| Agent 003 independent review | PENDING | Exact-head review requested; no submitted review disposition recorded |
 
-## Workflow evidence
+## Evidence integrity and timestamp policy
 
-- Full AiOS CI #419: https://github.com/Neuracoderepo1/AiOS/actions/runs/45181979825
-- Recovery crypto safety workflow #5: https://github.com/Neuracoderepo1/AiOS/actions/runs/45181979802
+These workflow conclusions apply only to the exact feature head stated above. Any subsequent commit changes the feature head and requires fresh exact-head workflows before certification. Cancelled or superseded runs are not counted as passes or failures.
 
-## Timestamp and evidence policy
-
-These workflow conclusions apply to the exact feature head stated above. If a subsequent commit changes the feature head, rerun the relevant workflows and update this record. Cancelled superseded runs are not counted as passes or failures. Do not fill PASS based on expected behavior or code inspection alone.
-
-Production restore status remains NOT STARTED regardless of synthetic CI results. G3 production export remains BLOCKED until owner-side storage/custody/target evidence and Agent 003's independent review are complete, followed by separate exact-operation authorization from the Human Director.
+Production restore remains NOT STARTED regardless of synthetic CI results. G3 production export remains BLOCKED until owner-side storage/custody/target evidence and Agent 003's independent review are complete, followed by separate exact-operation authorization from the Human Director.
