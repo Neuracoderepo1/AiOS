@@ -511,3 +511,67 @@ From reference head `f0f0b203e43166efa312ba9338b5ac59a113b3e1` to pre-successor 
 ### 25.4 Release boundary
 
 The Release Hold Record v2 remains ACTIVE. Hosted database access, migration execution, deployment, merge, production configuration or privilege changes, and any claim that a hosted gate has passed remain outside this work. Production certification remains **WITHHELD / NOT CERTIFIED**. Agent 004 supplies implementation and evidence; Agent 003 independently reviews and certifies.
+
+
+## 26. G1/G2 retry history and authoritative evidence identities — 23 November 2026
+
+**Evidence branch:** `agent004/mission-cancellation-contract`  
+**Pre-reconciliation head:** `90d717fe420be21a712cd8f5494a87808d91cfa9`  
+**PR #40:** OPEN / NON-DRAFT / UNMERGED. This section records repository/CI evidence and review state only. It does not authorize merge, deployment, hosted migration, production writes, backup/restore, or production configuration changes.
+
+### 26.1 G1 exact-head workflow history
+
+G1 requires all three required workflows to pass on one identical frozen commit. A successful run from a different SHA is predecessor evidence only and cannot be substituted.
+
+| Exact SHA | AiOS CI | ET27 seal guard | ET27 delete protection | G1 disposition |
+|---|---|---|---|---|
+| `58a67702efa2167c2060bb3e40d37880b7b6b00d` | [45049001169](https://github.com/Neuracoderepo1/AiOS/actions/runs/45049001169), SUCCESS 4/4 | [45049001172](https://github.com/Neuracoderepo1/AiOS/actions/runs/45049001172), SUCCESS 1/1 | [45049001252](https://github.com/Neuracoderepo1/AiOS/actions/runs/45049001252), SUCCESS 1/1 | PASS for this SHA only |
+| `d02b00afc8cbb3ca151964374671ba4cfb17104e` | [45065296382](https://github.com/Neuracoderepo1/AiOS/actions/runs/45065296382), SUCCESS 4/4 | [45065296350](https://github.com/Neuracoderepo1/AiOS/actions/runs/45065296350), SUCCESS | [45065296355](https://github.com/Neuracoderepo1/AiOS/actions/runs/45065296355), initial attempt failed before suite execution due Docker host-port 54322 bind conflict; failed-job-only retry on the same run/SHA succeeded | PASS after same-SHA retry |
+| `f0f0b203e43166efa312ba9338b5ac59a113b3e1` | [45068329781](https://github.com/Neuracoderepo1/AiOS/actions/runs/45068329781), SUCCESS 4/4 | [45068329782](https://github.com/Neuracoderepo1/AiOS/actions/runs/45068329782), SUCCESS 1/1 | [45068329795](https://github.com/Neuracoderepo1/AiOS/actions/runs/45068329795), SUCCESS 1/1 | PASS for this SHA only |
+| `90d717fe420be21a712cd8f5494a87808d91cfa9` | [45082440084](https://github.com/Neuracoderepo1/AiOS/actions/runs/45082440084), SUCCESS 4/4 | [45082439869](https://github.com/Neuracoderepo1/AiOS/actions/runs/45082439869), SUCCESS 1/1 | [45082439859](https://github.com/Neuracoderepo1/AiOS/actions/runs/45082439859), SUCCESS 1/1 | PASS for this SHA only; current evidence head before this reconciliation |
+
+### 26.2 G1 artifact identity and integrity history
+
+All artifact identities below are associated by GitHub metadata with the exact SHA and workflow run stated. Unless explicitly marked independently recomputed, the digest is GitHub's artifact API-reported SHA-256.
+
+**SHA `58a67702efa2167c2060bb3e40d37880b7b6b00d`:**
+- `aios-ci-evidence` ID `14764379287`, SHA-256 `591052b40ecb1fb3b9b7aebe714035a6bbf4a6f93eca78c84772b06f651b2f20`
+- `behavioral-evidence` ID `14765021178`, SHA-256 `81dcbba7f7c4566dddd65e48b177a2cdba96ca9c3138f04de9963a0860b2fa72`
+- `et27-seal-guard-evidence` ID `14764946686`, SHA-256 `4975a6c92cbf91c206252bf526104c3d2bbadce084ce6a6d5d3485a89629fe90`
+- `et27-delete-protection-evidence` ID `14765006490`, SHA-256 `92814ecfeff486bc78e0d4a59e4ed4e8cbc954878aa8dbc9dfbf1067d4d6b882`
+
+**SHA `d02b00afc8cbb3ca151964374671ba4cfb17104e`:**
+- Passing retry artifact: `et27-delete-protection-evidence` ID `14772381473`, SHA-256 `8cb50b64bd1b59eab279f9bdd8854917572c2dbfbd6ca1841c00e4e0c6d21b7f`.
+- Failed-attempt diagnostic artifact ID `14770714857` is explicitly excluded from passing evidence.
+- The initial delete-protection failure was infrastructure startup only; the suite did not execute. The successful failed-job-only retry ran all 11 steps, including migration replay, credential-redaction check, delete-protection suite and evidence upload.
+
+**SHA `f0f0b203e43166efa312ba9338b5ac59a113b3e1`:**
+- `aios-ci-evidence` ID `14772249046`, SHA-256 `92607d578d791588b13e65832dc683830e83fc354c54f55de6151b9333f7f1dc`
+- `behavioral-evidence` ID `14772341992`, SHA-256 `7de6a79c7d1b320db1864f09d13349e5ab98f6b8f2d85ca030a2abf774aa3ffe`
+- `et27-seal-guard-evidence` ID `14772700563`, SHA-256 `71c66f582fc89e5f0cf6154595f691f7fb4a7646f01ead7cdfd9d4b93d9a69b6`
+- `et27-delete-protection-evidence` ID `14772506234`, SHA-256 `20fb1316f34b168e432b3a53193b1e144ebd886a8fadb4d611f9d4fe3373ceab`
+- Agent 004's evidence-integrity addendum records that all four ZIP archives were downloaded and independently re-hashed; each local SHA-256 matched GitHub's digest.
+
+**SHA `90d717fe420be21a712cd8f5494a87808d91cfa9`:**
+- `aios-ci-evidence` ID `14778212062`, run `45082440084`, SHA-256 `acc3669cd277bf4bd98c47969cc8d5b721a0a3711769a5f22e74eff3b2ccaac1`
+- `behavioral-evidence` ID `14777493465`, run `45082440084`, SHA-256 `0abdbe1eba197483c5f237dc877eb0738c66e3b703234e057047847dd36c5a6a`
+- `et27-seal-guard-evidence` ID `14777852361`, run `45082439869`, SHA-256 `99722dd1389dd93939928dd59d3cf2f67cce7264fb3a81903a0f3d88d8ab4afd`
+- `et27-delete-protection-evidence` ID `14777254731`, run `45082439859`, SHA-256 `650da64fb366ef8a3d6abd5e663e5242bbc723fbbe3049e300ffb19e478eac85`
+- Agent 004's 23 November handoff comment `7094818177` records that all four downloaded ZIPs were independently re-hashed and matched these digests. Live Actions metadata confirms all four artifacts are unexpired and each `workflow_run.head_sha` equals `90d717fe420be21a712cd8f5494a87808d91cfa9`.
+
+### 26.3 G2 independent-disposition history
+
+G2 is a separate gate from G1. Passing CI and matching artifact digests do not satisfy G2 without Agent 003's written disposition on the same exact evidence head.
+
+- On `58a67702efa2167c2060bb3e40d37880b7b6b00d`, Agent 003's review comment `6013856552` (22 November) accepted the engineering evidence at the stated source/CI level and retained production certification as withheld.
+- On `262efa84ec519a6a311a2437f0e0c666317156ed`, Agent 003's updated disposition comment `6012997307` confirmed F-40-09 closed at documentation-reconciliation level and F-40-08 accepted at source/real-PostgreSQL test-evidence level. Production certification remained withheld.
+- On `f0f0b203e43166efa312ba9338b5ac59a113b3e1`, Agent 003's disposition comment `7094939771` accepted engineering evidence with documentation follow-up, but explicitly found F-40-09 not closed for that latest documentation successor. Agent 003 required both authoritative documents to be reconciled and a fresh successor evidence set.
+- On `90d717fe420be21a712cd8f5494a87808d91cfa9`, Agent 004 submitted the exact-head handoff in PR comment `7094818177`, including the three successful workflows, four artifact identities, independent ZIP re-hashes, and PR stack metadata. **A G2 disposition on this exact SHA is not yet recorded in the PR review history. G2 therefore remains PENDING Agent 003's independent review of this evidence head.**
+
+### 26.4 Current disposition and successor rule
+
+The 23 November reconciliation request is to correct the two authoritative documents, not to transfer an earlier G2 decision to a later SHA. This section records the predecessor history without treating any predecessor workflow or review as current-head evidence.
+
+The present documentation commit must receive its own three exact-head workflows, artifact inventory and digest verification. Agent 003 must then issue a written disposition on that exact successor SHA. Until that happens, G1/G2 for the successor are not claimed complete.
+
+**Release boundary:** F-40-09 is a documentation-reconciliation finding, not production certification. PR #40 remains open and unmerged. Production certification remains **WITHHELD / NOT CERTIFIED**. No hosted migration, deployment, production write, owner-session impersonation, backup/restore, branch-governance change, merge, or production configuration change is authorized by this documentation update. **Access is not authority.**
