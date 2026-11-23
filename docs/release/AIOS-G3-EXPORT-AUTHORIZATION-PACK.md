@@ -4,6 +4,8 @@
 **Project:** `jtkcdwhiduixoiodhbfn` (Project AiOS, `eu-west-1`)  
 **No production export has been initiated.**
 
+**Plan constraint:** the AiOS organization is confirmed on Supabase Free. Supabase's [Database Backups documentation](https://supabase.com/docs/guides/platform/backups) states automatic daily backups are provided for Pro/Team/Enterprise; Free projects should maintain their own logical exports, and Free backups are not available for download. PITR is a paid add-on and is not assumed or enabled. G3 therefore requires a manually created logical export to an owner-approved encrypted off-platform destination.
+
 This record must be completed and approved before any production logical export or transfer. Do not place passwords, private keys, access tokens, JWTs, connection strings, or recovery credentials in this document, GitHub, or chat.
 
 ## A. Source and scope
