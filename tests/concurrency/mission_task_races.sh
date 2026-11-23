@@ -31,15 +31,20 @@ fire() { # fire <fd> <sql>: send WITHOUT waiting (used for a statement that is e
   printf '%s\n' "$2" >&"$1"
 }
 wait_out() { local i=0; until grep -q "$2" "$D/$1.out" 2>/dev/null; do i=$((i+1)); [ $i -gt $3 ] && { echo "  TIMEOUT waiting for $2 in $1"; return 1; }; sleep 0.05; done; }
-pid_of() { step "$1" "$2" "select 'PID='||pg_backend_pid();" >/dev/null; grep -o 'PID=[0-9]*' "$D/$1.out" | tail -1 | cut -d= -f2; }
+pid_of() { # Use a session-unique sentinel; command substitution would discard step()'s global counter update.
+  local tag="PID_READY_$1"
+  printf "select 'PID='||pg_backend_pid();\nselect '%s';\n" "$tag" >&"$2"
+  wait_out "$1" "$tag" 600 || return 1
+  grep -o 'PID=[0-9]*' "$D/$1.out" | tail -1 | cut -d= -f2
+}
 blocked() { # blocked <pid>: true once that backend is waiting on a heavyweight lock
   local i=0; until [ "$(q "select count(*) from pg_stat_activity where pid=$1 and wait_event_type='Lock'")" = 1 ]; do i=$((i+1)); [ $i -gt 400 ] && return 1; sleep 0.05; done; return 0; }
 
 # ---- fixture ----------------------------------------------------------------------------------------------------------
-ORG=c5c5c5c5-0000-4000-8000-000000000001; AGT=c5c5c5c5-0000-4000-8000-000000000002; USR=c5c5c5c5-0000-4000-8000-000000000003
-q "insert into auth.users (id, aud, role, email) values ('$USR','authenticated','authenticated','mtr@example.test') on conflict do nothing;
+ORG=c5c5c5c5-0000-4000-8000-000000000001; AGT=c5c5c5c5-0000-4000-8000-000000000002; USR=c5c5c5c5-0000-4000-8000-000000000003; ADM=c5c5c5c5-0000-4000-8000-000000000004
+q "insert into auth.users (id, aud, role, email) values ('$USR','authenticated','authenticated','mtr@example.test'),('$ADM','authenticated','authenticated','mtr-admin@example.test') on conflict do nothing;
    insert into public.aios_organizations (id,name) values ('$ORG','mtr-org') on conflict do nothing;
-   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$USR','member') on conflict do nothing;
+   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$USR','owner'),('$ORG','$ADM','admin') on conflict (organization_id,user_id) do update set role=excluded.role;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','mtr-agent','mtr','mtr','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.search_tickets\"],\"limits\":{}}') on conflict do nothing;
    insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium','[\"support.search_tickets\"]','{}',true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null || { echo "fixture failed"; exit 1; }
 
@@ -113,6 +118,95 @@ echo "  after task cancel: mission/task/invocation = $(state $M $T $I)"
 check "no orphaned 'approved' invocation remains once its task is cancelled" "$([ "$(q "select status from public.aios_tool_invocations where id='$I'")" != approved ] && echo true || echo false)"
 res=$(q "begin; $(as_service) select 'OK' from (select public.aios_kernel_authorize_invocation('$I')) x; commit;" 2>&1 | tail -1)
 check "kernel refuses to execute for a cancelled task (got: $(echo "$res" | cut -c1-70))" "$(echo "$res" | grep -qi 'not executable\|invocation' && echo true || echo false)"
+
+echo "== R3: task INSERT racing authenticated mission cancellation (parent FOR SHARE barrier)"
+# Hold the same lock order as the RPC while running as the database owner, then
+# switch to authenticated before invoking the real RPC. This avoids RLS visibility
+# from silently turning the intended row locks into zero-row SELECTs.
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-cancel-race','mtr','queued') returning id" | head -1); need_ids "$M"
+open_sess A 3; open_sess B 4; PA=$(pid_of A 3); PB=$(pid_of B 4)
+step A 3 "begin; select 'MEMBER_LOCKED='||user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$USR' for share; select 'MISSION_LOCKED='||id from public.aios_missions where id='$M' for update; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true);" >/dev/null
+if ! grep -q "MEMBER_LOCKED=$USR" "$D/A.out" || ! grep -q "MISSION_LOCKED=$M" "$D/A.out"; then
+  echo "  fixture failed: session A did not acquire both membership and mission locks"
+  cat "$D/A.out"
+  fail=1
+else
+  echo "  barrier owner: membership FOR SHARE and mission FOR UPDATE acquired"
+fi
+fire 4 "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status) values ('$ORG','$M','$AGT','racing task','queued'); select 'INSERT_DONE';"
+blocked "$PB" && echo "  barrier: task INSERT is waiting on mission FOR SHARE (observed in pg_stat_activity)" || { echo "  barrier never reached"; cat "$D/B.out"; fail=1; }
+step A 3 "select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
+if ! grep -q "CANCEL_RESULT=cancelled" "$D/A.out"; then
+  echo "  cancellation RPC did not commit its expected outcome"
+  cat "$D/A.out"
+  fail=1
+fi
+step A 3 "commit;" >/dev/null
+wait_out B "INSERT_DONE" 400 || { echo "  task worker did not reach its post-insert sentinel"; cat "$D/B.out"; fail=1; }
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+insert_errors=$(grep -c "parent mission is terminal" "$D/B.out" || true)
+remaining=$(q "select count(*) from public.aios_tasks where mission_id='$M' and status in ('queued','assigned','ready','running','approved','blocked_pending_approval')")
+echo "  terminal-insert-errors=$insert_errors committed-live-task-rows=$remaining"
+check "task INSERT waits for cancellation then rejects terminal parent" "$([ "$insert_errors" -ge 1 ] && [ "$remaining" = 0 ] && echo true || echo false)"
+
+
+echo "== R4: membership downgrade waits behind authenticated cancellation FOR SHARE"
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-downgrade-race','mtr','queued') returning id" | head -1); need_ids "$M"
+open_sess C 3; open_sess D 4; PA=$(pid_of C 3); PB=$(pid_of D 4)
+step C 3 "begin; select 'MEMBER_LOCKED='||user_id from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM' for share; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');" >/dev/null
+grep -q "CANCEL_RESULT=cancelled" "$D/C.out" || { echo "  cancellation did not complete while holding membership FOR SHARE"; cat "$D/C.out"; fail=1; }
+fire 4 "begin; update public.aios_organization_members set role='member' where organization_id='$ORG' and user_id='$ADM'; select 'DOWNGRADE_DONE';"
+blocked "$PB" && echo "  barrier: role downgrade waits behind membership FOR SHARE" || { echo "  downgrade did not block on cancellation membership lock"; cat "$D/D.out"; fail=1; }
+step C 3 "commit;" >/dev/null
+wait_out D "DOWNGRADE_DONE" 400 || { echo "  downgrade did not resume after cancellation commit"; cat "$D/D.out"; fail=1; }
+step D 4 "commit;" >/dev/null
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+check "cancellation wins when its membership FOR SHARE lock is first" "$([ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] && echo true || echo false)"
+check "role downgrade commits only after cancellation transaction" "$([ "$(q "select role from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'")" = member ] && echo true || echo false)"
+
+echo "== R5: membership deletion commits first; cancellation rejects without mission/audit mutation"
+q "update public.aios_organization_members set role='admin' where organization_id='$ORG' and user_id='$ADM'" >/dev/null
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-membership-delete-first','mtr','queued') returning id" | head -1); need_ids "$M"
+audit_before=$(q "select coalesce(jsonb_agg(to_jsonb(a) order by a.ctid), '[]'::jsonb) from public.aios_audit_events a where a.organization_id='$ORG'")
+q "delete from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM'" >/dev/null
+denied=$(psql "$DB" -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -c "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select public.aios_cancel_mission('$M'); commit;" 2>&1 || true)
+echo "$denied" | grep -q '42501' || { echo "  expected SQLSTATE 42501 after membership deletion; got: $(echo "$denied" | tail -2)"; fail=1; }
+audit_after=$(q "select coalesce(jsonb_agg(to_jsonb(a) order by a.ctid), '[]'::jsonb) from public.aios_audit_events a where a.organization_id='$ORG'")
+check "deleted member cannot cancel and mission remains queued" "$([ "$(q "select status from public.aios_missions where id='$M'")" = queued ] && echo true || echo false)"
+check "rejected cancellation leaves audit stream unchanged" "$([ "$audit_after" = "$audit_before" ] && echo true || echo false)"
+q "insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$ADM','admin') on conflict (organization_id,user_id) do update set role='admin'" >/dev/null
+
+echo "== R6: task INSERT commits first while cancellation waits; cancellation cascades the committed task"
+M=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-insert-first-cancel-second','mtr','queued') returning id" | head -1); need_ids "$M"
+T=$(q "select gen_random_uuid()")
+open_sess E 3; open_sess F 4; PA=$(pid_of E 3); PB=$(pid_of F 4)
+step F 4 "begin; insert into public.aios_tasks (id,organization_id,mission_id,assigned_agent_id,title,status) values ('$T','$ORG','$M','$AGT','insert commits before cancellation','queued');" >/dev/null
+fire 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M')->>'outcome');"
+blocked "$PA" && echo "  barrier: cancellation waits behind the task INSERT's parent FOR SHARE lock" || { echo "  cancellation did not wait for uncommitted task insert"; cat "$D/E.out"; fail=1; }
+step F 4 "commit;" >/dev/null
+wait_out E "CANCEL_RESULT=cancelled" 400 || { echo "  cancellation did not resume after task commit"; cat "$D/E.out"; fail=1; }
+step E 3 "commit;" >/dev/null
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+task_status=$(q "select status from public.aios_tasks where id='$T' and mission_id='$M'")
+echo "  committed task status after cancellation=$task_status"
+check "task INSERT commits first and is then terminalized by cancellation cascade" "$([ "$task_status" = cancelled ] && [ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] && echo true || echo false)"
+
+echo "== R7: live task re-parented under a mission whose cancellation is in flight (mission_id change gate)"
+M1=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-reparent-src','mtr','queued') returning id" | head -1)
+M2=$(q "insert into public.aios_missions (organization_id,title,objective,status) values ('$ORG','mtr-reparent-dst','mtr','queued') returning id" | head -1); need_ids "$M1" "$M2"
+T=$(q "insert into public.aios_tasks (organization_id,mission_id,assigned_agent_id,title,status) values ('$ORG','$M1','$AGT','reparent victim','queued') returning id" | head -1); need_ids "$T"
+open_sess G 3; open_sess H 4; printf '\\set VERBOSITY verbose\n' >&4; PA=$(pid_of G 3); PB=$(pid_of H 4)
+# Cancellation (uncommitted) holds the destination mission FOR UPDATE, as the RPC does.
+step G 3 "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$USR',true); select 'CANCEL_RESULT='||(public.aios_cancel_mission('$M2')->>'outcome');" >/dev/null
+grep -q "CANCEL_RESULT=cancelled" "$D/G.out" || { echo "  fixture failed: cancellation did not run"; cat "$D/G.out"; fail=1; }
+step H 4 "update public.aios_tasks set mission_id='$M2' where id='$T';" >/dev/null
+check "re-parent fails closed with SQLSTATE 55P03 while destination cancellation is in flight" "$(grep -q '55P03' "$D/H.out" && grep -qi 'could not obtain lock' "$D/H.out" && echo true || echo false)"
+check "task still belongs to its original mission after the refused re-parent" "$([ "$(q "select mission_id from public.aios_tasks where id='$T'")" = "$M1" ] && echo true || echo false)"
+step G 3 "commit;" >/dev/null
+step H 4 "update public.aios_tasks set mission_id='$M2' where id='$T';" >/dev/null
+check "re-parent under the now-terminal mission is rejected with SQLSTATE 42501" "$(grep -q '42501' "$D/H.out" && grep -q 'parent mission is terminal (cancelled)' "$D/H.out" && echo true || echo false)"
+exec 3>&- 4>&-; kill $(jobs -p) 2>/dev/null
+check "no live task is attached to the cancelled destination mission" "$([ "$(q "select count(*) from public.aios_tasks where mission_id='$M2' and status in ('queued','assigned','ready','running','approved','blocked_pending_approval')")" = 0 ] && echo true || echo false)"
 
 echo "== mission/task races: $([ $fail = 0 ] && echo ALL PASS || echo FAILURES)"
 exit $fail

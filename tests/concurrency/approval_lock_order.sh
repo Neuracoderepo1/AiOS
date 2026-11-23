@@ -63,9 +63,14 @@ ORG=a1a1a1a1-0000-4000-8000-000000000001; AGT=a1a1a1a1-0000-4000-8000-0000000000
 REQ=a1a1a1a1-0000-4000-8000-000000000003; ADM=a1a1a1a1-0000-4000-8000-000000000004
 q "insert into auth.users (id,aud,role,email) values ('$REQ','authenticated','authenticated','alo-req@example.test'),('$ADM','authenticated','authenticated','alo-adm@example.test') on conflict do nothing;
    insert into public.aios_organizations (id,name) values ('$ORG','alo-org') on conflict do nothing;
-   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$REQ','member'),('$ORG','$ADM','admin') on conflict do nothing;
+   insert into public.aios_organization_members (organization_id,user_id,role) values ('$ORG','$REQ','member'),('$ORG','$ADM','admin') on conflict (organization_id,user_id) do update set role=excluded.role;
    insert into public.aios_agents (id,organization_id,agent_key,name,role,status,authority) values ('$AGT','$ORG','alo-agent','alo','alo','idle','{\"risk_level\":\"medium\",\"allowed_tools\":[\"support.export_customer_data\"],\"limits\":{}}') on conflict do nothing;
    insert into public.aios_contracts (organization_id,agent_id,version,risk_level,allowed_tools,limits,is_active) values ('$ORG','$AGT',1,'medium','[\"support.export_customer_data\"]','{}',true) on conflict (agent_id,version) do update set is_active=true;" >/dev/null || { echo "fixture failed"; exit 2; }
+
+# Fixture precondition (fail closed): the cancelling identity must hold owner/admin rights in EVERY org these races use (only $ORG).
+[ "$(q "select count(*) from public.aios_organization_members where organization_id='$ORG' and user_id='$ADM' and role in ('owner','admin')")" = 1 ] \
+  || { echo "  FIXTURE FAILED: ADM lacks owner/admin in $ORG; refusing to report any result"; exit 2; }
+
 
 need_ids() { for x in "$@"; do [[ "$x" =~ ^[0-9a-f-]{36}$ ]] || { echo "  FIXTURE FAILED (empty/invalid id): refusing to report any result"; exit 2; }; done; }
 as_service() { echo "set local role service_role; select set_config('request.jwt.claims','{\"role\":\"service_role\"}',true);"; }
@@ -110,7 +115,9 @@ cancelled_count() { local n=0 c M; for c in "$@"; do read M _ <<<"$c"; [ "$(q "s
 
 RESOLVE() { echo "begin; $(as_service) select public.aios_resolve_approval('$2','approved','$ADM','alo'); commit;"; }  # $1 unused
 AUTHZ()   { echo "begin; $(as_service) select public.aios_kernel_authorize_invocation('$1'); commit;"; }
-CANCEL()  { echo "begin; update public.aios_missions set status='cancelled' where id='$1'; commit; select 'CANCEL_OK';"; }
+# Exercise the public cancellation RPC under a real authenticated owner/admin JWT.
+# Never use service_role or a caller-supplied actor UUID for this path.
+CANCEL()  { echo "begin; set local role authenticated; select set_config('request.jwt.claim.sub','$ADM',true); select public.aios_cancel_mission('$1'); commit;"; }
 
 echo "== L1: approval resolution vs kernel authorizer on the same invocation ($PAIRS pairs)"
 ch=(); W=(); for k in $(seq 1 $PAIRS); do c=$(new_chain l1$k); ch+=("$c"); read M T I A <<<"$c"; W+=("$(RESOLVE x $A)" "$(AUTHZ $I)"); done
@@ -133,11 +140,10 @@ check "no deadlock between the expiry job and mission cancel" "$([ "$DEAD" = 0 ]
 # (P0001 'failed -> cancelled'). That is a correct outcome, NOT a lost kill switch. What must hold: every mission ends in EXACTLY ONE terminal state
 # (cancelled or failed), cancels either committed or were rejected by that guard (no other error class, in particular no 40P01/55P03/40001), and children are consistent.
 term=0; for c in "${ch[@]}"; do read M _ <<<"$c"; case "$(q "select status from public.aios_missions where id='$M'")" in cancelled|failed) term=$((term+1));; esac; done
-other_err=$(cat "$EVID"/workers/l3_*.err "$EVID"/workers/l3_*.out | grep -E 'ERROR' | grep -vc 'invalid mission state transition: failed -> cancelled')
-guard_err=$(cat "$EVID"/workers/l3_*.err "$EVID"/workers/l3_*.out | grep -c 'invalid mission state transition: failed -> cancelled')
-echo "  terminal=$term/$PAIRS cancelled=$cc rejected_by_state_guard=$guard_err other_errors=$other_err"
+rpc_errors=$(cat "$EVID"/workers/l3_*.err "$EVID"/workers/l3_*.out | grep -c 'ERROR')
+echo "  terminal=$term/$PAIRS cancelled=$cc rpc_errors=$rpc_errors"
 check "every mission reached exactly one terminal state (cancelled or failed)" "$([ "$term" = $PAIRS ] && echo true || echo false)"
-check "cancels either committed or were rejected only by the terminal-state guard (no other error class)" "$([ "$other_err" = 0 ] && [ $((cc + guard_err)) = $PAIRS ] && echo true || echo false)"
+check "authenticated cancellation RPC and expiry race has no SQL errors" "$([ "$rpc_errors" = 0 ] && echo true || echo false)"
 check "no live invocation left under a cancelled mission" "$([ "$bi" = 0 ] && echo true || echo false)"
 
 echo "== L4: stale-task reaper vs mission cancellation ($PAIRS pairs)"
@@ -156,9 +162,33 @@ new_stale() { # <label>: mission+task 'running' and stale (no invocation). Echoe
 ch=(); W=(); for k in $(seq 1 $PAIRS); do read M T <<<"$(new_stale l4$k)"; ch+=("$M $T x x")
   [ "$(q "select count(*) from public.aios_tasks where id='$T' and status='running' and updated_at < now() - interval '10 minutes'")" = 1 ] || { echo "  FIXTURE: L4 task is not running+stale; refusing to report"; exit 2; }
   W+=("select private.aios_reap_stale_tasks('10 minutes'::interval);" "$(CANCEL $M)"); done
-gate_run l4 "${W[@]}"; cc=$(cancelled_count "${ch[@]}"); echo "  deadlocks=$DEAD cancels_committed=$cc/$PAIRS"
-check "no deadlock between the reaper and mission cancel" "$([ "$DEAD" = 0 ] && echo true || echo false)"
-check "every mission cancellation committed (or already failed by the reaper)" "$([ "$(for c in "${ch[@]}"; do read M _ <<<"$c"; q "select status from public.aios_missions where id='$M'"; done | grep -cE 'cancelled|failed')" = $PAIRS ] && echo true || echo false)"
+gate_run l4 "${W[@]}"; cc=$(cancelled_count "${ch[@]}"); rpc_errors=$(cat "$EVID"/workers/l4_*.err "$EVID"/workers/l4_*.out | grep -c 'ERROR')
+echo "  deadlocks=$DEAD cancelled=$cc/$PAIRS rpc_errors=$rpc_errors"
+check "no deadlock between the reaper and authenticated cancellation RPC" "$([ "$DEAD" = 0 ] && echo true || echo false)"
+check "every mission ends terminal after reaper/RPC race" "$([ "$(for c in "${ch[@]}"; do read M _ <<<"$c"; q "select status from public.aios_missions where id='$M'"; done | grep -cE 'cancelled|failed')" = $PAIRS ] && echo true || echo false)"
+check "reaper/RPC race has no SQL errors" "$([ "$rpc_errors" = 0 ] && echo true || echo false)"
+
+echo "== L5: concurrent repeated authenticated cancellation RPC ($PAIRS pairs)"
+ch=(); W=()
+for k in $(seq 1 $PAIRS); do
+  read M T <<<"$(new_stale l5$k)"
+  ch+=("$M $T x x")
+  W+=("$(CANCEL $M)" "$(CANCEL $M)")
+done
+gate_run l5 "${W[@]}"
+rpc_errors=$(cat "$EVID"/workers/l5_*.err "$EVID"/workers/l5_*.out | grep -c 'ERROR')
+result_rows=$(grep -h '"outcome":' "$EVID"/workers/l5_*.out | wc -l | tr -d ' ')
+bad_audit=0
+for c in "${ch[@]}"; do
+  read M _ <<<"$c"
+  [ "$(q "select status from public.aios_missions where id='$M'")" = cancelled ] || bad_audit=$((bad_audit+1))
+  [ "$(q "select count(*) from public.aios_audit_events where mission_id='$M' and event_type='mission_cancellation_requested'")" = 1 ] || bad_audit=$((bad_audit+1))
+done
+echo "  deadlocks=$DEAD rpc_errors=$rpc_errors recognized_results=$result_rows/$((PAIRS*2)) bad_mission_or_audit_oracles=$bad_audit"
+check "no deadlock between concurrent repeated cancellation requests" "$([ "$DEAD" = 0 ] && echo true || echo false)"
+check "both calls per mission return a stable cancellation outcome" "$([ "$result_rows" = $((PAIRS*2)) ] && echo true || echo false)"
+check "each mission is cancelled with exactly one cancellation audit event" "$([ "$bad_audit" = 0 ] && echo true || echo false)"
+check "concurrent repeated cancellation has no SQL errors" "$([ "$rpc_errors" = 0 ] && echo true || echo false)"
 
 echo "== approval lock-order races: $([ $fail = 0 ] && echo ALL PASS || echo FAILURES)"
 exit $fail

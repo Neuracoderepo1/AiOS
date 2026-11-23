@@ -29,7 +29,7 @@ jobs:
   evidence-integrity:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify evidence + manifest against pinned hashes
@@ -40,7 +40,7 @@ jobs:
   functions-typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: denoland/setup-deno@v2
@@ -65,7 +65,7 @@ jobs:
     env:
       DENO_RUN: "deno test --import-map=tests/functions/behavioral/import_map.json --allow-env --allow-read"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: denoland/setup-deno@v2
@@ -102,7 +102,7 @@ jobs:
           NO_COLOR=1 $DENO_RUN tests/functions/behavioral/gaps/*.gap.ts 2>&1 | tee gaps.txt
       - name: Upload behavioral evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: behavioral-evidence
           path: |
@@ -118,10 +118,10 @@ jobs:
     needs: evidence-integrity   # integrity must pass before the matrix is accepted
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3.2.0
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
       - name: Recovery export/restore safety self-tests
@@ -141,6 +141,11 @@ jobs:
         run: |
           set +e
           supabase --version
+          # Select an unused loopback host port for the ephemeral CI database.
+          # The default 54322 can be occupied by runner-level Docker networking.
+          db_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("0.0.0.0", 0)); print(s.getsockname()[1]); s.close()')
+          printf '\n[db]\nport = %s\n' "$db_port" >> supabase/config.toml
+          echo "Using isolated CI database host port $db_port"
           : > /tmp/start.raw.txt; : > /tmp/start.txt; : > /tmp/ports.txt
           started=0
           for attempt in 1 2 3; do
@@ -449,7 +454,7 @@ jobs:
 
       - name: Upload test evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: aios-ci-evidence
           path: |
