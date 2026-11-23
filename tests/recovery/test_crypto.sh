@@ -28,6 +28,10 @@ printf 'tamper' >> "$TMP/work/tampered.age"
 sed 's/synthetic.dump.age/tampered.age/' "$TMP/work/synthetic.dump.age.sha256" > "$TMP/work/tampered.age.sha256"
 if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/tampered.age.sha256" >/dev/null 2>&1; then fail "tampered ciphertext passed manifest"; fi
 pass "tampered-file detection"
+# A valid hash entry must not be allowed to redirect verification to a different file.
+sed 's/synthetic.dump.age/unrelated.age/' "$TMP/work/synthetic.dump.age.sha256" > "$TMP/work/substituted.age.sha256"
+if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/substituted.age.sha256" >/dev/null 2>&1; then fail "substituted manifest filename accepted"; fi
+pass "manifest is bound to the exact ciphertext filename"
 if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/missing.sha256" >/dev/null 2>&1; then fail "missing manifest accepted"; fi
 if AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" bash "$ROOT/scripts/recovery/encrypt_artifact.sh" "$TMP/work/missing.dump" "$TMP/work/missing.age" >/dev/null 2>&1; then fail "missing input accepted"; fi
 pass "missing-file handling"
