@@ -922,3 +922,53 @@ The behavioral identity record distinguishes the PR head/checked-out HEAD (`5323
 The hosted-production gates remain separate and outstanding: fresh hosted schema/function/grant parity; a reviewed staged plan for the 14 unapplied candidate migrations; genuine authenticated owner-session audit verification; managed backup/recovery evidence; and complete owner-level branch-governance evidence. CI's local PostgreSQL restore test is not a managed production backup or production recovery exercise.
 
 PR #40 remains open and unmerged. Production certification remains **WITHHELD / NOT CERTIFIED**. No merge, deployment, hosted migration, production data write, production role/grant/RLS/trigger/cron/Auth change, secret or billing change, backup/restore, or production configuration change is authorized by this evidence update. **Access is not authority.** Agent 004 supplies implementation and evidence; Agent 003 alone issues independent certification.
+
+
+## 28. Human Director release authorization and 23 November exact-head checkpoint
+
+**Current evidence head:** `e414fad62f1223d1f54faf2617989e424a024a7f`  
+**Branch:** `agent004/mission-cancellation-contract`  
+**PR #40:** OPEN / NON-DRAFT / UNMERGED. Its base is `agent004/f2-reaper-record-isolation` (PR #35), not `main`.
+
+### 28.1 Human Director authority
+
+On 23 November 2026, Human Director Derrick Morris authorized Agent 004 to assume delegated execution authority for the remaining AiOS release operations, including G5 production merge and migration, **only after successful G1, G2, G3 and G4 and independent engineering review**. The authorization lifts Release Hold v2 only for the specifically approved release candidate once those prerequisites are satisfied. Failed checks, missing evidence and unresolved critical findings may not be bypassed. G7 genuine owner authentication remains reserved for direct Human Director participation.
+
+This is conditional execution authority, not evidence that any gate has passed and not a waiver of the stated prerequisites.
+
+### 28.2 Exact-head engineering evidence
+
+All three required GitHub Actions workflows completed successfully against exact head `e414fad62f1223d1f54faf2617989e424a024a7f`:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| AiOS CI | [45141870473](https://github.com/Neuracoderepo1/AiOS/actions/runs/45141870473) | SUCCESS, 4/4 jobs |
+| ET27 seal guard | [45141870535](https://github.com/Neuracoderepo1/AiOS/actions/runs/45141870535) | SUCCESS, 1/1 job |
+| ET27 delete protection | [45141870689](https://github.com/Neuracoderepo1/AiOS/actions/runs/45141870689) | SUCCESS, 1/1 job |
+
+AiOS CI jobs `functions-typecheck`, `functions-behavioral`, `evidence-integrity`, and `migrations-and-sql-tests` all succeeded. GitHub artifact metadata reports these unexpired artifacts tied to the exact head:
+
+| Workflow | Artifact | ID | GitHub-reported SHA-256 |
+|---|---|---:|---|
+| AiOS CI | `aios-ci-evidence` | 14802189799 | `86f2e8c9f4111263dd9093a673d89eb3f65714a80f869635fefd8d253f8093c2` |
+| AiOS CI | `behavioral-evidence` | 14801998288 | `155fc51c7bfa2d2a979e479114c8a30ad52bd657972d980f03221433e65ef16d` |
+| ET27 seal guard | `et27-seal-guard-evidence` | 14801649656 | `9a13d6bf65279cd5ff65a77ec227d2a19fd8c2a3c87a91f572dfe612eed887e2` |
+| ET27 delete protection | `et27-delete-protection-evidence` | 14802117204 | `9abf0bdca8b470df0a5644c2c10e98311008d6382a3f4f16f9a9c0086097f38b` |
+
+These are GitHub API artifact digests; this checkpoint does not claim a new local ZIP download and independent re-hash. The three workflows establish G1 exact-head CI completion at the workflow level; Agent 003 must independently review this exact head and its evidence for G2.
+
+### 28.3 Current gate disposition
+
+- **G1 — exact-head CI:** workflow PASS on `e414fad...`; independent evidence review remains part of G2.
+- **G2 — independent review:** PENDING. The latest recorded Agent 003 review is for predecessor SHA `58a67702efa2167c2060bb3e40d37880b7b6b00d`, not this current head. Agent 004's exact-head evidence handoff is PR comment [7098519954](https://github.com/Neuracoderepo1/AiOS/pull/40#issuecomment-7098519954). This documentation successor must also receive its own exact-head CI and independent review.
+- **G3 — production logical export and isolated restore:** NOT STARTED. It remains blocked pending G2 and complete export authorization/recovery prerequisites, including owner-approved destination, encryption, retention and recovery acceptance. The synthetic local PostgreSQL roundtrip in CI is not a production export or managed backup.
+- **G4 — production pre-window check:** NOT STARTED. It must follow accepted G3 evidence and include fresh hosted schema/function/grant/migration parity and a reviewed staged plan.
+- **G5 — production merge and migration:** NOT ELIGIBLE. The Human Director's conditional authority is not a gate waiver. PR #40 is stacked on PR #35; PR #35 and PR #34 and PR #29 are currently draft. Preserve the dependency order and do not merge PR #40 directly to main while omitting parent work.
+- **G6 — post-deployment verification:** PENDING G5.
+- **G7 — genuine owner authentication:** RESERVED for direct Human Director participation; no agent may impersonate the owner.
+
+The last recorded read-only hosted inventory remains 117 applied migrations through `20261108130000` against 131 candidate migrations, a 14-migration difference. This is a historical observation, not a fresh hosted read in this checkpoint. The previously recorded hosted parity, audit-writer timezone, owner-session, managed backup/recovery, external trust-root and branch-governance gaps remain separate release gates until freshly evidenced and independently accepted.
+
+### 28.4 Release boundary
+
+No merge, deployment, hosted migration, production export/restore, production data write, production role/grant/RLS/trigger/cron/Auth change, secret/billing/configuration change, or G7 owner authentication was performed by this checkpoint. PR #40 remains open and unmerged. Production certification remains **WITHHELD / NOT CERTIFIED**. Release Hold v2 remains in force until G1-G4 and independent review are satisfied for the approved candidate. **Access is not authority.**
