@@ -1,0 +1,27 @@
+name: Recovery crypto safety tests
+
+on:
+  pull_request:
+    paths:
+      - "scripts/recovery/**"
+      - "tests/recovery/**"
+      - "docs/recovery/**"
+      - ".github/workflows/recovery-crypto.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crypto-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install age
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes age
+          age --version
+      - name: Run synthetic crypto safety suite
+        run: bash tests/recovery/test_crypto.sh
