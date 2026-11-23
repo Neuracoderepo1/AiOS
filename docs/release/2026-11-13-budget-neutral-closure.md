@@ -1077,3 +1077,51 @@ These are GitHub-reported artifact ZIP digests; no independent ZIP re-download/r
 - G7 genuine owner authentication: RESERVED for direct Human Director participation.
 
 PR #40 remains open, non-draft and unmerged. No merge, deployment, hosted migration, production export/restore, production write, privilege/security/configuration change, secret/billing change, or G7 authentication occurred. Production certification remains WITHHELD / NOT CERTIFIED. Access is not authority.
+
+
+## 31. Agent 004 release-gate execution checkpoint — 23 November 2026
+
+**Engineering candidate reviewed:** `08abf7e72195950d699f085478c9ea00546f2d17`  
+**Review:** Agent 003 exact-head independent engineering review, PR #40 comment [7100153645](https://github.com/Neuracoderepo1/AiOS/pull/40#issuecomment-7100153645).  
+**Disposition:** candidate engineering evidence accepted; production certification WITHHELD / NOT CERTIFIED.
+
+### 31.1 Exact-head engineering evidence
+
+Agent 003 independently checked the exact candidate identity and all three successful workflows:
+- AiOS CI [45163900244](https://github.com/Neuracoderepo1/AiOS/actions/runs/45163900244), 4/4 jobs successful.
+- ET27 seal guard [45163900627](https://github.com/Neuracoderepo1/AiOS/actions/runs/45163900627), successful.
+- ET27 delete protection [45163900254](https://github.com/Neuracoderepo1/AiOS/actions/runs/45163900254), successful.
+
+All four exact-head evidence ZIPs were downloaded and independently SHA-256 hashed by Agent 003; the recomputed values matched GitHub metadata. F-40-08 and F-40-10 remain accepted at source/real-PostgreSQL CI evidence level. The mission cancellation contract is accepted at source/CI evidence level. This is not production certification or release authorization.
+
+### 31.2 Fresh read-only hosted snapshot
+
+A new read-only inspection was performed on 23 November 2026 against Supabase project `jtkcdwhiduixoiodhbfn` (Project AiOS), PostgreSQL 17.6. The connection identity was `postgres` / `postgres`, and `auth.uid()` was NULL. It is not a genuine authenticated owner session.
+
+The Supabase migration API reports **117 applied migrations**, latest `20261108130000`. The reviewed candidate inventory remains **131 migrations**, so **14 candidate migrations are unapplied**. G4 is therefore BLOCKED / NOT PASS.
+
+The same fresh SQL snapshot confirmed:
+- `aios_restorer` role is absent.
+- Four audit protection triggers (`trg_aios_audit_hash`, immutable delete, immutable update, and no truncate) are enabled in ORIGIN mode, not ALWAYS.
+- `private.aios_audit_append()` has `search_path=""` but no `timezone=UTC` function setting.
+- Two existing cron jobs are active every five minutes: stale-task reaper and stale-approval expiry. No mission-reconciliation job is present in the returned `aios-%` registry.
+- The connected SQL session cannot evidence owner attribution because `auth.uid()` is NULL.
+
+Fresh Security Advisor findings:
+- INFO: `private.aios_trusted_executors` has RLS enabled and no policies.
+- WARN: authenticated can execute three SECURITY DEFINER RPCs requiring explicit intended-contract review: `aios_agent_trust_explain(uuid)`, `aios_current_org_role(uuid)`, and `aios_public_metrics(uuid)`.
+- WARN: leaked-password protection remains disabled.
+
+These findings are observations for a reviewed remediation plan, not permission to alter hosted production. In particular, the SECURITY DEFINER findings must be assessed against intended client/API contracts before changing grants; the RLS-no-policy result may be an intentional deny-by-default design and must not be “fixed” by adding a permissive policy without evidence.
+
+### 31.3 Gate disposition and next actions
+
+- **G1:** PASS for exact candidate `08abf7e...`; all three workflows successful and artifacts independently hashed.
+- **G2:** Agent 003 engineering review ACCEPTED for exact candidate `08abf7e...`; production certification remains withheld. The review recorded a P2 authoritative-document successor-currentness follow-up. This section records the review and the current gate snapshot; the documentation successor still requires its own exact-head CI and Agent 003 re-review.
+- **G3:** NOT STARTED. Synthetic CI export/restore is not a production export or managed backup. Production export remains blocked until the owner-approved source/scope, operator/ticket, destination/jurisdiction, encryption/key custody, access/transfer, retention/deletion, manifest custody, isolated restore target/operator, acceptance criteria, and RPO/RTO disposition are recorded. No approved secure export destination or transfer path is currently established.
+- **G4:** BLOCKED / NOT PASS. Fourteen migrations remain unapplied and hosted security/restoration/audit configuration differs from the candidate. Required next work is a reviewed object-by-object parity matrix, migration dependency/risk classification, explicit rollback/forward-recovery plan, owner-window checklist, and fresh pre-window snapshot. No hosted changes were made.
+- **G5:** NOT ELIGIBLE. PR #40 remains stacked on PR #35. Parent PRs and dependencies must be reconciled in order; no direct-to-main bypass.
+- **G6:** PENDING G5.
+- **G7:** RESERVED for direct Human Director participation. No agent may impersonate the owner or substitute a service-role SQL session for authenticated owner proof.
+
+No merge, deployment, hosted migration, production export/restore, production write, role/grant/RLS/trigger/cron/Auth/secrets/configuration change, billing change, or owner authentication was performed. Release Hold v2 remains active. **Access is not authority.**
