@@ -2,7 +2,7 @@
 
 **Evidence date:** 2026-11-23  
 **PR:** #43  
-**Exact validated feature head:** `48e1c23c946f96e75d9b60005b140cdbf2102fc9`
+**Exact validated feature head:** `02b6eb3b2fd4453a436d82ea1c15ccd239bd8959`
 
 ## Scope boundary
 
@@ -16,7 +16,7 @@ The crypto self-test command is:
 bash tests/recovery/test_crypto.sh
 ```
 
-It requires `age` and standard POSIX shell utilities. It creates only a temporary synthetic payload and temporary test identity. Coverage includes:
+It requires `age` and standard shell utilities. It creates only a temporary synthetic payload and temporary test identities. Coverage includes:
 - authenticated encryption/decryption round trip;
 - wrong-identity rejection;
 - ciphertext tamper detection;
@@ -48,21 +48,29 @@ Never run these PostgreSQL commands with a hosted/production URL. The test scrip
 
 | Workflow | Run | Result | Scope |
 |---|---:|---|---|
-| Full AiOS CI | #421 / 45184608345 | PASS | All four jobs: functions typecheck, evidence integrity, behavioral suite, migrations and SQL tests |
-| Recovery crypto safety | #7 / 45184608305 | PASS | Synthetic encryption/decryption, tamper, key, manifest and exporter dry-run safety tests |
+| Full AiOS CI | #423 / 45223474353 | PASS | All four jobs: functions typecheck, evidence integrity, behavioral suite, migrations and SQL tests |
+| Recovery crypto safety | #9 / 45223474539 | PASS | Synthetic encryption/decryption, tamper, key, manifest and exporter dry-run safety tests |
 
 Links:
-- Full AiOS CI #421: https://github.com/Neuracoderepo1/AiOS/actions/runs/45184608345
-- Recovery crypto safety #7: https://github.com/Neuracoderepo1/AiOS/actions/runs/45184608305
+- Full AiOS CI #423: https://github.com/Neuracoderepo1/AiOS/actions/runs/45223474353
+- Recovery crypto safety #9: https://github.com/Neuracoderepo1/AiOS/actions/runs/45223474539
 
-The full AiOS CI migration/SQL job included disposable PostgreSQL migration replay and logical export/isolated-restore roundtrip, restoration-role and authorization regressions, Part E audit-anchoring regressions, the 46-case canonical matrix, concurrency/lock-order regressions, and approval-chain post-lock binding revalidation.
+The full AiOS CI migration/SQL job included disposable PostgreSQL migration replay and logical export/isolated-restore roundtrip, restoration-role and authorization regressions, Part E audit-anchoring regressions, concurrency/lock-order regressions, and approval-chain post-lock binding revalidation across 10 fresh migrated databases.
+
+## Uploaded evidence artifacts
+
+These artifacts were uploaded by the exact-head CI #423 run:
+- `aios-ci-evidence`: GitHub-reported SHA-256 `4d4a25302d5d17a79261870a92874aaede01033fada58c420a3fc508b5b3776d`.
+- `behavioral-evidence`: GitHub-reported SHA-256 `6ee1e33076a6d89df9c305e647072c128a9957f6ae256c6f6a6d0f4c3687b408`.
+
+These are GitHub-reported artifact digests. No independent artifact ZIP download and re-hash is claimed here.
 
 ## Results and limitations
 
 | Test group | Result | Evidence / limitation |
 |---|---|---|
-| Exact-head AiOS CI | PASS | Run 45184608345 on exact head `48e1c23c946f96e75d9b60005b140cdbf2102fc9` |
-| Exact-head recovery crypto suite | PASS | Run 45184608305 on the same exact head |
+| Exact-head AiOS CI | PASS | Run 45223474353 on exact head `02b6eb3b2fd4453a436d82ea1c15ccd239bd8959` |
+| Exact-head recovery crypto suite | PASS | Run 45223474539 on the same exact head |
 | Synthetic PostgreSQL export/restore | PASS | Disposable CI fixture only; not production-equivalent recovery |
 | Google Drive upload/download round trip | NOT RUN | No authenticated Drive integration available to this execution environment |
 | Owner device FileVault, free space and PostgreSQL inventory | NOT VERIFIED | Owner device is not accessible from this execution environment |
