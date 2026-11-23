@@ -21,7 +21,7 @@ case "$AIOS_EXPORT_APPROVAL" in
     ;;
   *) fail "export denied: explicit NONPRODUCTION or owner-approved export marker required" ;;
 esac
-[[ -f "$PGPASSFILE" ]] || fail "PGPASSFILE must name an existing password file"
+[[ -f "$PGPASSFILE" && ! -L "$PGPASSFILE" ]] || fail "PGPASSFILE must name an existing regular non-symlink password file"
 python3 - "$PGPASSFILE" <<'PY'
 import os, stat, sys
 mode = stat.S_IMODE(os.stat(sys.argv[1]).st_mode)
@@ -31,14 +31,31 @@ PY
 command -v pg_dump >/dev/null || fail "pg_dump is required"
 command -v psql >/dev/null || fail "psql is required"
 command -v python3 >/dev/null || fail "python3 is required"
-[[ $# -eq 1 ]] || fail "usage: $0 <absolute-output-directory>"
-out="$1"
+dry_run=0
+if [[ $# -eq 2 && "$1" == "--dry-run" ]]; then
+  dry_run=1
+  out="$2"
+elif [[ $# -eq 1 ]]; then
+  out="$1"
+else
+  fail "usage: $0 [--dry-run] <absolute-output-directory>"
+fi
 [[ "$out" = /* ]] || fail "output directory must be an absolute path"
-mkdir -p "$out"
+if [[ "$dry_run" -eq 1 ]]; then
+  [[ -d "$out" ]] || fail "dry-run destination must already exist; dry-run never creates directories"
+else
+  mkdir -p "$out"
+fi
 out="$(cd "$out" && pwd -P)"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 case "$out/" in "$repo_root/"*) fail "refusing to write database exports inside the repository" ;; esac
-[[ ! -e "$out/aios-logical-export" ]] || fail "output already exists; choose a new empty destination"
+[[ ! -e "$out/aios-logical-export" && ! -L "$out/aios-logical-export" ]] || fail "output already exists; choose a new empty destination"
+if [[ "$dry_run" -eq 1 ]]; then
+  printf 'DRY RUN PASS: configuration and destination checks passed; no database connection, export, or filesystem output was created.\n'
+  printf 'Source classification: %s\n' "${AIOS_EXPORT_APPROVAL%%:*}"
+  printf 'Destination directory: %s\n' "$out"
+  exit 0
+fi
 tmp="$(mktemp -d "$out/.aios-export.XXXXXX")"
 cleanup() { rm -rf "$tmp"; }
 trap cleanup EXIT
