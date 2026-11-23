@@ -1,0 +1,11 @@
+PASS tests/sql/01_security_invariants.sql
+PASS tests/sql/02_function_privilege_boundary.sql
+PASS tests/sql/03_approval_convergence_regression.sql
+PASS tests/sql/04_owner_decision_dispositions.sql
+PASS tests/sql/05_certification_matrix.sql
+PASS tests/sql/06_executor_allowlist.sql
+PASS tests/sql/07_org_task_binding_regression.sql
+PASS tests/sql/08_expiry_audit_completeness.sql
+PASS tests/sql/09_approval_mandatory_expiry_regression.sql
+PASS tests/sql/10_invocation_seal_guard.sql
+PASS tests/sql/11_invocation_delete_protection.sql

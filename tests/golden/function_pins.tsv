@@ -1,0 +1,7 @@
+private.aios_audit_canonical_hash(public.aios_audit_events,text)	eb390d4c91a479c04664b1d749224099
+private.aios_audit_canonical_payload(public.aios_audit_events,text)	ca33d056646e6206832a278e5ae1b97e
+private.aios_audit_checkpoint_text(uuid,bigint,uuid,text,timestamp with time zone)	8f03afbaf4560db5157d542f1afe2fd6
+private.aios_audit_record_anchor(uuid,bigint,uuid,text,timestamp with time zone,text,text,text,jsonb)	1b3562d8705f4ba224ea2885dde84153
+private.aios_audit_verify_chain_v2(uuid,bigint,text,bigint)	02a5993ab6d7246636b915a4b408a7e7
+private.aios_final_verify(boolean,boolean,text)	72d60b1ad91c50132f2d3da24af65c95
+private.aios_guard_drift()	ee75ab162472b1cc579c29ce66267902
