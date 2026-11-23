@@ -668,3 +668,74 @@ The last recorded read-only hosted inventory remains 117 applied migrations thro
 ### 28.4 Release boundary
 
 No merge, deployment, hosted migration, production export/restore, production data write, production role/grant/RLS/trigger/cron/Auth change, secret/billing/configuration change, or G7 owner authentication was performed by this checkpoint. PR #40 remains open and unmerged. Production certification remains **WITHHELD / NOT CERTIFIED**. Release Hold v2 remains in force until G1-G4 and independent review are satisfied for the approved candidate. **Access is not authority.**
+
+
+## 29. 23 November exact-head CI completion and fresh hosted gate evidence
+
+**Candidate branch:** `agent004/mission-cancellation-contract`  
+**Reviewed CI head:** `29a0ce21762fef83257c23454df2c1f2ef11fc38`  
+**PR #40:** OPEN / NON-DRAFT / UNMERGED; base `agent004/f2-reaper-record-isolation` (PR #35).
+
+### 29.1 G1 exact-head CI — PASS
+
+All three required workflows completed successfully against exact SHA `29a0ce21762fef83257c23454df2c1f2ef11fc38`:
+
+| Workflow | Run | Conclusion |
+|---|---:|---|
+| AiOS CI | [45159555767](https://github.com/Neuracoderepo1/AiOS/actions/runs/45159555767) | SUCCESS, all 4 jobs |
+| ET27 seal guard | [45159555860](https://github.com/Neuracoderepo1/AiOS/actions/runs/45159555860) | SUCCESS |
+| ET27 delete protection | [45159555717](https://github.com/Neuracoderepo1/AiOS/actions/runs/45159555717) | SUCCESS |
+
+The migration/SQL job completed the final approval-chain post-lock binding revalidation on 10 fresh migrated databases and uploaded evidence. Exact-head, unexpired artifact metadata:
+
+| Artifact | ID | GitHub SHA-256 |
+|---|---:|---|
+| `aios-ci-evidence` | 14810299476 | `sha256:81634b82af071913f92c40083db4c3a93aee309607eee6b5d017639553be545f` |
+| `behavioral-evidence` | 14810730553 | `sha256:a940def3c8d933de59a98fb74df8fe32988de4d07445da50160efecf09296472` |
+| `et27-seal-guard-evidence` | 14810227691 | `sha256:f98adb01a6a7ef83e99088205e202b3007d76b790de2484dc5bf70bd6c933858` |
+| `et27-delete-protection-evidence` | 14809852868 | `sha256:d1d94d12d46003f79852325be1f2a4e17c866aec1f5d7817631f1fccec3616aa` |
+
+These are GitHub artifact API digests. This update does not claim a new local ZIP download and independent re-hash. G1 workflow completion is PASS; G2 still requires Agent 003's independent successor review.
+
+### 29.2 Fresh hosted Supabase parity and security snapshot
+
+Read-only inspection used the connected Supabase account `AiOS`, project `jtkcdwhiduixoiodhbfn`, on 23 November 2026. Hosted migration history is 117 applied through `20261108130000`; the candidate branch contains 131 SQL migration files, leaving these 14 candidate-only versions unapplied:
+
+- `20261108140000_aios_execution_lock_order_and_task_terminal_cascade.sql`
+- `20261108150000_aios_approval_paths_global_lock_order.sql`
+- `20261109120000_aios_restoration_part_d.sql`
+- `20261109130000_aios_audit_anchoring_part_e.sql`
+- `20261110100000_aios_batch_prelock_before_audit.sql`
+- `20261111170000_aios_shared_approval_invocation_resolver.sql`
+- `20261111190000_aios_restorer_allowlist_and_mission_reconciliation.sql`
+- `20261111200000_aios_mission_reconciliation_schedule_registry.sql`
+- `20261111210000_aios_register_mission_reconciliation_trigger.sql`
+- `20261111220000_aios_approval_binding_and_audit_lock_order.sql`
+- `20261111230000_aios_reaper_per_record_isolation.sql`
+- `20261113160000_aios_reaper_fail_closed_hardening.sql`
+- `20261120180000_aios_mission_cancellation_jwt_identity.sql`
+- `20261120190000_aios_succeeded_mission_terminal_integrity.sql`
+
+Additional live observations: `aios_restorer` absent; four audit-protection triggers enabled ORIGIN rather than ALWAYS; service_role has SELECT/INSERT/UPDATE/DELETE/TRIGGER but not TRUNCATE on `public.aios_audit_events`; `private.aios_audit_append()` has only `search_path=""` in proconfig and no UTC pin; two older five-minute cron jobs are active. The connected SQL session was `postgres` with `auth.uid() = NULL`, not a genuine owner-authenticated session.
+
+Supabase Security Advisor reports RLS enabled with no policy on `private.aios_trusted_executors`; three authenticated-executable SECURITY DEFINER RPCs (`aios_agent_trust_explain(uuid)`, `aios_current_org_role(uuid)`, `aios_public_metrics(uuid)`) requiring contract review; and leaked-password protection disabled. These are observations, not authorization to alter hosted settings.
+
+**G4 disposition: BLOCKED / NOT PASS.** The hosted migration gap and security/restoration drift require reviewed remediation, staged migration planning and fresh pre-window verification. No hosted changes were made.
+
+### 29.3 G3 recovery package readiness
+
+The repository's budget-neutral export/restore procedure is documented in `docs/operations/LOGICAL-EXPORT-RESTORE.md`. It includes a guarded custom-format `pg_dump`, schema-only export, extension inventory, source metadata, archive listing, SHA-256 manifest, loopback-only isolated restore into a pre-created `aios_restore_*` database, read-only destination preflight, single-transaction restore, and structural validation. CI has passed synthetic real-PostgreSQL export/restore tests; this is not a hosted production export or proof of managed backup/PITR.
+
+G3 production export remains NOT STARTED. Before any production export, the owner-approved record must explicitly identify: (1) source project/database and exact scope, (2) named operator and approval/ticket ID, (3) destination location and jurisdiction, (4) encryption at rest and key custodian, (5) access list and transfer channel, (6) retention and verified deletion date, (7) integrity-manifest custody, (8) isolated restore target/operator and acceptance criteria, and (9) accepted recovery objectives (RPO/RTO) or explicit statement that they are not yet established. The current connected SQL integration exposes a privileged postgres session but no user-owned export destination or secure local artifact transfer path has been approved in this record. No production dump was initiated.
+
+### 29.4 Gate disposition
+
+- G1 exact-head CI: PASS at `29a0ce...`.
+- G2 independent Agent 003 review of this exact head: PENDING.
+- G3 production export and isolated restore: NOT STARTED; approval and secure destination/retention/recovery acceptance incomplete.
+- G4 hosted pre-window parity: BLOCKED by 14 unapplied migrations and verified hosted control drift.
+- G5 merge/migration: NOT ELIGIBLE; dependency stack remains open and stacked.
+- G6 post-deployment verification: PENDING G5.
+- G7 genuine owner authentication: RESERVED for direct Human Director participation.
+
+No merge, deployment, hosted migration, production export/restore, production write, security-setting change, secret/billing change, or G7 authentication occurred. Production certification remains WITHHELD / NOT CERTIFIED. Access is not authority.
