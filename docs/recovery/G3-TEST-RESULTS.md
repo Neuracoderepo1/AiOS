@@ -49,8 +49,8 @@ Do not run these PostgreSQL commands with a hosted/production URL. The test scri
 | tamper detection | PASS on prior tested commit; rerun pending for current head | Synthetic fixture only |
 | SHA-256 manifest verification | PASS on prior tested commit; rerun pending for current head | Synthetic fixture only |
 | missing-file handling | PASS on prior tested commit; rerun pending for current head | Synthetic fixture only |
-| incomplete-export handling | PASS on prior tested commit; rerun pending for current head | Synthetic fixture only |
-| insufficient-storage handling | PENDING CI | Guard behavior only; no real production disk tested |
+| incomplete-export handling | PENDING | Existing exporter guard requires separate test evidence |
+| insufficient-storage handling | PASS on prior tested commit; rerun pending for current head | Synthetic guard simulation only; no real production disk tested |
 | credential-redaction checks | PENDING CI | Synthetic sentinel values only |
 | exporter dry-run / no database side effects | PENDING CI for current head | New inert-command-stub test; not covered by prior run #1 |
 | isolated PostgreSQL restore | Existing CI suite; exact branch result pending | Disposable synthetic database only |
