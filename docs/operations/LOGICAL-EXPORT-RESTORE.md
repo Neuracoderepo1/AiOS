@@ -19,7 +19,7 @@ The exporter creates a PostgreSQL custom-format database archive, a schema-only 
 2. Use encrypted local storage with access restricted to the database owner and authorized recovery operators.
 3. Never paste credentials into shell commands, tickets, logs, CI output, or repository files.
 4. Supply credentials through a `PGPASSFILE` with permissions 0600 or stricter. Do not put passwords in `PGPASSWORD` or connection-string command arguments.
-5. Use a direct database endpoint with TLS where supported; set `PGSSLMODE=require` for hosted connections.
+5. For owner-approved remote exports, require `PGSSLMODE=verify-full` and an absolute, readable, regular, non-symlink `PGSSLROOTCERT` CA file. The exporter rejects `PGSERVICE`, `PGSERVICEFILE`, `PGHOSTADDR`, and `PGOPTIONS` overrides so the reviewed endpoint and TLS posture cannot be silently replaced.
 6. Treat the custom archive as sensitive: it can contain all dumpable application data, including private tenant data.
 7. A production export requires a separate explicit owner approval identifying the project, purpose, scope, destination, retention, operator, and approval/ticket ID. The script's marker is only a guardrail, not a substitute for that approval.
 8. No production export has been performed as part of this engineering work.
@@ -46,19 +46,19 @@ export PGPORT='5432'
 export PGUSER='approved-database-user'
 export PGDATABASE='approved-database-name'
 export PGPASSFILE="$HOME/.config/aios/pgpass"
-export PGSSLMODE='require'
+export PGSSLMODE='verify-full'\nexport PGSSLROOTCERT='/absolute/path/to/approved-ca.pem'
 ```
 
 ## Create a logical export
 
-For a disposable non-production environment on loopback only:
+Create the destination directory first, outside the repository, and keep the password file outside the repository. For a disposable non-production environment on loopback only:
 
 ```sh
 export AIOS_EXPORT_APPROVAL='NONPRODUCTION'
 bash scripts/recovery/export_logical.sh "$HOME/secure-backups/aios"
 ```
 
-For a remote non-production environment, obtain an explicit owner approval and set `OWNER_APPROVED_NONPRODUCTION:<approval-id>`. For production, do not proceed unless the separate owner approval described above exists and covers this exact operation; then set `OWNER_APPROVED_PRODUCTION:<approval-id>` and run the same script into the approved encrypted destination. The plain `NONPRODUCTION` marker is rejected for non-loopback hosts and when a remote `PGHOSTADDR` or libpq service override is configured. Do not store the export in this repository. The script will create a new `aios-logical-export` directory and refuse to overwrite an existing export.
+For a remote non-production environment, obtain an explicit owner approval and set `OWNER_APPROVED_NONPRODUCTION:<approval-id>`. For production, do not proceed unless the separate owner approval described above exists and covers this exact operation; then set `OWNER_APPROVED_PRODUCTION:<approval-id>` and run the same script into the approved encrypted destination. The plain `NONPRODUCTION` marker is rejected for non-loopback hosts and when a remote `PGHOSTADDR` or libpq service override is configured. Owner-approved remote exports require `PGSSLMODE=verify-full` and a CA certificate via `PGSSLROOTCERT`; `PGSERVICE`, `PGSERVICEFILE`, `PGHOSTADDR`, and `PGOPTIONS` are rejected. Do not store the export in this repository. The destination directory must already exist, be an absolute path, and resolve outside the repository; the script does not create destination directories and refuses to overwrite an existing export. The `PGPASSFILE` must also be an absolute regular file outside the repository with permissions 0600 or stricter.
 
 The script checks command exit status, non-empty artifacts, archive readability, and writes SHA-256 hashes for all generated artifacts. Verify the manifest immediately:
 
