@@ -37,9 +37,9 @@ restore_sh="$root/scripts/recovery/restore_local.sh"
 validate_sh="$root/scripts/recovery/validate_local_restore.sh"
 
 # Destructive PostgreSQL fixtures require an explicit per-run acknowledgement.
-expect_reject "roundtrip without destructive fixture opt-in" "destructive fixture opt-in required" \\
+expect_reject "roundtrip without destructive fixture opt-in" "destructive fixture opt-in required" \
   env -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/postgres_roundtrip.sh"
-expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \\
+expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \
   env AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres -u AIOS_TEST_DB_DESTRUCTIVE_ACK bash "$root/tests/recovery/preflight_matrix.sh"
 
 # Standalone validation must reject a changed source inventory before connecting to PostgreSQL.
@@ -48,7 +48,7 @@ mkdir -m 700 "$manifest_fixture"
 for name in database.dump schema.sql extensions.tsv source.txt archive.list manifest.txt; do printf 'fixture-%s\\n' "$name" > "$manifest_fixture/$name"; done
 (cd "$manifest_fixture" && sha256sum database.dump schema.sql extensions.tsv source.txt archive.list manifest.txt > SHA256SUMS)
 printf 'tampered-extension-inventory\\n' >> "$manifest_fixture/extensions.tsv"
-expect_reject "validation rejects post-restore export-manifest tampering before database access" "SHA-256 mismatch for extensions.tsv" \\
+expect_reject "validation rejects post-restore export-manifest tampering before database access" "SHA-256 mismatch for extensions.tsv" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$validate_sh" "$manifest_fixture"
 
 expect_reject "export without explicit approval" "Set AIOS_EXPORT_APPROVAL" \
