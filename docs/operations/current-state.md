@@ -821,3 +821,61 @@ These findings are observations for a reviewed remediation plan, not permission 
 - **G7:** RESERVED for direct Human Director participation. No agent may impersonate the owner or substitute a service-role SQL session for authenticated owner proof.
 
 No merge, deployment, hosted migration, production export/restore, production write, role/grant/RLS/trigger/cron/Auth/secrets/configuration change, billing change, or owner authentication was performed. Release Hold v2 remains active. **Access is not authority.**
+
+
+## 32. Fresh hosted G4 read-only reconciliation — 25 November 2026
+
+**Inspection time:** 25 November 2026, approximately 17:38 UTC  
+**Project:** `jtkcdwhiduixoiodhbfn` (AiOS), PostgreSQL 17.6  
+**Connection identity:** `postgres`; `auth.uid()` returned NULL  
+**Operation class:** SELECT/catalog inspection and Supabase Security Advisor only. No production DDL, DML, migration, role/grant/trigger/cron/Auth change, export, restore, or deployment was performed.
+
+### 32.1 Migration and role baseline
+
+- Hosted migration ledger remains **117 applied**, latest `20261108130000`.
+- Current candidate migration inventory remains **131**, leaving **14 candidate migrations unapplied**.
+- `aios_restorer` remains absent.
+- Candidate migrations replay successfully in disposable CI, but this does not prove hosted preconditions or authorize application.
+
+### 32.2 Audit controls and grants
+
+The live catalog query returned six non-internal triggers on `public.aios_audit_events`; all six are `ORIGIN` enabled, not `ALWAYS`:
+- `trg_aios_audit_hash`
+- `trg_aios_audit_immutable_delete`
+- `trg_aios_audit_immutable_update`
+- `trg_aios_audit_no_truncate`
+- `trg_validate_agent_org`
+- `trg_validate_task_org`
+
+The hosted `service_role` retains `SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER` on `public.aios_audit_events`. The read-only grant query did not report TRUNCATE. This remains broader than the candidate Part D contract, which retains SELECT/INSERT and revokes UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES from application/service roles.
+
+`private.aios_audit_append()` currently reports `search_path=""` but no `timezone=UTC` function setting.
+
+### 32.3 Scheduled jobs
+
+Only two active `aios-%` cron jobs were returned:
+- `aios-expire-stale-approvals`, every five minutes.
+- `aios-reap-stale-tasks`, every five minutes.
+
+The hosted inventory did not return the candidate mission-reconciliation registration or hourly audit-verification job. The existing stale-task job must be reconciled against the candidate serialized/fail-closed wrapper before any window.
+
+### 32.4 Supabase Security Advisor
+
+Fresh security advisor results at 17:38:59 UTC:
+- INFO: `private.aios_trusted_executors` has RLS enabled with no policies. The candidate security contract documents this as intentional deny-by-default; do not add a permissive policy.
+- WARN: three authenticated-executable SECURITY DEFINER RPCs: `public.aios_agent_trust_explain(uuid)`, `public.aios_current_org_role(uuid)`, and `public.aios_public_metrics(uuid)`. The candidate contract documents organization-membership/self-role checks and regression coverage. Preserve that contract; do not revoke access or switch to INVOKER solely to silence the advisor without reviewing application behavior.
+- WARN: leaked-password protection remains disabled. This is a Supabase Auth owner-controlled setting and has not been changed.
+
+### 32.5 G4 disposition and release boundary
+
+G4 remains **BLOCKED / NOT PASS**. The 14-migration gap, missing restorer role, audit trigger enablement/grant drift, missing candidate cron registrations, and audit function timezone difference require dependency-ordered migration application and post-migration catalog verification in a separately approved maintenance window.
+
+Before any hosted migration:
+1. G3 production export and isolated restore must be independently evidenced and accepted.
+2. Agent 003 must accept the exact release SHA and migration/precondition evidence.
+3. Re-read migration history and succeeded/live-child preconditions immediately before the window.
+4. Use the approved migration runner; do not manually mark versions, repair roles ad hoc, widen grants, or disable protections.
+5. Run the post-window catalog, audit, role, cron, RLS/grant, concurrency and owner-authenticated checks.
+6. G7 genuine owner authentication must be performed directly by the Human Director; this SQL session (`postgres`, `auth.uid()=NULL`) is not owner-authentication evidence.
+
+**No hosted migration or production change was performed. Release Hold remains active.**
