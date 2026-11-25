@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
-fail() { printf 'ERROR: %s\\n' "$*" >&2; exit 1; }
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 source "$(dirname "${BASH_SOURCE[0]}")/path_guard.sh"
 [[ $# -eq 2 ]] || fail "usage: AGE_IDENTITY_FILE=/absolute/identity.txt $0 /absolute/INPUT.age /absolute/OUTPUT"
 command -v age >/dev/null 2>&1 || fail "age is required"
@@ -30,4 +30,4 @@ age -d -i "$identity" -o "$tmp" "$cipher"
 [[ -s "$tmp" ]] || fail "decrypted output is empty"
 mv "$tmp" "$output"
 trap - EXIT HUP INT TERM
-printf 'Ciphertext integrity verified and decryption completed. Plaintext path: %s\\n' "$output"
+printf 'Ciphertext integrity verified and decryption completed. Plaintext path: %s\n' "$output"
