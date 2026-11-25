@@ -18,6 +18,7 @@
 set -Eeuo pipefail
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 : "${AIOS_TEST_DB_URL:?AIOS_TEST_DB_URL must be supplied through the environment}"
+[[ "${GITHUB_ACTIONS:-}" == "true" && "${RUNNER_ENVIRONMENT:-}" == "github-hosted" && "${CI:-}" == "true" ]] || fail "destructive PostgreSQL fixture tests are CI-only; local mode is non-destructive"
 [[ "${AIOS_TEST_DB_DESTRUCTIVE_ACK:-}" == "I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES" ]] || fail "destructive fixture opt-in required: set AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES for this single run; loopback does not rule out SSH/port-forward tunnels"
 for c in python3 createdb dropdb psql pg_dump pg_restore; do command -v "$c" >/dev/null || fail "$c is required"; done
 
