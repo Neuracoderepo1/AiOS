@@ -38,14 +38,7 @@ bash tests/recovery/test_crypto.sh
 bash tests/recovery/test_scripts.sh
 ```
 
-Disposable PostgreSQL tests require an explicitly disposable local Supabase/PostgreSQL fixture:
-
-```sh
-AIOS_TEST_DB_URL='<locally started disposable Supabase DB URL>' AIOS_TEST_DB_DESTRUCTIVE_ACK='I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES' bash tests/recovery/postgres_roundtrip.sh
-AIOS_TEST_DB_URL='<locally started disposable Supabase DB URL>' AIOS_TEST_DB_DESTRUCTIVE_ACK='I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES' bash tests/recovery/preflight_matrix.sh
-```
-
-Never run these PostgreSQL commands with a hosted/production URL. Test scripts require a per-run destructive-fixture acknowledgement and a loopback URL. Loopback alone does not prove locality because SSH/port-forward tunnels can appear as loopback. CI obtains the URL from the Supabase stack it starts itself; manual use must independently establish that the target is the intended disposable local instance. Never use a hosted URL or tunnel.
+Destructive PostgreSQL fixture tests are **hosted-GitHub-Actions-only**. They create and drop multiple fixture databases and therefore refuse local developer-shell execution even when a loopback URL and destructive acknowledgement are supplied. The scripts require the GitHub-hosted runner environment markers (`GITHUB_ACTIONS=true`, `RUNNER_ENVIRONMENT=github-hosted`, `CI=true`) plus the per-invocation destructive acknowledgement. CI obtains the database URL from the Supabase stack started by that workflow. Loopback alone is not a locality proof because SSH/port-forward tunnels can appear as loopback. Do not manually invoke these destructive fixture scripts or point them at hosted databases. Local recovery-script safety tests remain non-destructive and can be run with `bash tests/recovery/test_scripts.sh`.
 
 ## Exact-head automated validation for source revision d716ec9
 
@@ -145,3 +138,32 @@ The final-head workflow gate is complete. The final-head run evidence does not r
 Any source or documentation commit changes the PR head. Certification evidence must identify the exact same final head across AiOS CI, recovery crypto safety, ET27 delete-protection and ET27 seal-guard. Superseded runs are historical only.
 
 Production restore remains NOT STARTED regardless of synthetic CI results. G3 production export remains BLOCKED until owner-side storage/custody/target evidence, secure transfer and isolated recovery are verified, Agent 003 issues a written approval, and the Human Director separately authorizes the exact production operation. CI success alone is not production authorization.
+
+
+## Exact-head evidence reconciliation — 25 November 2026
+
+The previous exact-head candidate `d3aff50e00d6dbd047e7ec4248b9e9aff72f69d0` completed all four required workflows successfully. Agent 003 independently downloaded and SHA-256 re-hashed the four artifacts; computed values matched GitHub artifact metadata:
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| AiOS CI #464 | 45689694391 | PASS, 4/4 jobs |
+| Recovery crypto #48 | 45689694428 | PASS |
+| ET27 seal guard #327 | 45689694537 | PASS |
+| ET27 delete protection #327 | 45689694582 | PASS |
+
+| Artifact | ID | Independently computed SHA-256 |
+|---|---:|---|
+| `aios-ci-evidence` | 15058308255 | `0614e10c250c2aa3e320899ce3ae78728cd5d311f774705088d771239fd78d29` |
+| `behavioral-evidence` | 15058600726 | `094329aa45c6fe125d1210eba9f85777a3a73ba8f0043ecb8efb4f37a0bc5548` |
+| `et27-seal-guard-evidence` | 15057733524 | `5b9ea302f0d4739d032901b41381b636880fa6cacb033f028823b79b6b6c6287` |
+| `et27-delete-protection-evidence` | 15057872123 | `27c6d6ee34aeb93a6f464fba0acf8fbb7c2c636f715c3e4fae1384e9c5d4517f` |
+
+These hashes and run IDs apply only to `d3aff50...`, not to any successor commit.
+
+### Agent 003 residual finding and corrective action
+
+Agent 003 correctly identified that loopback URL parsing plus a human acknowledgement did not positively constrain destructive fixture scripts to the disposable CI service. The acknowledgement alone could not distinguish a loopback SSH/port-forward tunnel. The successor candidate now adds a CI-only execution gate to both destructive PostgreSQL fixture scripts: local developer-shell runs are rejected, and the GitHub-hosted runner markers plus the per-run acknowledgement are required. Regression tests explicitly verify local-mode rejection and missing-acknowledgement rejection. The scripts continue to preserve create-only collision handling and clean up only databases created by the current invocation.
+
+**Current PR #43 head at the time of this documentation edit:** `b51093aca41feafb3f555256f483af019d8331e1`. The four exact-head workflows must complete again on the final successor SHA after this documentation commit. No result from `d3aff50...` is carried forward as successor evidence. Agent 003 must independently re-review the CI-only guard and issue a fresh written disposition.
+
+Production export, transfer, decryption and restore remain **NOT STARTED**. PR #43 remains open/unmerged and dependent on PR #42. Release Hold remains active.
