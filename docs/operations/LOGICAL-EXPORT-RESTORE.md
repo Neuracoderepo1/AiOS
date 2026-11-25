@@ -46,7 +46,9 @@ export PGPORT='5432'
 export PGUSER='approved-database-user'
 export PGDATABASE='approved-database-name'
 export PGPASSFILE="$HOME/.config/aios/pgpass"
-export PGSSLMODE='verify-full'\nexport PGSSLROOTCERT='/absolute/path/to/approved-ca.pem'
+# Set these only for owner-approved remote exports (production or non-production):
+export PGSSLMODE='verify-full'
+export PGSSLROOTCERT='/absolute/path/to/approved-ca.pem'
 ```
 
 ## Create a logical export
