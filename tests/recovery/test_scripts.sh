@@ -47,6 +47,14 @@ expect_reject "roundtrip without destructive fixture opt-in" "destructive fixtur
 expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \
   env -u AIOS_TEST_DB_DESTRUCTIVE_ACK GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/preflight_matrix.sh"
 
+# Environment markers and explicit acknowledgement are not database identity.
+expect_reject "roundtrip rejects spoofed CI markers without DB sentinel" "CI database identity sentinel verification failed" \
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/postgres_roundtrip.sh"
+expect_reject "preflight rejects spoofed CI markers without DB sentinel" "CI database identity sentinel verification failed" \
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/preflight_matrix.sh"
+expect_reject "roundtrip rejects mismatched DB sentinel" "CI database identity sentinel verification failed" \
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_CI_DB_SENTINEL=not-the-ci-sentinel AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/postgres_roundtrip.sh"
+
 # Standalone validation must reject a changed source inventory before connecting to PostgreSQL.
 manifest_fixture="$tmp/manifest-fixture"
 mkdir -m 700 "$manifest_fixture"
