@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
-fail() { printf 'ERROR: %s\\n' "$*" >&2; exit 1; }
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 source "$(dirname "${BASH_SOURCE[0]}")/path_guard.sh"
 [[ $# -eq 2 ]] || fail "usage: AGE_RECIPIENTS_FILE=/absolute/path/recipients.txt $0 /absolute/INPUT /absolute/OUTPUT.age"
@@ -45,8 +45,8 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   hash=$(shasum -a 256 "$tmp" | awk '{print $1}')
 fi
-printf '%s  %s\\n' "$hash" "$base" > "$manifest_tmp"
+printf '%s  %s\n' "$hash" "$base" > "$manifest_tmp"
 mv "$tmp" "$output"
 mv "$manifest_tmp" "$manifest"
 trap - EXIT HUP INT TERM
-printf 'Encrypted artifact created. Ciphertext SHA-256 manifest: %s\\n' "$manifest"
+printf 'Encrypted artifact created. Ciphertext SHA-256 manifest: %s\n' "$manifest"
