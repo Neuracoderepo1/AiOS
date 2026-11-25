@@ -6,6 +6,8 @@ on:
       - "scripts/recovery/**"
       - "tests/recovery/**"
       - "docs/recovery/**"
+      - "docs/operations/**"
+      - "docs/release/**"
       - ".github/workflows/recovery-crypto.yml"
   workflow_dispatch:
 
