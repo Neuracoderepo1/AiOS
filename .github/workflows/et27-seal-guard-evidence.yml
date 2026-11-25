@@ -8,9 +8,11 @@ on:
       - "tests/sql/10_invocation_seal_guard.sql"
       - "supabase/migrations/**"
       - ".github/workflows/et27-seal-guard-evidence.yml"
+      - "docs/operations/**"
+      - "docs/release/**"
   workflow_dispatch:
 
-# Exact-head release-gate documentation successors may touch this file to request a full ET27 evidence replay.
+# Release-gate documentation successors also trigger ET27 replay on the exact candidate head.
 permissions:
   contents: read
 
