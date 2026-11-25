@@ -54,6 +54,11 @@ chmod 644 "$tmp/pgpass"
 expect_reject "restore with insecure password-file permissions" "PGPASSFILE permissions must be 0600 or stricter" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$tmp"
 chmod 600 "$tmp/pgpass"
+ln -s "$tmp/pgpass" "$tmp/pgpass-link"
+expect_reject "restore with symlinked password file" "PGPASSFILE must name an existing regular non-symlink password file" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass-link" bash "$restore_sh" "$tmp"
+expect_reject "validation with symlinked password file" "PGPASSFILE must name an existing regular non-symlink password file" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass-link" bash "$validate_sh" "$tmp"
 expect_reject "restore into non-isolated database name" "target database name must start with aios_restore_" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$tmp"
 expect_reject "validation against remote host" "validation target must be loopback" \
