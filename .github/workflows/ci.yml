@@ -186,18 +186,32 @@ jobs:
             echo "::error title=db-start-or-reset::$(sed 's/\x1b\[[0-9;]*m//g' /tmp/start.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
           fi
+      - name: Establish per-run disposable database identity sentinel
+        if: steps.start.conclusion == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          sentinel=$(openssl rand -hex 32)
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 <<SQL
+          create schema aios_ci_guard;
+          create table aios_ci_guard.disposable_run (sentinel text primary key);
+          insert into aios_ci_guard.disposable_run(sentinel) values ('$sentinel');
+          SQL
+          printf 'AIOS_CI_DB_SENTINEL=%s\n' "$sentinel" >> "$GITHUB_ENV"
+          unset sentinel
       - name: Real PostgreSQL logical export and isolated restore roundtrip
         if: steps.start.conclusion == 'success'
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           set -o pipefail
-          AIOS_TEST_DB_URL="$DB_URL" AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash tests/recovery/postgres_roundtrip.sh 2>&1 | tee /tmp/recovery-roundtrip.txt
+          AIOS_TEST_DB_URL="$DB_URL" AIOS_CI_DB_SENTINEL="$AIOS_CI_DB_SENTINEL" AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash tests/recovery/postgres_roundtrip.sh 2>&1 | tee /tmp/recovery-roundtrip.txt
       - name: Restore preflight conflict matrix (D1)
         if: steps.start.conclusion == 'success'
         run: |
           set -o pipefail
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          AIOS_TEST_DB_URL="$DB_URL" AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash tests/recovery/preflight_matrix.sh 2>&1 | tee /tmp/recovery-preflight-matrix.txt
+          AIOS_TEST_DB_URL="$DB_URL" AIOS_CI_DB_SENTINEL="$AIOS_CI_DB_SENTINEL" AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash tests/recovery/preflight_matrix.sh 2>&1 | tee /tmp/recovery-preflight-matrix.txt
       - name: Capture migration runner and restorer membership authority
         if: steps.start.conclusion == 'success'
         run: |
