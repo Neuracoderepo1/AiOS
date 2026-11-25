@@ -4,8 +4,8 @@ umask 077
 ROOT=$(cd "$(dirname "$0")/../.." && pwd -P)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-fail() { printf 'FAIL: %s\\n' "$*" >&2; exit 1; }
-pass() { printf 'PASS: %s\\n' "$*"; }
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+pass() { printf 'PASS: %s\n' "$*"; }
 command -v age >/dev/null 2>&1 || fail "age missing"
 command -v python3 >/dev/null 2>&1 || fail "python3 missing"
 mkdir -p "$TMP/keys" "$TMP/work"
@@ -14,7 +14,7 @@ age-keygen -y "$TMP/keys/identity.txt" > "$TMP/keys/recipient.txt"
 age-keygen -o "$TMP/keys/wrong-identity.txt" 2>"$TMP/wrong-keygen.log"
 age-keygen -y "$TMP/keys/wrong-identity.txt" > "$TMP/keys/wrong-recipient.txt"
 chmod 600 "$TMP/keys/identity.txt" "$TMP/keys/wrong-identity.txt" "$TMP/keys/recipient.txt" "$TMP/keys/wrong-recipient.txt"
-printf 'synthetic recovery fixture; no production data\\n' > "$TMP/work/synthetic.dump"
+printf 'synthetic recovery fixture; no production data\n' > "$TMP/work/synthetic.dump"
 
 # All recovery material and outputs must be absolute paths outside the checkout.
 if (cd "$TMP" && AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" bash "$ROOT/scripts/recovery/encrypt_artifact.sh" work/synthetic.dump "$TMP/work/relative.age") >/dev/null 2>&1; then fail "relative input path accepted"; fi
@@ -53,7 +53,7 @@ pass "missing-file handling"
 if AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" AIOS_TEST_MIN_FREE_KB=1 bash "$ROOT/scripts/recovery/encrypt_artifact.sh" "$TMP/work/synthetic.dump" "$TMP/work/insufficient.age" >/dev/null 2>&1; then fail "insufficient-storage simulation accepted"; fi
 [[ ! -e "$TMP/work/insufficient.age" ]] || fail "insufficient-space guard left output"
 pass "insufficient-storage fail-closed simulation"
-printf 'different\\n' > "$TMP/work/modified.dump"
+printf 'different\n' > "$TMP/work/modified.dump"
 if AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" bash "$ROOT/scripts/recovery/encrypt_artifact.sh" "$TMP/work/modified.dump" "$TMP/work/synthetic.dump.age" >/dev/null 2>&1; then fail "existing output overwritten"; fi
 pass "overwrite refusal"
 if grep -Eiq 'password=|postgres(ql)?://[^[:space:]]+|AGE-SECRET-KEY-' "$TMP/keygen.log" "$TMP/wrong-keygen.log"; then fail "key-generation output leaked a credential/key"; fi
@@ -63,10 +63,10 @@ pass "production export not invoked by crypto tests"
 
 # Exercise exporter dry-run and remote TLS policy with inert database-command stubs.
 mkdir -p "$TMP/stubs" "$TMP/export-destination"
-printf '#!/bin/sh\\nprintf "called\\\\n" >> "%s"\\nexit 99\\n' "$TMP/command-called" > "$TMP/stubs/pg_dump"
+printf '#!/bin/sh\nprintf "called\\\n" >> "%s"\nexit 99\n' "$TMP/command-called" > "$TMP/stubs/pg_dump"
 cp "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
 chmod 700 "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
-printf 'localhost:5432:synthetic:synthetic:not-a-real-password\\n' > "$TMP/pgpass"
+printf 'localhost:5432:synthetic:synthetic:not-a-real-password\n' > "$TMP/pgpass"
 chmod 600 "$TMP/pgpass"
 PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=127.0.0.1 PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" \\
   bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" > "$TMP/dry-run.log"
@@ -75,11 +75,11 @@ grep -q 'DRY RUN PASS' "$TMP/dry-run.log" || fail "export dry-run did not report
 [[ ! -e "$TMP/export-destination/aios-logical-export" ]] || fail "dry-run created an export"
 pass "export dry-run performs validation without database access or output"
 
-printf 'fake CA fixture\\n' > "$TMP/ca.pem"
+printf 'fake CA fixture\n' > "$TMP/ca.pem"
 if PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=OWNER_APPROVED_PRODUCTION:test-approval PGHOST=db.example.invalid PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" PGSSLMODE=require PGSSLROOTCERT="$TMP/ca.pem" bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" >/dev/null 2>&1; then fail "remote export accepted non-verify-full TLS"; fi
 if PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=OWNER_APPROVED_PRODUCTION:test-approval PGHOST=db.example.invalid PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" PGSSLMODE=verify-full PGSSLROOTCERT="$TMP/ca.pem" PGSERVICE=unreviewed bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" >/dev/null 2>&1; then fail "remote export accepted PGSERVICE override"; fi
 if PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=OWNER_APPROVED_PRODUCTION:test-approval PGHOST=db.example.invalid PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" PGSSLMODE=verify-full PGSSLROOTCERT="$TMP/ca.pem" PGHOSTADDR=192.0.2.10 bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" >/dev/null 2>&1; then fail "remote export accepted PGHOSTADDR override"; fi
 [[ ! -e "$TMP/command-called" ]] || fail "remote TLS policy tests invoked a database command"
 pass "remote export requires verify-full TLS and rejects libpq connection overrides"
 
-printf 'All crypto, path-containment and exporter safety self-tests passed. Fixture contained synthetic data only.\\n'
+printf 'All crypto, path-containment and exporter safety self-tests passed. Fixture contained synthetic data only.\n'
