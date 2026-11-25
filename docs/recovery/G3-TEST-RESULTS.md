@@ -106,7 +106,7 @@ This evidence record is being synchronized with the updated PR #42 hosted-state 
 
 **Exact PR #43 head:** `7b21d92af76876d1d77212285a5a3a9ae207d3cc`  
 **Final-head automated workflow gate:** PASS, all four required workflows completed successfully on this identical SHA.  
-**Agent 003 disposition:** PARTIALLY ACCEPTED / REQUEST CHANGES. Three findings remain open: destructive fixture target identity/explicit opt-in; standalone validator manifest verification; and this final-head evidence reconciliation. This document now addresses the latter two in the successor candidate; the destructive fixture safeguards are also being added. A fresh exact-head review is required after the changes and workflows complete.
+**Agent 003 disposition:** PARTIALLY ACCEPTED / REQUEST CHANGES. Three findings remain open: destructive fixture target identity/explicit opt-in; standalone validator manifest verification; and this final-head evidence reconciliation. This document now addresses the latter two in the successor candidate; the destructive fixture safeguards have been added in the current successor candidate. A fresh exact-head review is required after the changes and workflows complete.
 
 | Workflow | Run ID | Result | Exact SHA |
 |---|---:|---|---|
