@@ -5,6 +5,7 @@ set -Eeuo pipefail
 umask 077
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+source "$(dirname "${BASH_SOURCE[0]}")/path_guard.sh"
 : "${AIOS_EXPORT_APPROVAL:?Set AIOS_EXPORT_APPROVAL to NONPRODUCTION or OWNER_APPROVED_PRODUCTION:<approval-id>}"
 for name in PGHOST PGPORT PGUSER PGDATABASE PGPASSFILE; do
   [[ -n "${!name:-}" ]] || fail "missing required libpq variable: $name"
@@ -24,12 +25,13 @@ case "$AIOS_EXPORT_APPROVAL" in
     [[ -z "${PGHOSTADDR:-}" ]] || fail "PGHOSTADDR override is prohibited for owner-approved remote exports"
     [[ -z "${PGOPTIONS:-}" ]] || fail "PGOPTIONS override is prohibited for owner-approved remote exports"
     [[ "${PGSSLMODE:-}" == "verify-full" ]] || fail "owner-approved remote exports require PGSSLMODE=verify-full"
-    [[ -n "${PGSSLROOTCERT:-}" && -f "$PGSSLROOTCERT" && ! -L "$PGSSLROOTCERT" && -r "$PGSSLROOTCERT" && -s "$PGSSLROOTCERT" ]] || fail "owner-approved remote exports require a readable, regular, non-symlink PGSSLROOTCERT CA file"
+    [[ -n "${PGSSLROOTCERT:-}" && "$PGSSLROOTCERT" = /* && -f "$PGSSLROOTCERT" && ! -L "$PGSSLROOTCERT" && -r "$PGSSLROOTCERT" && -s "$PGSSLROOTCERT" ]] || fail "owner-approved remote exports require an absolute, readable, regular, non-symlink PGSSLROOTCERT CA file"
     export PGSSLMODE=verify-full
     ;;
   *) fail "export denied: explicit NONPRODUCTION or owner-approved export marker required" ;;
 esac
-[[ -f "$PGPASSFILE" && ! -L "$PGPASSFILE" ]] || fail "PGPASSFILE must name an existing regular non-symlink password file"
+aios_guard_recovery_path existing "$PGPASSFILE"
+[[ -r "$PGPASSFILE" ]] || fail "PGPASSFILE must be readable"
 python3 - "$PGPASSFILE" <<'PY'
 import os, stat, sys
 mode = stat.S_IMODE(os.stat(sys.argv[1]).st_mode)
@@ -49,11 +51,7 @@ else
   fail "usage: $0 [--dry-run] <absolute-output-directory>"
 fi
 [[ "$out" = /* ]] || fail "output directory must be an absolute path"
-if [[ "$dry_run" -eq 1 ]]; then
-  [[ -d "$out" ]] || fail "dry-run destination must already exist; dry-run never creates directories"
-else
-  mkdir -p "$out"
-fi
+aios_guard_recovery_path existing_dir "$out"
 out="$(cd "$out" && pwd -P)"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 case "$out/" in "$repo_root/"*) fail "refusing to write database exports inside the repository" ;; esac
