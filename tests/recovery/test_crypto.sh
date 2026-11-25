@@ -24,6 +24,8 @@ if AGE_RECIPIENTS_FILE="$ROOT/scripts/recovery/encrypt_artifact.sh" bash "$ROOT/
 ln -s "$ROOT" "$TMP/repo-link"
 if AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" bash "$ROOT/scripts/recovery/encrypt_artifact.sh" "$TMP/work/synthetic.dump" "$TMP/repo-link/.aios-test-output.age" >/dev/null 2>&1; then fail "symlinked repository output parent accepted"; fi
 pass "absolute paths and canonical repository/symlink containment"
+if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$ROOT/scripts/recovery/verify_manifest.sh" >/dev/null 2>&1; then fail "repository-contained checksum input accepted"; fi
+pass "standalone checksum verifier enforces repository path containment"
 
 AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" bash "$ROOT/scripts/recovery/encrypt_artifact.sh" "$TMP/work/synthetic.dump" "$TMP/work/synthetic.dump.age"
 bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/synthetic.dump.age.sha256"
