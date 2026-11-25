@@ -27,17 +27,17 @@ chmod 600 "$HOME/.config/aios-recovery/production-recovery-identity.txt"
 chmod 600 "$HOME/.config/aios-recovery/production-recovery-recipient.txt"
 ```
 
-The identity file contains the private key. The recipient file contains only the public recipient. Keep both outside the repository. Protect the private identity with owner-controlled offline custody and a separately stored, access-controlled recovery copy. Do not place the private identity in Google Drive with the ciphertext. Do not paste either file's contents into chat or tickets.
+The identity file contains the private key. The recipient file contains only the public recipient. Keep both outside the repository. The scripts enforce absolute paths and reject repository-contained key files. Protect the private identity with owner-controlled offline custody and a separately stored, access-controlled recovery copy. Do not place the private identity in Google Drive with the ciphertext. Do not paste either file's contents into chat or tickets.
 
 The sample path is illustrative. The owner must choose and verify the actual storage location and its encryption/access controls before generating a production key.
 
 ## Script interface
 
-- Encrypt: `AGE_RECIPIENTS_FILE=/secure/path/recipients.txt bash scripts/recovery/encrypt_artifact.sh export.dump export.dump.age`
-- Verify: `bash scripts/recovery/verify_manifest.sh export.dump.age.sha256`
-- Decrypt: `AGE_IDENTITY_FILE=/secure/path/identity.txt bash scripts/recovery/decrypt_artifact.sh export.dump.age export.dump`
+- Encrypt: `AGE_RECIPIENTS_FILE=/secure/owner/recipients.txt bash scripts/recovery/encrypt_artifact.sh /secure/workspace/export.dump /secure/workspace/export.dump.age`
+- Verify: `bash scripts/recovery/verify_manifest.sh /secure/workspace/export.dump.age.sha256`
+- Decrypt: `AGE_IDENTITY_FILE=/secure/owner/identity.txt bash scripts/recovery/decrypt_artifact.sh /secure/workspace/export.dump.age /secure/workspace/restored.dump`
 
-The scripts reject missing dependencies, missing files, symlinks, existing output paths and invalid key-file permissions where applicable. Encryption/decryption occurs through temporary files in the destination directory with restrictive umask and atomic rename. Secrets are not command-line values and are not printed.
+The scripts require absolute paths. Inputs and recipient/identity files must be regular, non-symlink files outside the repository; ciphertext, plaintext, manifest and output paths must also resolve outside the repository, including through canonicalized parent directories. Output parent directories must already exist. The scripts reject missing dependencies, missing files, symlinks, existing output paths and invalid key-file permissions where applicable. Encryption/decryption occurs through temporary files in the destination directory with restrictive umask and atomic rename. Secrets are not command-line values and are not printed.
 
 ## Integrity and authenticity
 

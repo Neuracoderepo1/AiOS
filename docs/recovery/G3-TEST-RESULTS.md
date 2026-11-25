@@ -2,35 +2,32 @@
 
 **Evidence refreshed:** 2026-11-25  
 **PR:** #43  
-**Implementation source revision before this evidence refresh:** `574c662f7f5c4cba32af70dfb3854bcae98181ff`  
-**Evidence status:** Updated for Agent 003's REQUEST CHANGES disposition; new security changes require fresh exact-head CI.
+**Validated implementation source revision:** `d716ec9823bda3cb12b68bde6b78c334ec5575b0`  
+**Disposition at this source revision:** all four required automated workflows PASS; Agent 003 re-review of this updated source is still required.
 
 ## Scope boundary
 
-No production export, production credentials, production database writes, production restore, Google Drive upload, or owner-device inspection was performed. Synthetic test data must never be described as production recovery evidence.
+No production export, production credentials, production database writes, production restore, Google Drive upload, or owner-device inspection was performed. All automated database tests used disposable local PostgreSQL/Supabase fixtures and synthetic data. Synthetic CI results are not production recovery evidence.
 
-## Agent 003 review and disposition
+## Agent 003 review findings and remediation
 
-Agent 003 reviewed PR #43 at exact head `059e63fcdb4457cedc542f4b71b6d6e39e1e389d` and issued **REQUEST CHANGES**. The review confirmed that AiOS CI #426 and recovery crypto #12 passed on that reviewed SHA, independently downloaded and re-hashed both CI artifacts, and reported:
-- 109/109 behavioral and 109/109 no-remote tests;
-- O1-O7 invariants passed; 23/23 mutants detected;
-- terminal/mission-start gap probes 5/5;
-- canonical matrix 46/46; smoke self-test 86/86;
-- synthetic PostgreSQL export/isolated-restore and preflight 31/31;
-- 131 candidate migrations replayed.
-
-The review identified three required corrections:
+Agent 003 reviewed the earlier candidate `059e63fcdb4457cedc542f4b71b6d6e39e1e389d` and issued **REQUEST CHANGES**. The review identified:
 1. Remote logical exports did not enforce TLS certificate/hostname verification and allowed libpq service/host overrides.
 2. Encryption/decryption helpers did not prevent repository-contained or symlink-resolved key/artifact/plaintext paths.
-3. This evidence document was stale and did not record the reviewed head, current artifacts or ET27 gap.
+3. The evidence record was stale and ET27 workflows had not run on the same candidate SHA.
 
-The first two findings have now been addressed in the candidate branch:
-- Owner-approved remote export now requires `PGSSLMODE=verify-full`, a readable regular non-symlink `PGSSLROOTCERT`, and rejects `PGSERVICE`, `PGSERVICEFILE`, `PGHOSTADDR` and `PGOPTIONS` overrides.
-- Shared `path_guard.sh` requires absolute paths, canonicalizes existing paths and output parents, rejects symlinks for existing input/key files, and refuses any recovery input, key, ciphertext or plaintext destination inside the repository.
-- Crypto tests now cover relative paths, repository-contained input/key/output paths, symlinked repository parents, remote TLS downgrade and libpq override attempts.
-- The earlier checksum-manifest filename-substitution weakness remains fixed and covered by regression testing.
+Remediation implemented in the current source revision:
+- Remote owner-approved exports, both production and non-production, require `PGSSLMODE=verify-full` and an absolute, readable, regular, non-symlink `PGSSLROOTCERT` CA file.
+- Remote export rejects `PGSERVICE`, `PGSERVICEFILE`, `PGHOSTADDR` and `PGOPTIONS` overrides.
+- `NONPRODUCTION` is restricted to loopback. Remote non-production requires the explicit `OWNER_APPROVED_NONPRODUCTION:<approval-id>` marker.
+- Export credentials, export destinations, restore source directories, restore credentials, encryption inputs, recipient/identity files, ciphertext, plaintext and checksum-verification inputs must use absolute paths and resolve outside the repository.
+- The shared canonical path guard rejects symlinked input/key files, symlinked destination directories, and parent paths that resolve inside the repository. Output directories must already exist; the exporter and age helpers do not create destination directories.
+- The checksum verifier binds the manifest to the exact adjacent ciphertext filename and rejects repository-contained paths.
+- Restore validation checks PostgreSQL major-version compatibility and exact installed extension versions. Source metadata uses an explicit `|` field separator and the extension inventory uses tab-separated fields.
+- Disposable fixtures now pre-create export directories before invoking the hardened exporter.
+- Regression tests cover manifest substitution, relative paths, repository-contained paths, symlinked parents, remote TLS downgrade, remote non-production approval, libpq overrides, restore PGPASS symlinks, repository-contained restore paths, and refusal to create missing export destinations.
 
-These changes are not certified until the new exact-head workflows pass and Agent 003 reviews the new exact head.
+The earlier review remains a prior disposition only. Agent 003 must independently review the updated source revision and final successor head before certification.
 
 ## Automated test commands
 
@@ -41,8 +38,6 @@ bash tests/recovery/test_crypto.sh
 bash tests/recovery/test_scripts.sh
 ```
 
-They use only synthetic fixtures and temporary test identities. The exporter dry-run uses inert command stubs and must not invoke a database client.
-
 Disposable PostgreSQL tests require an explicitly disposable local Supabase/PostgreSQL fixture:
 
 ```sh
@@ -50,43 +45,76 @@ AIOS_TEST_DB_URL='<loopback-only disposable test database>' bash tests/recovery/
 AIOS_TEST_DB_URL='<loopback-only disposable test database>' bash tests/recovery/preflight_matrix.sh
 ```
 
-Never run these PostgreSQL commands with a hosted/production URL. Test scripts must validate loopback and disposable database identity.
+Never run these PostgreSQL commands with a hosted/production URL. Test scripts validate loopback and disposable database identity.
 
-## Historical exact-head workflow results
+## Exact-head automated validation for source revision d716ec9
 
-These results apply only to the reviewed SHA `059e63fcdb4457cedc542f4b71b6d6e39e1e389d`; they do not validate the later security changes.
+All four required workflows completed **SUCCESS** on the same exact source SHA `d716ec9823bda3cb12b68bde6b78c334ec5575b0`.
 
 | Workflow | Run | Result | Exact SHA |
 |---|---:|---|---|
-| Full AiOS CI | #426 / 45226826088 | PASS, 4/4 jobs | `059e63fcdb4457cedc542f4b71b6d6e39e1e389d` |
-| Recovery crypto safety | #12 / 45226825896 | PASS, 1/1 job | `059e63fcdb4457cedc542f4b71b6d6e39e1e389d` |
+| Full AiOS CI | #457 / 45670202310 | PASS, 4/4 jobs | `d716ec9823bda3cb12b68bde6b78c334ec5575b0` |
+| Recovery crypto safety | #42 / 45670202260 | PASS | same |
+| ET27 seal guard | #322 / 45670202306 | PASS | same |
+| ET27 delete protection | #322 / 45670202250 | PASS | same |
 
-- [Full AiOS CI #426](https://github.com/Neuracoderepo1/AiOS/actions/runs/45226826088)
-- [Recovery crypto safety #12](https://github.com/Neuracoderepo1/AiOS/actions/runs/45226825896)
+Run links:
+- [Full AiOS CI #457](https://github.com/Neuracoderepo1/AiOS/actions/runs/45670202310)
+- [Recovery crypto safety #42](https://github.com/Neuracoderepo1/AiOS/actions/runs/45670202260)
+- [ET27 seal guard #322](https://github.com/Neuracoderepo1/AiOS/actions/runs/45670202306)
+- [ET27 delete protection #322](https://github.com/Neuracoderepo1/AiOS/actions/runs/45670202250)
 
-Agent 003 found no ET27 delete-protection or seal-guard run on that reviewed SHA. Those workflows passed on parent PR #42 SHA `fe1fcbea1e9aba02689cb0bb48c0a1180e508504` only. Both ET27 workflows must run successfully on the final PR #43 head.
+### Full AiOS CI evidence
 
-## Historical uploaded evidence artifacts
+- Behavioral suite: **109 passed, 0 failed**.
+- No-remote suite: **109 passed, 0 failed**.
+- Edge Function invariants: **O1-O7 passed**.
+- Mutation suite: **23/23 mutants detected**, control passes true.
+- Mission-start/terminal-mission gap probes: **5 passed, 0 failed**.
+- Canonical matrix: **46/46**, including G4 checks 12/12.
+- Restore preflight conflict matrix: **31/31**.
+- Smoke self-test: **86/86**.
+- Disposable PostgreSQL logical export/isolated restore: **PASS**, structural validation passed, source/restored row counts matched.
+- Restoration-role and authorization SQL regressions: **PASS**.
+- Part E audit anchoring, external verifier and RPC tooling regressions: **PASS**.
+- Mission/task, approval-path, reverse-linked approval, audit-lock and cross-organization concurrency checks: **PASS**.
+- Approval-chain post-lock binding revalidation: **10/10** successful repetitions, each on a freshly reset and fully migrated disposable PostgreSQL database.
+- Candidate migration replay: **131 migrations** applied to disposable CI databases.
 
-The following artifact ZIPs were independently downloaded and SHA-256 re-hashed by Agent 003 for AiOS CI #426:
-- `aios-ci-evidence`, artifact ID `14844983580`: `81ecf04fc10972716f6d24600c2838fa97bc33856dbe3db4d1aa5db9ba94effd`.
-- `behavioral-evidence`, artifact ID `14843791192`: `456558207797dbc3438cd91e37c3018f02876d576155dc3d492d25ecc4cd31ba`.
+### ET27 results
 
-These hashes belong to the reviewed SHA above. New artifacts must be captured and independently verified for the final candidate head.
+- Seal guard: **303/303 checks passed; 48/48 mutants detected; 0 survived**.
+- Delete protection: **66/66 checks passed; 10/10 mutants detected; 0 survived**.
+- Both artifacts report 131 migrations replayed and PostgreSQL exit code 0.
+
+## Uploaded evidence artifacts independently re-hashed
+
+The artifact ZIPs were downloaded from GitHub Actions and SHA-256 re-hashed in the execution environment. Computed hashes match the GitHub artifact digests.
+
+| Workflow artifact | Artifact ID | SHA-256 |
+|---|---:|---|
+| `aios-ci-evidence` | 15050262188 | `b0162c8835416c5c9363e9bb418e5334cceca0b2d9b1197f38ec8c151091edc8` |
+| `behavioral-evidence` | 15049286965 | `17d1b975be4fa3a8828a70c167e6bebd2cdfc34d3f95617466e4c3ee473a801c` |
+| `et27-seal-guard-evidence` | 15048797931 | `32e917b8dfe62c0c0511c52474a838c0fc0da6ca39862f5994d76c2ab0e02ff3` |
+| `et27-delete-protection-evidence` | 15050220329 | `a5de481a6988e4c867bfb0f1777b12a072e2f8ee1b591665e029fe3239152a27` |
+
+## Final successor-head policy
+
+This evidence record is being synchronized with the updated PR #42 hosted-state snapshot and the recovery operating procedures. That documentation/merge commit changes the PR head. Therefore the four exact-head workflows must run again on the resulting final PR #43 head, and Agent 003 must review that final head. The d716ec9 results above remain evidence for the validated source revision only; they must not be relabeled as runs on a later SHA.
 
 ## Current operational results and limitations
 
 | Test / gate | Result | Evidence / limitation |
 |---|---|---|
-| Reviewed-head AiOS CI #426 | PASS | Historical evidence for `059e63fc...` only |
-| Reviewed-head recovery crypto #12 | PASS | Historical evidence for `059e63fc...` only |
-| New remote TLS/path-containment changes | PENDING | Await fresh exact-head CI and crypto workflow results |
-| ET27 delete-protection on final candidate head | PENDING | Must be triggered and pass on same final SHA |
-| ET27 seal-guard on final candidate head | PENDING | Must be triggered and pass on same final SHA |
-| Google Drive upload/download round trip | NOT RUN | No authenticated Drive integration available to this execution environment |
+| Source revision d716ec9 automated validation | PASS | Four workflows above, same exact SHA |
+| Final successor-head validation | PENDING | Required after documentation/base synchronization commit |
+| Agent 003 review of updated final head | PENDING | Prior disposition was REQUEST CHANGES |
+| Google Drive access, quota, sharing, jurisdiction and retention | NOT VERIFIED | No authenticated Drive connector available to this execution environment |
 | Owner device FileVault, free space and PostgreSQL inventory | NOT VERIFIED | Owner device is not accessible from this execution environment |
-| Production export and isolated production-artifact restore | NOT STARTED | G3 prerequisites remain blocked; no exact-operation authorization recorded |
-| Agent 003 independent review of updated head | PENDING | Prior disposition was REQUEST CHANGES; fresh review required |
+| Production key generation and custody | NOT STARTED | Must occur on the owner's trusted device |
+| Ciphertext-only Drive transfer round trip | NOT RUN | Owner-side authenticated transfer and retrieval evidence absent |
+| Production export and isolated production-artifact restore | NOT STARTED | No production data or credentials used |
+| Hosted G4 migration | BLOCKED | 14 unapplied candidate migrations and hosted audit/restoration/cron/grant/trigger drift |
 
 ## Evidence integrity and release policy
 
