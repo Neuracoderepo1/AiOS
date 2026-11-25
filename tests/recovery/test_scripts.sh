@@ -36,11 +36,16 @@ export_sh="$root/scripts/recovery/export_logical.sh"
 restore_sh="$root/scripts/recovery/restore_local.sh"
 validate_sh="$root/scripts/recovery/validate_local_restore.sh"
 
-# Destructive PostgreSQL fixtures require an explicit per-run acknowledgement.
+# Destructive fixture scripts are CI-only. A developer shell cannot opt into database creation/drop.
+expect_reject "roundtrip refuses non-CI local execution" "destructive PostgreSQL fixture tests are CI-only" \
+  env -u GITHUB_ACTIONS -u RUNNER_ENVIRONMENT -u CI AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/postgres_roundtrip.sh"
+expect_reject "preflight matrix refuses non-CI local execution" "destructive PostgreSQL fixture tests are CI-only" \
+  env -u GITHUB_ACTIONS -u RUNNER_ENVIRONMENT -u CI AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/preflight_matrix.sh"
+# Even on a hosted runner, each destructive invocation still needs its own acknowledgement.
 expect_reject "roundtrip without destructive fixture opt-in" "destructive fixture opt-in required" \
-  env -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/postgres_roundtrip.sh"
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/postgres_roundtrip.sh"
 expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \
-  env -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/preflight_matrix.sh"
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/preflight_matrix.sh"
 
 # Standalone validation must reject a changed source inventory before connecting to PostgreSQL.
 manifest_fixture="$tmp/manifest-fixture"
