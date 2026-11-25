@@ -8,8 +8,11 @@ on:
       - "tests/sql/11_invocation_delete_protection.sql"
       - "supabase/migrations/**"
       - ".github/workflows/et27-delete-protection-evidence.yml"
+      - "docs/operations/**"
+      - "docs/release/**"
   workflow_dispatch:
 
+# Release-gate documentation successors also trigger ET27 replay on the exact candidate head.
 permissions:
   contents: read
 
