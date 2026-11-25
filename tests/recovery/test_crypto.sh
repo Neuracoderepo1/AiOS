@@ -44,8 +44,12 @@ printf 'tamper' >> "$TMP/work/tampered.age"
 sed 's/synthetic.dump.age/tampered.age/' "$TMP/work/synthetic.dump.age.sha256" > "$TMP/work/tampered.age.sha256"
 if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/tampered.age.sha256" >/dev/null 2>&1; then fail "tampered ciphertext passed manifest"; fi
 pass "tampered-file detection"
-sed 's/synthetic.dump.age/unrelated.age/' "$TMP/work/synthetic.dump.age.sha256" > "$TMP/work/substituted.age.sha256"
-if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/substituted.age.sha256" >/dev/null 2>&1; then fail "substituted manifest filename accepted"; fi
+sed 's/synthetic.dump.age/unrelated.age/' "$TMP/work/synthetic.dump.age.sha256" > "$TMP/work/synthetic.dump.age.sha256.tmp"
+mv "$TMP/work/synthetic.dump.age.sha256.tmp" "$TMP/work/synthetic.dump.age.sha256"
+if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/synthetic.dump.age.sha256" > "$TMP/work/substitution.log" 2>&1; then fail "substituted manifest filename accepted"; fi
+grep -q "manifest filename does not match" "$TMP/work/substitution.log" || fail "manifest substitution test did not reach the filename-binding guard"
+# Restore the original valid manifest for subsequent tests.
+printf '%s  synthetic.dump.age\n' "$(sha256sum "$TMP/work/synthetic.dump.age" | awk '{print $1}')" > "$TMP/work/synthetic.dump.age.sha256"
 pass "manifest is bound to the exact ciphertext filename"
 if bash "$ROOT/scripts/recovery/verify_manifest.sh" "$TMP/work/missing.sha256" >/dev/null 2>&1; then fail "missing manifest accepted"; fi
 if AGE_RECIPIENTS_FILE="$TMP/keys/recipient.txt" bash "$ROOT/scripts/recovery/encrypt_artifact.sh" "$TMP/work/missing.dump" "$TMP/work/missing.age" >/dev/null 2>&1; then fail "missing input accepted"; fi
@@ -68,8 +72,7 @@ cp "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
 chmod 700 "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
 printf 'localhost:5432:synthetic:synthetic:not-a-real-password\n' > "$TMP/pgpass"
 chmod 600 "$TMP/pgpass"
-PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=127.0.0.1 PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" \\
-  bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" > "$TMP/dry-run.log"
+env PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=127.0.0.1 PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" > "$TMP/dry-run.log"
 grep -q 'DRY RUN PASS' "$TMP/dry-run.log" || fail "export dry-run did not report success"
 [[ ! -e "$TMP/command-called" ]] || fail "dry-run invoked a database command"
 [[ ! -e "$TMP/export-destination/aios-logical-export" ]] || fail "dry-run created an export"
