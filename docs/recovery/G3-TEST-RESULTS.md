@@ -164,6 +164,11 @@ These hashes and run IDs apply only to `d3aff50...`, not to any successor commit
 
 Agent 003 correctly identified that loopback URL parsing plus a human acknowledgement did not positively constrain destructive fixture scripts to the disposable CI service. The acknowledgement alone could not distinguish a loopback SSH/port-forward tunnel. The successor candidate now adds a CI-only execution gate to both destructive PostgreSQL fixture scripts: local developer-shell runs are rejected, and the GitHub-hosted runner markers plus the per-run acknowledgement are required. Regression tests explicitly verify local-mode rejection and missing-acknowledgement rejection. The scripts continue to preserve create-only collision handling and clean up only databases created by the current invocation.
 
-**Current PR #43 head at the time of this documentation edit:** `b51093aca41feafb3f555256f483af019d8331e1`. The four exact-head workflows must complete again on the final successor SHA after this documentation commit. No result from `d3aff50...` is carried forward as successor evidence. Agent 003 must independently re-review the CI-only guard and issue a fresh written disposition.
+**Candidate PR #43 head before the CI harness correction:** `3a6877f63bd4dc4e01b95dfd11358ba05a911c94`. The four exact-head workflows must complete again on the final successor SHA after this documentation commit. No result from `d3aff50...` is carried forward as successor evidence. Agent 003 must independently re-review the CI-only guard and issue a fresh written disposition.
 
 Production export, transfer, decryption and restore remain **NOT STARTED**. PR #43 remains open/unmerged and dependent on PR #42. Release Hold remains active.
+
+
+### Successor CI harness correction
+
+The first exact-head run on `3a6877f...` correctly rejected local execution, but the self-test harness had an environment-option ordering typo in its second missing-acknowledgement case. The CI-only guard itself passed both local-mode rejection cases and the first missing-acknowledgement case. The test harness command was corrected in `d21d245a56c9c98380b85131e0e69cbd69a84c8e`. All four required workflows must run again on this corrected exact head; the failed predecessor run is not evidence of success.
