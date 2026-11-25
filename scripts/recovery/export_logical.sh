@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 umask 077
 
-fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'ERROR: %s\\n' "$*" >&2; exit 1; }
 : "${AIOS_EXPORT_APPROVAL:?Set AIOS_EXPORT_APPROVAL to NONPRODUCTION or OWNER_APPROVED_PRODUCTION:<approval-id>}"
 for name in PGHOST PGPORT PGUSER PGDATABASE PGPASSFILE; do
   [[ -n "${!name:-}" ]] || fail "missing required libpq variable: $name"
@@ -18,6 +18,14 @@ case "$AIOS_EXPORT_APPROVAL" in
   OWNER_APPROVED_NONPRODUCTION:*|OWNER_APPROVED_PRODUCTION:*)
     approval_id="${AIOS_EXPORT_APPROVAL#*:}"
     [[ -n "$approval_id" && "$approval_id" != *[!A-Za-z0-9._:-]* ]] || fail "invalid owner approval identifier"
+    # Do not permit libpq service files, host-address overrides or startup options
+    # to silently replace the reviewed connection target or TLS settings.
+    [[ -z "${PGSERVICE:-}" && -z "${PGSERVICEFILE:-}" ]] || fail "PGSERVICE/PGSERVICEFILE overrides are prohibited"
+    [[ -z "${PGHOSTADDR:-}" ]] || fail "PGHOSTADDR override is prohibited for owner-approved remote exports"
+    [[ -z "${PGOPTIONS:-}" ]] || fail "PGOPTIONS override is prohibited for owner-approved remote exports"
+    [[ "${PGSSLMODE:-}" == "verify-full" ]] || fail "owner-approved remote exports require PGSSLMODE=verify-full"
+    [[ -n "${PGSSLROOTCERT:-}" && -f "$PGSSLROOTCERT" && ! -L "$PGSSLROOTCERT" && -r "$PGSSLROOTCERT" && -s "$PGSSLROOTCERT" ]] || fail "owner-approved remote exports require a readable, regular, non-symlink PGSSLROOTCERT CA file"
+    export PGSSLMODE=verify-full
     ;;
   *) fail "export denied: explicit NONPRODUCTION or owner-approved export marker required" ;;
 esac
@@ -51,9 +59,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 case "$out/" in "$repo_root/"*) fail "refusing to write database exports inside the repository" ;; esac
 [[ ! -e "$out/aios-logical-export" && ! -L "$out/aios-logical-export" ]] || fail "output already exists; choose a new empty destination"
 if [[ "$dry_run" -eq 1 ]]; then
-  printf 'DRY RUN PASS: configuration and destination checks passed; no database connection, export, or filesystem output was created.\n'
-  printf 'Source classification: %s\n' "${AIOS_EXPORT_APPROVAL%%:*}"
-  printf 'Destination directory: %s\n' "$out"
+  printf 'DRY RUN PASS: configuration and destination checks passed; no database connection, export, or filesystem output was created.\\n'
+  printf 'Source classification: %s\\n' "${AIOS_EXPORT_APPROVAL%%:*}"
+  printf 'Destination directory: %s\\n' "$out"
   exit 0
 fi
 tmp="$(mktemp -d "$out/.aios-export.XXXXXX")"
@@ -62,17 +70,17 @@ trap cleanup EXIT
 
 pg_dump --format=custom --no-owner --no-acl --file "$tmp/database.dump"
 pg_dump --schema-only --no-owner --no-acl --file "$tmp/schema.sql"
-psql -X -v ON_ERROR_STOP=1 -Atc "select extname || E'\t' || extversion from pg_extension order by extname" > "$tmp/extensions.tsv"
+psql -X -v ON_ERROR_STOP=1 -Atc "select extname || E'\\t' || extversion from pg_extension order by extname" > "$tmp/extensions.tsv"
 psql -X -v ON_ERROR_STOP=1 -Atc "select current_setting('server_version'), current_database()" > "$tmp/source.txt"
 [[ -s "$tmp/database.dump" && -s "$tmp/schema.sql" && -s "$tmp/source.txt" ]] || fail "export produced an empty required artifact"
 pg_restore --list "$tmp/database.dump" > "$tmp/archive.list"
 [[ -s "$tmp/archive.list" ]] || fail "custom archive has no readable entries"
 {
-  printf 'format=pg_dump-custom\n'
-  printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf 'source_server_and_database=%s\n' "$(tr '\n' ' ' < "$tmp/source.txt")"
-  printf 'approval_class=%s\n' "${AIOS_EXPORT_APPROVAL%%:*}"
-  printf 'pg_dump_version=%s\n' "$(pg_dump --version)"
+  printf 'format=pg_dump-custom\\n'
+  printf 'created_utc=%s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'source_server_and_database=%s\\n' "$(tr '\\n' ' ' < "$tmp/source.txt")"
+  printf 'approval_class=%s\\n' "${AIOS_EXPORT_APPROVAL%%:*}"
+  printf 'pg_dump_version=%s\\n' "$(pg_dump --version)"
 } > "$tmp/manifest.txt"
 (
   cd "$tmp"
@@ -83,5 +91,5 @@ pg_restore --list "$tmp/database.dump" > "$tmp/archive.list"
 chmod -R go-rwx "$tmp"
 mv "$tmp" "$out/aios-logical-export"
 trap - EXIT
-printf 'Export created: %s/aios-logical-export\n' "$out"
-printf 'Verify with: (cd %q && sha256sum -c SHA256SUMS)\n' "$out/aios-logical-export"
+printf 'Export created: %s/aios-logical-export\\n' "$out"
+printf 'Verify with: (cd %q && sha256sum -c SHA256SUMS)\\n' "$out/aios-logical-export"
