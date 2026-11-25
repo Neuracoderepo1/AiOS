@@ -191,13 +191,13 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           set -o pipefail
-          AIOS_TEST_DB_URL="$DB_URL" bash tests/recovery/postgres_roundtrip.sh 2>&1 | tee /tmp/recovery-roundtrip.txt
+          AIOS_TEST_DB_URL="$DB_URL" AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash tests/recovery/postgres_roundtrip.sh 2>&1 | tee /tmp/recovery-roundtrip.txt
       - name: Restore preflight conflict matrix (D1)
         if: steps.start.conclusion == 'success'
         run: |
           set -o pipefail
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
-          AIOS_TEST_DB_URL="$DB_URL" bash tests/recovery/preflight_matrix.sh 2>&1 | tee /tmp/recovery-preflight-matrix.txt
+          AIOS_TEST_DB_URL="$DB_URL" AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash tests/recovery/preflight_matrix.sh 2>&1 | tee /tmp/recovery-preflight-matrix.txt
       - name: Capture migration runner and restorer membership authority
         if: steps.start.conclusion == 'success'
         run: |
