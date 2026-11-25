@@ -79,6 +79,9 @@ grep -q 'DRY RUN PASS' "$TMP/dry-run.log" || fail "export dry-run did not report
 [[ ! -e "$TMP/command-called" ]] || fail "dry-run invoked a database command"
 [[ ! -e "$TMP/export-destination/aios-logical-export" ]] || fail "dry-run created an export"
 pass "export dry-run performs validation without database access or output"
+if PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=NONPRODUCTION PGHOST=127.0.0.1 PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/not-created-destination" >/dev/null 2>&1; then fail "exporter accepted a missing destination directory"; fi
+[[ ! -e "$TMP/not-created-destination" ]] || fail "exporter created a destination before validating it"
+pass "export destination must pre-exist; no directory is created by the exporter"
 
 printf 'fake CA fixture\n' > "$TMP/ca.pem"
 PATH="$TMP/stubs:$PATH" AIOS_EXPORT_APPROVAL=OWNER_APPROVED_NONPRODUCTION:test-approval PGHOST=db.example.invalid PGPORT=5432 PGUSER=synthetic PGDATABASE=synthetic PGPASSFILE="$TMP/pgpass" PGSSLMODE=verify-full PGSSLROOTCERT="$TMP/ca.pem" bash "$ROOT/scripts/recovery/export_logical.sh" --dry-run "$TMP/export-destination" > "$TMP/remote-nonproduction.log"
