@@ -6,7 +6,7 @@ umask 077
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 source "$(dirname "${BASH_SOURCE[0]}")/path_guard.sh"
-: "${AIOS_EXPORT_APPROVAL:?Set AIOS_EXPORT_APPROVAL to NONPRODUCTION or OWNER_APPROVED_PRODUCTION:<approval-id>}"
+: "${AIOS_EXPORT_APPROVAL:?Set AIOS_EXPORT_APPROVAL to NONPRODUCTION (loopback only), OWNER_APPROVED_NONPRODUCTION:<approval-id>, or OWNER_APPROVED_PRODUCTION:<approval-id>}"
 for name in PGHOST PGPORT PGUSER PGDATABASE PGPASSFILE; do
   [[ -n "${!name:-}" ]] || fail "missing required libpq variable: $name"
 done
