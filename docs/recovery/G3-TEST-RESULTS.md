@@ -3,7 +3,7 @@
 **Evidence refreshed:** 2026-11-25  
 **PR:** #43  
 **Validated implementation source revision:** `d716ec9823bda3cb12b68bde6b78c334ec5575b0`  
-**Disposition at this source revision:** all four required automated workflows PASS; Agent 003 re-review of this updated source is still required.
+**Source-revision disposition:** all four required automated workflows PASS on `d716ec9...`; the final successor-head evidence and independent review are recorded separately below.
 
 ## Scope boundary
 
@@ -41,11 +41,11 @@ bash tests/recovery/test_scripts.sh
 Disposable PostgreSQL tests require an explicitly disposable local Supabase/PostgreSQL fixture:
 
 ```sh
-AIOS_TEST_DB_URL='<loopback-only disposable test database>' bash tests/recovery/postgres_roundtrip.sh
-AIOS_TEST_DB_URL='<loopback-only disposable test database>' bash tests/recovery/preflight_matrix.sh
+AIOS_TEST_DB_URL='<locally started disposable Supabase DB URL>' AIOS_TEST_DB_DESTRUCTIVE_ACK='I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES' bash tests/recovery/postgres_roundtrip.sh
+AIOS_TEST_DB_URL='<locally started disposable Supabase DB URL>' AIOS_TEST_DB_DESTRUCTIVE_ACK='I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES' bash tests/recovery/preflight_matrix.sh
 ```
 
-Never run these PostgreSQL commands with a hosted/production URL. Test scripts validate loopback and disposable database identity.
+Never run these PostgreSQL commands with a hosted/production URL. Test scripts require a per-run destructive-fixture acknowledgement and a loopback URL. Loopback alone does not prove locality because SSH/port-forward tunnels can appear as loopback. CI obtains the URL from the Supabase stack it starts itself; manual use must independently establish that the target is the intended disposable local instance. Never use a hosted URL or tunnel.
 
 ## Exact-head automated validation for source revision d716ec9
 
@@ -102,13 +102,37 @@ The artifact ZIPs were downloaded from GitHub Actions and SHA-256 re-hashed in t
 
 This evidence record is being synchronized with the updated PR #42 hosted-state snapshot and the recovery operating procedures. That documentation/merge commit changes the PR head. Therefore the four exact-head workflows must run again on the resulting final PR #43 head, and Agent 003 must review that final head. The d716ec9 results above remain evidence for the validated source revision only; they must not be relabeled as runs on a later SHA.
 
+## Final successor-head evidence — 25 November 2026
+
+**Exact PR #43 head:** `7b21d92af76876d1d77212285a5a3a9ae207d3cc`  
+**Final-head automated workflow gate:** PASS, all four required workflows completed successfully on this identical SHA.  
+**Agent 003 disposition:** PARTIALLY ACCEPTED / REQUEST CHANGES. Three findings remain open: destructive fixture target identity/explicit opt-in; standalone validator manifest verification; and this final-head evidence reconciliation. This document now addresses the latter two in the successor candidate; the destructive fixture safeguards are also being added. A fresh exact-head review is required after the changes and workflows complete.
+
+| Workflow | Run ID | Result | Exact SHA |
+|---|---:|---|---|
+| AiOS CI #459 | 45673056645 | PASS, 4/4 jobs | `7b21d92af76876d1d77212285a5a3a9ae207d3cc` |
+| Recovery crypto #43 | 45673056721 | PASS | same |
+| ET27 delete protection #322 | 45673056714 | PASS, 66/66 checks, 10/10 mutants | same |
+| ET27 seal guard #322 | 45673056948 | PASS, 303/303 checks, 48/48 mutants | same |
+
+Final-head artifacts independently re-hashed by Agent 003:
+
+| Artifact | ID | SHA-256 |
+|---|---:|---|
+| `aios-ci-evidence` | 15050933330 | `c28ac366d426f04026c493176d5830edc828af9e96d9eb4c6eab60a4ae48a71c` |
+| `behavioral-evidence` | 15051270336 | `2df64ca668043f752a9d46a20363695d366d31dfc1a6c709323cd4212a6083fe` |
+| `et27-seal-guard-evidence` | 15050821677 | `b9810c65a060c1ba36c78040fc99e16541ae02cdd0d212b6b0dd38e3aa5c9ce5` |
+| `et27-delete-protection-evidence` | 15050338190 | `d3991265912ad2429ec13b32c588fd688a117f5cd3131bb3211b8560cf48c66f` |
+
+The final-head workflow gate is complete. The final-head run evidence does not replace the earlier source-revision evidence, and neither establishes production recovery. Production export/transfer/restore remains **NOT STARTED**. The three Agent 003 findings remain the governing review disposition until a successor is independently reviewed and accepted.
+
 ## Current operational results and limitations
 
 | Test / gate | Result | Evidence / limitation |
 |---|---|---|
 | Source revision d716ec9 automated validation | PASS | Four workflows above, same exact SHA |
-| Final successor-head validation | PENDING | Required after documentation/base synchronization commit |
-| Agent 003 review of updated final head | PENDING | Prior disposition was REQUEST CHANGES |
+| Final successor-head validation (`7b21d92...`) | PASS | Four workflows on identical SHA; artifact hashes independently verified by Agent 003 |
+| Agent 003 review of final head (`7b21d92...`) | REQUEST CHANGES | Partially accepted; three findings remain open pending remediation and fresh review |
 | Google Drive access, quota, sharing, jurisdiction and retention | NOT VERIFIED | No authenticated Drive connector available to this execution environment |
 | Owner device FileVault, free space and PostgreSQL inventory | NOT VERIFIED | Owner device is not accessible from this execution environment |
 | Production key generation and custody | NOT STARTED | Must occur on the owner's trusted device |
