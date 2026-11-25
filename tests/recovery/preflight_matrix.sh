@@ -105,6 +105,8 @@ passed=0
 note() { passed=$((passed + 1)); printf 'PASS [%02d]: %s\n' "$passed" "$*"; }
 
 # ---------------------------------------------------------------- source fixtures
+# The hardened exporter requires an existing absolute destination directory.
+mkdir -p "$tmp/export" "$tmp/export_pub"
 newdb aios_pf_src
 admin_sql aios_pf_src "
 create extension if not exists pgcrypto;
