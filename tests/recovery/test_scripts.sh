@@ -38,7 +38,7 @@ validate_sh="$root/scripts/recovery/validate_local_restore.sh"
 
 # Destructive PostgreSQL fixtures require an explicit per-run acknowledgement.
 expect_reject "roundtrip without destructive fixture opt-in" "destructive fixture opt-in required" \\
-  env AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres -u AIOS_TEST_DB_DESTRUCTIVE_ACK bash "$root/tests/recovery/postgres_roundtrip.sh"
+  env -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/postgres_roundtrip.sh"
 expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \\
   env AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres -u AIOS_TEST_DB_DESTRUCTIVE_ACK bash "$root/tests/recovery/preflight_matrix.sh"
 
