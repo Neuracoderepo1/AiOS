@@ -77,8 +77,8 @@ with open(os.path.join(base,"connection.env"),"w",encoding="utf-8") as f:
 PY
 # shellcheck disable=SC1091
 source "$tmp/connection.env"
-[[ -n "${AIOS_CI_DB_SENTINEL:-}" ]] || fail "CI database identity sentinel verification failed: missing per-run sentinel"
-identity_count="$(psql -X -v ON_ERROR_STOP=1 -v sentinel="$AIOS_CI_DB_SENTINEL" -Atq -c "select count(*) from aios_ci_guard.disposable_run where sentinel = :'sentinel'")" || fail "CI database identity sentinel verification failed: target database did not prove its identity"
+[[ "${AIOS_CI_DB_SENTINEL:-}" =~ ^[0-9a-f]{64}$ ]] || fail "CI database identity sentinel verification failed: missing or malformed per-run sentinel"
+identity_count="$(psql -X -v ON_ERROR_STOP=1 -Atq -c "select count(*) from aios_ci_guard.disposable_run where sentinel = '$AIOS_CI_DB_SENTINEL'")" || fail "CI database identity sentinel verification failed: target database did not prove its identity"
 [[ "$identity_count" == "1" ]] || fail "CI database identity sentinel verification failed: target is not the disposable database for this run"
 # Never delete pre-existing databases. Creation must fail closed on a name
 # collision; cleanup removes only databases created successfully below.
