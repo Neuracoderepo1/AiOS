@@ -120,6 +120,7 @@ values ('00000000-0000-4000-8000-000000000001','fixture.created'),
        ('00000000-0000-4000-8000-000000000001','fixture.updated');
 SQL
 
+mkdir -p "$tmp/export"
 PGUSER=postgres PGDATABASE=aios_export_fixture \
   AIOS_EXPORT_APPROVAL=NONPRODUCTION \
   bash scripts/recovery/export_logical.sh "$tmp/export"
