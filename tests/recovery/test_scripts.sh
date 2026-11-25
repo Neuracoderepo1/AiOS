@@ -45,7 +45,7 @@ expect_reject "preflight matrix refuses non-CI local execution" "destructive Pos
 expect_reject "roundtrip without destructive fixture opt-in" "destructive fixture opt-in required" \
   env -u AIOS_TEST_DB_DESTRUCTIVE_ACK GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/postgres_roundtrip.sh"
 expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \
-  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true -u AIOS_TEST_DB_DESTRUCTIVE_ACK AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/preflight_matrix.sh"
+  env -u AIOS_TEST_DB_DESTRUCTIVE_ACK GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/preflight_matrix.sh"
 
 # Standalone validation must reject a changed source inventory before connecting to PostgreSQL.
 manifest_fixture="$tmp/manifest-fixture"
