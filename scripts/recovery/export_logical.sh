@@ -69,7 +69,7 @@ trap cleanup EXIT
 pg_dump --format=custom --no-owner --no-acl --file "$tmp/database.dump"
 pg_dump --schema-only --no-owner --no-acl --file "$tmp/schema.sql"
 psql -X -v ON_ERROR_STOP=1 -Atc "select extname || E'\t' || extversion from pg_extension order by extname" > "$tmp/extensions.tsv"
-psql -X -v ON_ERROR_STOP=1 -Atc "select current_setting('server_version'), current_database()" > "$tmp/source.txt"
+psql -X -v ON_ERROR_STOP=1 -AtF '|' -c "select current_setting('server_version'), current_database()" > "$tmp/source.txt"
 [[ -s "$tmp/database.dump" && -s "$tmp/schema.sql" && -s "$tmp/source.txt" ]] || fail "export produced an empty required artifact"
 pg_restore --list "$tmp/database.dump" > "$tmp/archive.list"
 [[ -s "$tmp/archive.list" ]] || fail "custom archive has no readable entries"
