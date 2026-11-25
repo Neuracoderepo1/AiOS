@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+source "$(dirname "${BASH_SOURCE[0]}")/path_guard.sh"
 [[ $# -eq 1 ]] || fail "usage: $0 ARTIFACT.sha256"
 manifest=$1
+aios_guard_recovery_path existing "$manifest"
 [[ -f "$manifest" && ! -L "$manifest" && -r "$manifest" && -s "$manifest" ]] || fail "manifest must be a readable regular non-symlink file"
 [[ "$manifest" == *.sha256 ]] || fail "manifest filename must end in .sha256"
 dir=$(cd "$(dirname "$manifest")" && pwd -P)
@@ -10,6 +12,7 @@ manifest_name=$(basename "$manifest")
 artifact_name=${manifest_name%.sha256}
 [[ "$artifact_name" =~ ^[A-Za-z0-9._-]+$ ]] || fail "artifact filename contains unsupported characters"
 artifact="$dir/$artifact_name"
+aios_guard_recovery_path existing "$artifact"
 [[ -f "$artifact" && ! -L "$artifact" && -r "$artifact" && -s "$artifact" ]] || fail "manifest target must be a readable non-empty regular non-symlink file"
 [[ $(wc -l < "$manifest" | tr -d ' ') == 1 ]] || fail "manifest must contain exactly one entry"
 IFS= read -r entry < "$manifest" || fail "cannot read manifest entry"
