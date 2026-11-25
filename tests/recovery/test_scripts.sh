@@ -55,10 +55,18 @@ expect_reject "restore with insecure password-file permissions" "PGPASSFILE perm
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$tmp"
 chmod 600 "$tmp/pgpass"
 ln -s "$tmp/pgpass" "$tmp/pgpass-link"
-expect_reject "restore with symlinked password file" "PGPASSFILE must name an existing regular non-symlink password file" \
+expect_reject "restore with symlinked password file" "recovery input/key paths cannot be symlinks" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass-link" bash "$restore_sh" "$tmp"
-expect_reject "validation with symlinked password file" "PGPASSFILE must name an existing regular non-symlink password file" \
+expect_reject "validation with symlinked password file" "recovery input/key paths cannot be symlinks" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass-link" bash "$validate_sh" "$tmp"
+expect_reject "restore with relative password path" "recovery paths must be absolute" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE=relative-pgpass bash "$restore_sh" "$tmp"
+expect_reject "validation with repository-contained password path" "must remain outside the repository" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$root/scripts/recovery/restore_local.sh" bash "$validate_sh" "$tmp"
+expect_reject "restore from repository-contained export directory" "must remain outside the repository" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$root/scripts/recovery"
+expect_reject "validation from repository-contained export directory" "must remain outside the repository" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$validate_sh" "$root/scripts/recovery"
 expect_reject "restore into non-isolated database name" "target database name must start with aios_restore_" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$tmp"
 expect_reject "validation against remote host" "validation target must be loopback" \
