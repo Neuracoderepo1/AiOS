@@ -63,7 +63,7 @@ pass "production export not invoked by crypto tests"
 
 # Exercise exporter dry-run and remote TLS policy with inert database-command stubs.
 mkdir -p "$TMP/stubs" "$TMP/export-destination"
-printf '#!/bin/sh\nprintf "called\\\n" >> "%s"\nexit 99\n' "$TMP/command-called" > "$TMP/stubs/pg_dump"
+printf '#!/bin/sh\n: > "%s"\nexit 99\n' "$TMP/command-called" > "$TMP/stubs/pg_dump"
 cp "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
 chmod 700 "$TMP/stubs/pg_dump" "$TMP/stubs/psql"
 printf 'localhost:5432:synthetic:synthetic:not-a-real-password\n' > "$TMP/pgpass"
