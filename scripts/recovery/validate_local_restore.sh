@@ -20,6 +20,40 @@ PY
 [[ $# -eq 1 ]] || fail "usage: $0 <export-directory>"
 aios_guard_recovery_path existing_dir "$1"
 src="$(cd "$1" && pwd -P)"
+
+# Bind every source fact used below to the complete export manifest before
+# opening a database connection. Enforce the fixed inventory to reject duplicate,
+# missing, path-like, or extra manifest entries.
+[[ -f "$src/SHA256SUMS" && ! -L "$src/SHA256SUMS" && -r "$src/SHA256SUMS" ]] || fail "SHA256SUMS must be a readable regular non-symlink file"
+python3 - "$src" <<'PY'
+import hashlib, os, re, sys
+root = sys.argv[1]
+expected = {"database.dump", "schema.sql", "extensions.tsv", "source.txt", "archive.list", "manifest.txt"}
+seen = set()
+with open(os.path.join(root, "SHA256SUMS"), "r", encoding="ascii") as f:
+    lines = f.read().splitlines()
+if len(lines) != len(expected):
+    raise SystemExit("SHA256SUMS must contain exactly the six expected export entries")
+for line in lines:
+    m = re.fullmatch(r"([0-9a-fA-F]{64})  ([A-Za-z0-9._-]+)", line)
+    if not m:
+        raise SystemExit("SHA256SUMS contains an invalid or path-like entry")
+    digest, name = m.groups()
+    if name not in expected or name in seen:
+        raise SystemExit("SHA256SUMS contains an unexpected or duplicate entry")
+    path = os.path.join(root, name)
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise SystemExit(f"manifest target is missing, non-regular, or symlinked: {name}")
+    h = hashlib.sha256()
+    with open(path, "rb") as artifact:
+        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+            h.update(chunk)
+    if h.hexdigest().lower() != digest.lower():
+        raise SystemExit(f"SHA-256 mismatch for {name}")
+    seen.add(name)
+if seen != expected:
+    raise SystemExit("SHA256SUMS does not cover the complete export inventory")
+PY
 [[ -s "$src/extensions.tsv" ]] || fail "source extension inventory missing"
 [[ -s "$src/source.txt" ]] || fail "source PostgreSQL version record missing"
 
