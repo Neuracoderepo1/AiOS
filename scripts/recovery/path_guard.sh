@@ -20,6 +20,12 @@ if mode == "existing":
     resolved = os.path.realpath(path, strict=True)
     if not os.path.isfile(resolved):
         raise SystemExit("ERROR: recovery input/key path must be a regular file")
+elif mode == "existing_dir":
+    if os.path.islink(path):
+        raise SystemExit("ERROR: recovery output directories cannot be symlinks")
+    resolved = os.path.realpath(path, strict=True)
+    if not os.path.isdir(resolved):
+        raise SystemExit("ERROR: recovery output directory must already exist")
 elif mode == "new":
     if os.path.lexists(path):
         raise SystemExit("ERROR: recovery output already exists")
