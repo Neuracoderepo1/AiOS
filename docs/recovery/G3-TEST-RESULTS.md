@@ -172,3 +172,46 @@ Production export, transfer, decryption and restore remain **NOT STARTED**. PR #
 ### Successor CI harness correction
 
 The first exact-head run on `3a6877f...` correctly rejected local execution, but the self-test harness had an environment-option ordering typo in its second missing-acknowledgement case. The CI-only guard itself passed both local-mode rejection cases and the first missing-acknowledgement case. The test harness command was corrected in `d21d245a56c9c98380b85131e0e69cbd69a84c8e`. All four required workflows must run again on this corrected exact head; the failed predecessor run is not evidence of success.
+
+
+## Latest exact-head evidence reconciliation — 25 November 2026
+
+**Exact PR #43 head:** `8407471ca0d084852f2515f6640cbf6cb7d9f1c9`
+
+All four required GitHub Actions workflows completed SUCCESS on this identical SHA. All jobs in all four runs are terminal and successful.
+
+| Workflow | Run ID | Result | Exact SHA |
+|---|---:|---|---|
+| AiOS CI #470 | 45695395326 | PASS, 4/4 jobs | `8407471ca0d084852f2515f6640cbf6cb7d9f1c9` |
+| Recovery crypto #54 | 45695395298 | PASS, 1/1 job | same |
+| ET27 seal guard #333 | 45695395314 | PASS, 1/1 job | same |
+| ET27 delete protection #333 | 45695395563 | PASS, 1/1 job | same |
+
+Run links:
+- [AiOS CI #470](https://github.com/Neuracoderepo1/AiOS/actions/runs/45695395326)
+- [Recovery crypto #54](https://github.com/Neuracoderepo1/AiOS/actions/runs/45695395298)
+- [ET27 seal guard #333](https://github.com/Neuracoderepo1/AiOS/actions/runs/45695395314)
+- [ET27 delete protection #333](https://github.com/Neuracoderepo1/AiOS/actions/runs/45695395563)
+
+### Exact-head artifact metadata
+
+The following SHA-256 values are GitHub Actions artifact metadata for the exact-head artifacts. They are **not represented here as independently downloaded/re-hashed by Agent 004**.
+
+| Artifact | Artifact ID | GitHub SHA-256 metadata |
+|---|---:|---|
+| `aios-ci-evidence` | 15061961448 | `40225cdfe86e0edda53fb9f6e0426f99ebf42119630b107acb3b0209489b0734` |
+| `behavioral-evidence` | 15060103037 | `366c5afcd1d3ccd00e1a517f3349b56e71a52baaf14974265c3a96253047d204` |
+| `et27-seal-guard-evidence` | 15060736384 | `e441898771b034d62a2491cac14cffac931734d53ca79a3261bc73717a88b263` |
+| `et27-delete-protection-evidence` | 15060362744 | `414d5ba64f1fe024aaa73cbc3526e46ac1a1a59c6d34d883e3247d3631088a47` |
+
+AiOS CI jobs: `functions-typecheck`, `evidence-integrity`, `functions-behavioral`, and `migrations-and-sql-tests` all completed successfully. The migration/SQL job completed its full configured sequence, including the destructive-fixture safety self-tests, local migration replay, synthetic PostgreSQL logical export/isolated restore, restore preflight, SQL and concurrency regressions, 10 fresh-database approval-chain binding repetitions, and evidence upload.
+
+### Latest Agent 003 concern and candidate response
+
+Agent 003's prior review identified that loopback plus an acknowledgement does not establish that a destructive fixture target is the CI-managed disposable Supabase instance. The current candidate changes both destructive fixture scripts to reject ordinary local developer-shell execution and require GitHub-hosted runner environment markers plus the existing per-run acknowledgement. Regression tests cover local-mode rejection and missing-acknowledgement rejection.
+
+This narrows the execution surface to the hosted Actions workflow, but the sufficiency of environment-marker enforcement against spoofed local variables or tunnel scenarios remains explicitly submitted for Agent 003's fresh review. Do not treat this as independently certified until Agent 003 assesses the exact current source.
+
+**Agent 003 fresh exact-head review:** REQUESTED for `8407471ca0d084852f2515f6640cbf6cb7d9f1c9`; written disposition pending.
+
+PR #43 remains OPEN/UNMERGED and stacked on PR #42. Release Hold remains active. Production export, transfer, decryption, restore, hosted migration, deployment and production configuration mutation remain **NOT AUTHORIZED / NOT STARTED**. Synthetic CI success is not production recovery certification.
