@@ -8,9 +8,12 @@ on:
       - "tests/sql/10_invocation_seal_guard.sql"
       - "supabase/migrations/**"
       - ".github/workflows/et27-seal-guard-evidence.yml"
+      - "docs/recovery/**"
+      - "scripts/recovery/**"
+      - "tests/recovery/**"
   workflow_dispatch:
 
-# Exact-head release-gate documentation successors may touch this file to request a full ET27 evidence replay.
+# Exact-head G3 recovery docs, scripts and tests also trigger both ET27 suites on the same candidate SHA.
 permissions:
   contents: read
 
