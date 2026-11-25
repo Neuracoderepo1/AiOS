@@ -5,6 +5,7 @@
 set -Eeuo pipefail
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 : "${AIOS_TEST_DB_URL:?AIOS_TEST_DB_URL must be supplied through the environment}"
+[[ "${AIOS_TEST_DB_DESTRUCTIVE_ACK:-}" == "I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES" ]] || fail "destructive fixture opt-in required: set AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES for this single run; loopback does not rule out SSH/port-forward tunnels"
 command -v python3 >/dev/null || fail "python3 is required"
 command -v createdb >/dev/null || fail "createdb is required"
 command -v dropdb >/dev/null || fail "dropdb is required"
