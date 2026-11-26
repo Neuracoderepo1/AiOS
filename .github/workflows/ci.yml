@@ -198,6 +198,7 @@ jobs:
           create table aios_ci_guard.disposable_run (sentinel text primary key);
           insert into aios_ci_guard.disposable_run(sentinel) values ('$sentinel');
           SQL
+          echo "::add-mask::$sentinel"
           printf 'AIOS_CI_DB_SENTINEL=%s\n' "$sentinel" >> "$GITHUB_ENV"
           unset sentinel
       - name: Real PostgreSQL logical export and isolated restore roundtrip
