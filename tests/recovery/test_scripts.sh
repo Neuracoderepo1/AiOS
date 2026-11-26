@@ -36,6 +36,40 @@ export_sh="$root/scripts/recovery/export_logical.sh"
 restore_sh="$root/scripts/recovery/restore_local.sh"
 validate_sh="$root/scripts/recovery/validate_local_restore.sh"
 
+# Destructive fixture scripts are CI-only. A developer shell cannot opt into database creation/drop.
+expect_reject "roundtrip refuses non-CI local execution" "destructive PostgreSQL fixture tests are CI-only" \
+  env -u GITHUB_ACTIONS -u RUNNER_ENVIRONMENT -u CI AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/postgres_roundtrip.sh"
+expect_reject "preflight matrix refuses non-CI local execution" "destructive PostgreSQL fixture tests are CI-only" \
+  env -u GITHUB_ACTIONS -u RUNNER_ENVIRONMENT -u CI AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/preflight_matrix.sh"
+# Even on a hosted runner, each destructive invocation still needs its own acknowledgement.
+expect_reject "roundtrip without destructive fixture opt-in" "destructive fixture opt-in required" \
+  env -u AIOS_TEST_DB_DESTRUCTIVE_ACK GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/postgres_roundtrip.sh"
+expect_reject "preflight matrix without destructive fixture opt-in" "destructive fixture opt-in required" \
+  env -u AIOS_TEST_DB_DESTRUCTIVE_ACK GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres bash "$root/tests/recovery/preflight_matrix.sh"
+
+# Environment markers and explicit acknowledgement are not database identity.
+expect_reject "roundtrip rejects spoofed CI markers without DB sentinel" "CI database identity sentinel verification failed" \
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/postgres_roundtrip.sh"
+expect_reject "preflight rejects spoofed CI markers without DB sentinel" "CI database identity sentinel verification failed" \
+  env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/preflight_matrix.sh"
+mkdir -p "$tmp/fake-bin"
+cat > "$tmp/fake-bin/psql" <<'PSQL'
+#!/usr/bin/env bash
+printf '0\\n'
+PSQL
+chmod 700 "$tmp/fake-bin/psql"
+expect_reject "roundtrip rejects a foreign loopback database without the per-run sentinel" "CI database identity sentinel verification failed: target is not the disposable database for this run" \
+  env PATH="$tmp/fake-bin:$PATH" GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted CI=true AIOS_CI_DB_SENTINEL=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa AIOS_TEST_DB_URL=postgresql://user:pass@127.0.0.1:5432/postgres AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES bash "$root/tests/recovery/postgres_roundtrip.sh"
+
+# Standalone validation must reject a changed source inventory before connecting to PostgreSQL.
+manifest_fixture="$tmp/manifest-fixture"
+mkdir -m 700 "$manifest_fixture"
+for name in database.dump schema.sql extensions.tsv source.txt archive.list manifest.txt; do printf 'fixture-%s\\n' "$name" > "$manifest_fixture/$name"; done
+(cd "$manifest_fixture" && sha256sum database.dump schema.sql extensions.tsv source.txt archive.list manifest.txt > SHA256SUMS)
+printf 'tampered-extension-inventory\\n' >> "$manifest_fixture/extensions.tsv"
+expect_reject "validation rejects post-restore export-manifest tampering before database access" "SHA-256 mismatch for extensions.tsv" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$validate_sh" "$manifest_fixture"
+
 expect_reject "export without explicit approval" "Set AIOS_EXPORT_APPROVAL" \
   env -u AIOS_EXPORT_APPROVAL bash "$export_sh" "$tmp/out"
 expect_reject "export with invalid approval marker" "explicit NONPRODUCTION or owner-approved export marker required" \
@@ -54,6 +88,19 @@ chmod 644 "$tmp/pgpass"
 expect_reject "restore with insecure password-file permissions" "PGPASSFILE permissions must be 0600 or stricter" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$tmp"
 chmod 600 "$tmp/pgpass"
+ln -s "$tmp/pgpass" "$tmp/pgpass-link"
+expect_reject "restore with symlinked password file" "recovery input/key paths cannot be symlinks" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass-link" bash "$restore_sh" "$tmp"
+expect_reject "validation with symlinked password file" "recovery input/key paths cannot be symlinks" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass-link" bash "$validate_sh" "$tmp"
+expect_reject "restore with relative password path" "recovery paths must be absolute" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE=relative-pgpass bash "$restore_sh" "$tmp"
+expect_reject "validation with repository-contained password path" "must remain outside the repository" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$root/scripts/recovery/restore_local.sh" bash "$validate_sh" "$tmp"
+expect_reject "restore from repository-contained export directory" "must remain outside the repository" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$root/scripts/recovery"
+expect_reject "validation from repository-contained export directory" "must remain outside the repository" \
+  env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=aios_restore_test PGPASSFILE="$tmp/pgpass" bash "$validate_sh" "$root/scripts/recovery"
 expect_reject "restore into non-isolated database name" "target database name must start with aios_restore_" \
   env PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres PGPASSFILE="$tmp/pgpass" bash "$restore_sh" "$tmp"
 expect_reject "validation against remote host" "validation target must be loopback" \

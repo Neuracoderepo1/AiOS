@@ -11,15 +11,15 @@ The scripts are:
 - Safety self-tests: `tests/recovery/test_scripts.sh`
 - Disposable real-PostgreSQL roundtrip: `tests/recovery/postgres_roundtrip.sh` (invoked by AiOS CI after the local Supabase migration replay)
 
-The exporter creates a PostgreSQL custom-format database archive, a schema-only SQL export, an extension inventory, source metadata, a readable archive listing, and a SHA-256 manifest. It refuses to write into the Git working tree. The restore script only targets loopback PostgreSQL and a database named `aios_restore_*`; it requires a pre-created destination that contains no user objects in the enumerated classes listed under "Restore destination preflight" below.
+The exporter creates a PostgreSQL custom-format database archive, a schema-only SQL export, an extension inventory, source metadata, a readable archive listing, and a SHA-256 manifest. Export destinations must already exist, be absolute, non-symlink directories outside the Git working tree. Restore and validation source directories must also be absolute, existing, non-symlink directories outside the repository. The restore script only targets loopback PostgreSQL and a database named `aios_restore_*`; it requires a pre-created destination that contains no user objects in the enumerated classes listed under "Restore destination preflight" below.
 
 ## Security requirements
 
 1. Keep database exports outside the repository and outside synchronized/public folders.
 2. Use encrypted local storage with access restricted to the database owner and authorized recovery operators.
 3. Never paste credentials into shell commands, tickets, logs, CI output, or repository files.
-4. Supply credentials through a `PGPASSFILE` with permissions 0600 or stricter. Do not put passwords in `PGPASSWORD` or connection-string command arguments.
-5. Use a direct database endpoint with TLS where supported; set `PGSSLMODE=require` for hosted connections.
+4. Supply credentials through an absolute, regular, non-symlink `PGPASSFILE` outside the repository with permissions 0600 or stricter. This is enforced by export, restore and validation scripts. Do not put passwords in `PGPASSWORD` or connection-string command arguments.
+5. For owner-approved remote production and non-production exports, require `PGSSLMODE=verify-full` and an absolute, readable, regular, non-symlink `PGSSLROOTCERT` CA file. Remote non-production requires `OWNER_APPROVED_NONPRODUCTION:<approval-id>`; the plain `NONPRODUCTION` marker is loopback-only. The exporter rejects `PGSERVICE`, `PGSERVICEFILE`, `PGHOSTADDR`, and `PGOPTIONS` overrides so the reviewed endpoint and TLS posture cannot be silently replaced.
 6. Treat the custom archive as sensitive: it can contain all dumpable application data, including private tenant data.
 7. A production export requires a separate explicit owner approval identifying the project, purpose, scope, destination, retention, operator, and approval/ticket ID. The script's marker is only a guardrail, not a substitute for that approval.
 8. No production export has been performed as part of this engineering work.
@@ -46,21 +46,23 @@ export PGPORT='5432'
 export PGUSER='approved-database-user'
 export PGDATABASE='approved-database-name'
 export PGPASSFILE="$HOME/.config/aios/pgpass"
-export PGSSLMODE='require'
+# Set these only for owner-approved remote exports (production or non-production):
+export PGSSLMODE='verify-full'
+export PGSSLROOTCERT='/absolute/path/to/approved-ca.pem'
 ```
 
 ## Create a logical export
 
-For a disposable non-production environment on loopback only:
+Create the destination directory first, outside the repository, and keep the password file outside the repository. For a disposable non-production environment on loopback only:
 
 ```sh
 export AIOS_EXPORT_APPROVAL='NONPRODUCTION'
 bash scripts/recovery/export_logical.sh "$HOME/secure-backups/aios"
 ```
 
-For a remote non-production environment, obtain an explicit owner approval and set `OWNER_APPROVED_NONPRODUCTION:<approval-id>`. For production, do not proceed unless the separate owner approval described above exists and covers this exact operation; then set `OWNER_APPROVED_PRODUCTION:<approval-id>` and run the same script into the approved encrypted destination. The plain `NONPRODUCTION` marker is rejected for non-loopback hosts and when a remote `PGHOSTADDR` or libpq service override is configured. Do not store the export in this repository. The script will create a new `aios-logical-export` directory and refuse to overwrite an existing export.
+For a remote non-production environment, obtain an explicit owner approval and set `OWNER_APPROVED_NONPRODUCTION:<approval-id>`. For production, do not proceed unless the separate owner approval described above exists and covers this exact operation; then set `OWNER_APPROVED_PRODUCTION:<approval-id>` and run the same script into the approved encrypted destination. The plain `NONPRODUCTION` marker is rejected for non-loopback hosts and when a remote `PGHOSTADDR` or libpq service override is configured. Owner-approved remote exports require `PGSSLMODE=verify-full` and a CA certificate via `PGSSLROOTCERT`; `PGSERVICE`, `PGSERVICEFILE`, `PGHOSTADDR`, and `PGOPTIONS` are rejected. Do not store the export in this repository. The destination directory must already exist, be an absolute path, and resolve outside the repository; the script does not create destination directories and refuses to overwrite an existing export. The `PGPASSFILE` must also be an absolute regular file outside the repository with permissions 0600 or stricter.
 
-The script checks command exit status, non-empty artifacts, archive readability, and writes SHA-256 hashes for all generated artifacts. Verify the manifest immediately:
+The script checks command exit status, non-empty artifacts, archive readability, and writes SHA-256 hashes for all generated artifacts. It requires an existing destination directory and never creates the destination path. Verify the manifest immediately:
 
 ```sh
 cd "$HOME/secure-backups/aios/aios-logical-export"
@@ -71,7 +73,7 @@ On macOS, use `shasum -a 256 -c SHA256SUMS` if `sha256sum` is unavailable. Prese
 
 ## Restore into isolated local PostgreSQL
 
-Use a disposable local PostgreSQL instance, not the hosted project. Install compatible PostgreSQL client/server versions and confirm that every required extension binary/control file is available locally. Read `extensions.tsv` from the export. You do not need to pre-create extensions: the archive contains `CREATE EXTENSION IF NOT EXISTS` entries and the restore creates them. Extensions that are already installed in the destination are tolerated, and the objects they own are not treated as conflicts (see below), but the restore does not reconcile an existing extension's version or schema with the archive. The restore fails closed if an extension cannot be created from the archive. Supabase-specific/provider-managed extensions may not be available in a generic local PostgreSQL installation; use a compatible local Supabase stack or classify that dependency as external.
+Use a disposable local PostgreSQL instance, not the hosted project. Install compatible PostgreSQL client/server versions and confirm that every required extension binary/control file is available locally. Read `extensions.tsv` from the export. You do not need to pre-create extensions: the archive contains `CREATE EXTENSION IF NOT EXISTS` entries and the restore creates them. Extensions that are already installed in the destination are tolerated, and the objects they own are not treated as conflicts (see below). The restore does not alter an existing extension; `validate_local_restore.sh` subsequently requires the exact source extension versions and matching PostgreSQL major version and fails closed on mismatch. Extension schema compatibility still requires review. Supabase-specific/provider-managed extensions may not be available in a generic local PostgreSQL installation; use a compatible local Supabase stack or classify that dependency as external.
 
 Create a fresh empty database with a name beginning `aios_restore_`. Example:
 
@@ -97,7 +99,7 @@ bash scripts/recovery/restore_local.sh "$HOME/secure-backups/aios/aios-logical-e
 bash scripts/recovery/validate_local_restore.sh "$HOME/secure-backups/aios/aios-logical-export"
 ```
 
-The restore script verifies the archive checksums, confirms the target is loopback and uses the `aios_restore_*` prefix, runs the read-only destination preflight below, and runs `pg_restore --exit-on-error --single-transaction`. It never drops, truncates, alters or recreates anything in the destination, and has no option to do so.
+The restore script requires an absolute, existing, non-symlink export source directory outside the repository and an absolute, regular, non-symlink `PGPASSFILE` outside the repository. It verifies the archive checksums, confirms the target is loopback and uses the `aios_restore_*` prefix, runs the read-only destination preflight below, and runs `pg_restore --exit-on-error --single-transaction`. It never drops, truncates, alters or recreates anything in the destination, and has no option to do so.
 
 ### Restore destination preflight
 

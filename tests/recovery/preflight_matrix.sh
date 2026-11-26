@@ -18,6 +18,8 @@
 set -Eeuo pipefail
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 : "${AIOS_TEST_DB_URL:?AIOS_TEST_DB_URL must be supplied through the environment}"
+[[ "${GITHUB_ACTIONS:-}" == "true" && "${RUNNER_ENVIRONMENT:-}" == "github-hosted" && "${CI:-}" == "true" ]] || fail "destructive PostgreSQL fixture tests are CI-only; local mode is non-destructive"
+[[ "${AIOS_TEST_DB_DESTRUCTIVE_ACK:-}" == "I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES" ]] || fail "destructive fixture opt-in required: set AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES for this single run; loopback does not rule out SSH/port-forward tunnels"
 for c in python3 createdb dropdb psql pg_dump pg_restore; do command -v "$c" >/dev/null || fail "$c is required"; done
 
 repo="$(cd "$(dirname "$0")/../.." && pwd -P)"
@@ -73,6 +75,9 @@ with open(os.path.join(base, "connection.env"), "w", encoding="utf-8") as f:
 PY
 # shellcheck disable=SC1091
 source "$tmp/connection.env"
+[[ "${AIOS_CI_DB_SENTINEL:-}" =~ ^[0-9a-f]{64}$ ]] || fail "CI database identity sentinel verification failed: missing or malformed per-run sentinel"
+identity_count="$(PGUSER="$ADMIN_USER" PGDATABASE=postgres psql -X -v ON_ERROR_STOP=1 -Atq -c "select count(*) from aios_ci_guard.disposable_run where sentinel = '$AIOS_CI_DB_SENTINEL'")" || fail "CI database identity sentinel verification failed: target database did not prove its identity"
+[[ "$identity_count" == "1" ]] || fail "CI database identity sentinel verification failed: target is not the disposable database for this run"
 
 admin_sql() { PGUSER="$ADMIN_USER" PGDATABASE="$1" psql -X -q -v ON_ERROR_STOP=1 -c "$2" >/dev/null; }
 # Same role that performs the restore, so objects it must later COMMENT ON / reuse are owned by it.
@@ -105,6 +110,8 @@ passed=0
 note() { passed=$((passed + 1)); printf 'PASS [%02d]: %s\n' "$passed" "$*"; }
 
 # ---------------------------------------------------------------- source fixtures
+# The hardened exporter requires an existing absolute destination directory.
+mkdir -p "$tmp/export" "$tmp/export_pub"
 newdb aios_pf_src
 admin_sql aios_pf_src "
 create extension if not exists pgcrypto;

@@ -5,6 +5,8 @@
 set -Eeuo pipefail
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 : "${AIOS_TEST_DB_URL:?AIOS_TEST_DB_URL must be supplied through the environment}"
+[[ "${GITHUB_ACTIONS:-}" == "true" && "${RUNNER_ENVIRONMENT:-}" == "github-hosted" && "${CI:-}" == "true" ]] || fail "destructive PostgreSQL fixture tests are CI-only; local mode is non-destructive"
+[[ "${AIOS_TEST_DB_DESTRUCTIVE_ACK:-}" == "I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES" ]] || fail "destructive fixture opt-in required: set AIOS_TEST_DB_DESTRUCTIVE_ACK=I_UNDERSTAND_THIS_SCRIPT_CREATES_AND_DROPS_LOCAL_FIXTURE_DATABASES for this single run; loopback does not rule out SSH/port-forward tunnels"
 command -v python3 >/dev/null || fail "python3 is required"
 command -v createdb >/dev/null || fail "createdb is required"
 command -v dropdb >/dev/null || fail "dropdb is required"
@@ -75,6 +77,9 @@ with open(os.path.join(base,"connection.env"),"w",encoding="utf-8") as f:
 PY
 # shellcheck disable=SC1091
 source "$tmp/connection.env"
+[[ "${AIOS_CI_DB_SENTINEL:-}" =~ ^[0-9a-f]{64}$ ]] || fail "CI database identity sentinel verification failed: missing or malformed per-run sentinel"
+identity_count="$(psql -X -v ON_ERROR_STOP=1 -Atq -c "select count(*) from aios_ci_guard.disposable_run where sentinel = '$AIOS_CI_DB_SENTINEL'")" || fail "CI database identity sentinel verification failed: target database did not prove its identity"
+[[ "$identity_count" == "1" ]] || fail "CI database identity sentinel verification failed: target is not the disposable database for this run"
 # Never delete pre-existing databases. Creation must fail closed on a name
 # collision; cleanup removes only databases created successfully below.
 createdb --owner=postgres aios_export_fixture
@@ -120,6 +125,7 @@ values ('00000000-0000-4000-8000-000000000001','fixture.created'),
        ('00000000-0000-4000-8000-000000000001','fixture.updated');
 SQL
 
+mkdir -p "$tmp/export"
 PGUSER=postgres PGDATABASE=aios_export_fixture \
   AIOS_EXPORT_APPROVAL=NONPRODUCTION \
   bash scripts/recovery/export_logical.sh "$tmp/export"
