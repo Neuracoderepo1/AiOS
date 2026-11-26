@@ -76,7 +76,7 @@ PY
 # shellcheck disable=SC1091
 source "$tmp/connection.env"
 [[ "${AIOS_CI_DB_SENTINEL:-}" =~ ^[0-9a-f]{64}$ ]] || fail "CI database identity sentinel verification failed: missing or malformed per-run sentinel"
-identity_count="$(psql -X -v ON_ERROR_STOP=1 -Atq -c "select count(*) from aios_ci_guard.disposable_run where sentinel = '$AIOS_CI_DB_SENTINEL'")" || fail "CI database identity sentinel verification failed: target database did not prove its identity"
+identity_count="$(PGUSER="$ADMIN_USER" PGDATABASE=postgres psql -X -v ON_ERROR_STOP=1 -Atq -c "select count(*) from aios_ci_guard.disposable_run where sentinel = '$AIOS_CI_DB_SENTINEL'")" || fail "CI database identity sentinel verification failed: target database did not prove its identity"
 [[ "$identity_count" == "1" ]] || fail "CI database identity sentinel verification failed: target is not the disposable database for this run"
 
 admin_sql() { PGUSER="$ADMIN_USER" PGDATABASE="$1" psql -X -q -v ON_ERROR_STOP=1 -c "$2" >/dev/null; }
